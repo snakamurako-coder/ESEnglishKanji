@@ -4111,6 +4111,8 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       openKanjiPracticePro();
       initKanjiPracticeScoreListener();
       initKanjiPracticeCatalog();
+      // 練習画面を開くたびに KanjiVG を最新読込させる。
+      ensureKanjiPracticeFrameReady();
     }
     /** 漢字練習画面用: iframe 採点メッセージの受け口は initKanjiParentKanjiQuizScoredBridge と共有 */
     function initKanjiPracticeScoreListener() {
@@ -5528,6 +5530,16 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
             finish();
             return;
           }
+          // 毎回同梱 KanjiVG.txt を参照するため、iframe 側の読込を強制更新する。
+          try {
+            if (!win.__kpForceSyncStarted && typeof win.syncData === "function") {
+              win.__kpForceSyncStarted = true;
+              win.syncData();
+            } else if (!win.__kpForceSyncStarted && typeof win.loadKanjiData === "function") {
+              win.__kpForceSyncStarted = true;
+              win.loadKanjiData();
+            }
+          } catch (_) {}
 
           function check() {
             patchKanjiFrameForQuizPostMessage(frame);
@@ -5739,6 +5751,43 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         selectKanjiCharInQuizFrame(kanjiQuizSession.wrongModelKanjiChar);
       });
     }
+    function kanjiLookupCandidateChars(raw) {
+      const src = String(raw || "");
+      if (!src) return [];
+      const out = [];
+      const pushUniq = (ch) => {
+        if (!ch || out.indexOf(ch) >= 0) return;
+        out.push(ch);
+      };
+      // 回答文字列から漢字だけ抽出（句読点や送り仮名混在に対応）
+      kanjiQuizHanOnlyChars(src).forEach(pushUniq);
+      // 互換文字/全角差を吸収
+      try {
+        kanjiQuizHanOnlyChars(src.normalize("NFKC")).forEach(pushUniq);
+      } catch (_) {}
+      // 最低限、先頭1文字も候補に含める
+      const first = Array.from(src)[0] || "";
+      if (first) pushUniq(first);
+      return out;
+    }
+    function resolveKanjiCharInQuizFrame(raw, win, sel) {
+      const candidates = kanjiLookupCandidateChars(raw);
+      if (!candidates.length) return "";
+      const hasOption = (ch) => Array.from(sel.options || []).some(function (o) { return String(o.value) === ch; });
+      for (let i = 0; i < candidates.length; i++) {
+        const ch = String(candidates[i] || "");
+        if (!ch) continue;
+        if (hasOption(ch)) return ch;
+        if (win.KANJI_DATA && typeof win.KANJI_DATA === "object" && win.KANJI_DATA[ch]) {
+          const op = win.document.createElement("option");
+          op.value = ch;
+          op.textContent = ch;
+          sel.appendChild(op);
+          return ch;
+        }
+      }
+      return "";
+    }
     function selectKanjiCharInQuizFrame(ch) {
       const frame = document.getElementById("kp-pro-frame");
       const win = frame && frame.contentWindow;
@@ -5747,7 +5796,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         const doc = win.document;
         const sel = doc.getElementById("target-kanji");
         if (!sel) return false;
-        const target = String(ch || "");
+        const target = resolveKanjiCharInQuizFrame(ch, win, sel);
         if (!target) return false;
         try {
           if (kanjiQuizSession && kanjiQuizSession.wrongModelKanjiChar === target) {
@@ -5755,15 +5804,8 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
           }
         } catch (e0) {}
         let ok = Array.from(sel.options || []).some(function (o) { return String(o.value) === target; });
-        if (!ok && win.KANJI_DATA && typeof win.KANJI_DATA === "object" && win.KANJI_DATA[target]) {
-          const op = doc.createElement("option");
-          op.value = target;
-          op.textContent = target;
-          sel.appendChild(op);
-          ok = true;
-        }
         if (!ok) {
-          alert("「" + target + "」は KanjiVG.txt にないため、手書きできません。");
+          alert("「" + String(ch || "") + "」は KanjiVG.txt にないため、手書きできません。");
           return false;
         }
         sel.value = target;
@@ -5785,15 +5827,18 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       try {
         const sel = win.document.getElementById("target-kanji");
         if (!sel) return false;
+        const resolvedTargets = [];
         for (let i = 0; i < targets.length; i++) {
-          const ch = targets[i];
-          const ok = Array.from(sel.options || []).some(function (o) { return String(o.value) === String(ch); });
-          if (!ok) {
-            alert("「" + ch + "」は KanjiVG.txt にないため、手書きできません。");
+          const raw = targets[i];
+          const resolved = resolveKanjiCharInQuizFrame(raw, win, sel);
+          if (!resolved) {
+            alert("「" + raw + "」は KanjiVG.txt にないため、手書きできません。");
             return false;
           }
+          resolvedTargets.push(resolved);
         }
-        const tActive = activeChar || targets[0];
+        const activeResolved = resolveKanjiCharInQuizFrame(activeChar, win, sel);
+        const tActive = activeResolved || resolvedTargets[0];
         sel.value = tActive;
         if (typeof win.initTargetKanji === "function") win.initTargetKanji();
         if (typeof win.switchMode === "function") win.switchMode("score");
