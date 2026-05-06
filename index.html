@@ -5375,6 +5375,12 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
     let kanjiQuizHandSubmitAnimTimer = null;
     let kanjiQuizHandSubmitTimeoutId = null;
     let kanjiQuizHandSubmitSeq = 0;
+    function kanjiQuizDebugLog(msg) {
+      try {
+        const ts = new Date().toLocaleTimeString();
+        console.info("[kanji-quiz]", ts, msg);
+      } catch (_) {}
+    }
     function setKanjiQuizHandSubmitBusy(isBusy) {
       const btn = document.getElementById("kanji-hw-submit-btn");
       if (!btn) return;
@@ -5410,10 +5416,12 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       if (!kanjiQuizSession) return;
       setKanjiQuizHandSubmitBusy(true);
       const mySeq = ++kanjiQuizHandSubmitSeq;
+      kanjiQuizDebugLog("採点開始 seq=" + mySeq + " strokes=" + kanjiQuizParentStrokes.length);
       if (kanjiQuizHandSubmitTimeoutId) clearTimeout(kanjiQuizHandSubmitTimeoutId);
       kanjiQuizHandSubmitTimeoutId = setTimeout(function () {
         if (kanjiQuizHandSubmitSeq !== mySeq) return;
         if (!kanjiQuizHandSubmitBusy) return;
+        kanjiQuizDebugLog("採点タイムアウト seq=" + mySeq);
         setKanjiQuizHandSubmitBusy(false);
         alert("さいてんの応答がタイムアウトしました。もういちど「これでかいとう」を押してください。");
       }, 10000);
@@ -5453,9 +5461,50 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
           };
           setTimeout(function () {
             try {
+              kanjiQuizDebugLog("postMessage送信 expected=" + (expectedChar || "(none)"));
               frame.contentWindow.postMessage(payload, "*");
             } catch (e) {}
           }, 90);
+          // postMessage 取りこぼし時の保険: same-origin(srcdoc) なので直接採点を試す
+          setTimeout(function () {
+            try {
+              if (!kanjiQuizHandSubmitBusy) return;
+              const w = frame.contentWindow;
+              const d = frame.contentDocument;
+              if (!w || !d) return;
+              const sel = d.getElementById("target-kanji");
+              if (expectedChar && sel) {
+                sel.value = expectedChar;
+                if (typeof w.initTargetKanji === "function") w.initTargetKanji();
+              }
+              w.userStrokes = payload.strokes.map(function (s) {
+                return {
+                  type: (s && s.type) || "tome",
+                  points: Array.isArray(s && s.points) ? s.points.map(function (p) { return { x: +p.x, y: +p.y }; }) : []
+                };
+              });
+              if (typeof w.redrawAllUserStrokes === "function") w.redrawAllUserStrokes();
+              if (typeof w.evaluateKanji === "function") {
+                kanjiQuizDebugLog("direct evaluate fallback実行");
+                w.evaluateKanji(false);
+              }
+            } catch (_) {}
+          }, 320);
+          // 最終保険: score表示を直接読んで親側で処理
+          setTimeout(function () {
+            try {
+              if (!kanjiQuizHandSubmitBusy) return;
+              const d = frame.contentDocument;
+              if (!d) return;
+              const scEl = d.getElementById("score");
+              const m = scEl && scEl.innerText ? scEl.innerText.match(/(\d+)/) : null;
+              const n = m ? parseInt(m[1], 10) : NaN;
+              if (!isNaN(n)) {
+                kanjiQuizDebugLog("score直読 fallback score=" + n);
+                kanjiQuizOnHandwritingScored(n);
+              }
+            } catch (_) {}
+          }, 700);
           return true;
         })();
       }
@@ -5473,6 +5522,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       });
     }
     function kanjiQuizOnHandwritingScored(sc) {
+      kanjiQuizDebugLog("採点結果受信 score=" + sc);
       setKanjiQuizHandSubmitBusy(false);
       kanjiQuizHandSubmitSeq++;
       if (!kanjiQuizSession) return;
