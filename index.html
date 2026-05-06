@@ -1995,6 +1995,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
           if (prev && keys.indexOf(prev) >= 0) sel.value = prev;
           if (typeof win.initTargetKanji === "function") win.initTargetKanji();
         }
+        if (typeof win.showLoading === "function") win.showLoading(false);
       } catch (_) {}
     }
 
@@ -5579,12 +5580,17 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         }
         let settled = false;
         let pollId = null;
+        let hardTimeoutId = null;
 
         function cleanup() {
           window.removeEventListener("message", onKpKanjiReady);
           if (pollId != null) {
             clearInterval(pollId);
             pollId = null;
+          }
+          if (hardTimeoutId != null) {
+            clearTimeout(hardTimeoutId);
+            hardTimeoutId = null;
           }
         }
 
@@ -5614,16 +5620,6 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
               injectKanjiDataIntoFrame(win, map);
             })
             .catch(function(){});
-          // 毎回同梱 KanjiVG.txt を参照するため、iframe 側の読込を強制更新する。
-          try {
-            if (!win.__kpForceSyncStarted && typeof win.syncData === "function") {
-              win.__kpForceSyncStarted = true;
-              win.syncData();
-            } else if (!win.__kpForceSyncStarted && typeof win.loadKanjiData === "function") {
-              win.__kpForceSyncStarted = true;
-              win.loadKanjiData();
-            }
-          } catch (_) {}
 
           function check() {
             patchKanjiFrameForQuizPostMessage(frame);
@@ -5647,13 +5643,22 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
           }, 80);
         }
 
-        if (frame.dataset.kpLoaded === "1" && frame.contentDocument && frame.contentDocument.readyState === "complete") {
+        hardTimeoutId = setTimeout(function () {
+          finish();
+        }, 6000);
+
+        const rs = frame.contentDocument && frame.contentDocument.readyState;
+        if (frame.dataset.kpLoaded === "1" && frame.contentDocument && rs && rs !== "loading") {
           setTimeout(tryPoll, 0);
         } else {
           frame.addEventListener("load", function onLf() {
             frame.removeEventListener("load", onLf);
             setTimeout(tryPoll, 0);
           });
+          // load イベント取りこぼし対策
+          setTimeout(function () {
+            if (!settled) tryPoll();
+          }, 250);
         }
       });
     }
