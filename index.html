@@ -5454,6 +5454,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
           }
           const payload = {
             type: "quizEvalParentStrokes",
+            submitSeq: mySeq,
             expectedChar: expectedChar,
             strokes: kanjiQuizParentStrokes.map(function (s) {
               return { type: s.type, points: s.points.map(function (p) { return { x: +p.x, y: +p.y }; }) };
@@ -5461,6 +5462,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
           };
           setTimeout(function () {
             try {
+              if (!kanjiQuizHandSubmitBusy || kanjiQuizHandSubmitSeq !== mySeq) return;
               kanjiQuizDebugLog("postMessage送信 expected=" + (expectedChar || "(none)"));
               frame.contentWindow.postMessage(payload, "*");
             } catch (e) {}
@@ -5468,7 +5470,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
           // postMessage 取りこぼし時の保険: same-origin(srcdoc) なので直接採点を試す
           setTimeout(function () {
             try {
-              if (!kanjiQuizHandSubmitBusy) return;
+              if (!kanjiQuizHandSubmitBusy || kanjiQuizHandSubmitSeq !== mySeq) return;
               const w = frame.contentWindow;
               const d = frame.contentDocument;
               if (!w || !d) return;
@@ -5493,7 +5495,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
           // 最終保険: score表示を直接読んで親側で処理
           setTimeout(function () {
             try {
-              if (!kanjiQuizHandSubmitBusy) return;
+              if (!kanjiQuizHandSubmitBusy || kanjiQuizHandSubmitSeq !== mySeq) return;
               const d = frame.contentDocument;
               if (!d) return;
               const scEl = d.getElementById("score");
