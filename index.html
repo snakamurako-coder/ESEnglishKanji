@@ -5373,6 +5373,8 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
     }
     let kanjiQuizHandSubmitBusy = false;
     let kanjiQuizHandSubmitAnimTimer = null;
+    let kanjiQuizHandSubmitTimeoutId = null;
+    let kanjiQuizHandSubmitSeq = 0;
     function setKanjiQuizHandSubmitBusy(isBusy) {
       const btn = document.getElementById("kanji-hw-submit-btn");
       if (!btn) return;
@@ -5392,6 +5394,10 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
           btn.textContent = "さいてん中" + ".".repeat(tick + 1);
         }, 280);
       } else {
+        if (kanjiQuizHandSubmitTimeoutId) {
+          clearTimeout(kanjiQuizHandSubmitTimeoutId);
+          kanjiQuizHandSubmitTimeoutId = null;
+        }
         btn.textContent = "これでかいとう";
       }
     }
@@ -5403,6 +5409,14 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       }
       if (!kanjiQuizSession) return;
       setKanjiQuizHandSubmitBusy(true);
+      const mySeq = ++kanjiQuizHandSubmitSeq;
+      if (kanjiQuizHandSubmitTimeoutId) clearTimeout(kanjiQuizHandSubmitTimeoutId);
+      kanjiQuizHandSubmitTimeoutId = setTimeout(function () {
+        if (kanjiQuizHandSubmitSeq !== mySeq) return;
+        if (!kanjiQuizHandSubmitBusy) return;
+        setKanjiQuizHandSubmitBusy(false);
+        alert("さいてんの応答がタイムアウトしました。もういちど「これでかいとう」を押してください。");
+      }, 10000);
       function postEvalToFrame() {
         return (function () {
           const frame = document.getElementById("kp-pro-frame");
@@ -5460,6 +5474,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
     }
     function kanjiQuizOnHandwritingScored(sc) {
       setKanjiQuizHandSubmitBusy(false);
+      kanjiQuizHandSubmitSeq++;
       if (!kanjiQuizSession) return;
       const secHand = document.getElementById("section-kanji-quiz-play");
       if (!secHand || !secHand.classList.contains("active")) return;
