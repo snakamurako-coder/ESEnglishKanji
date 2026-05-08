@@ -1285,11 +1285,15 @@
       box-sizing: border-box;
       width: 100%;
     }
+    /**
+     * sentence_to_ruby（読みタイピング）の例文中で読みを答える対象漢字を強調する。
+     * 縦書きでは下線が文字の右側に出て位置が分かりづらく、句読点と重なって表示が崩れることが
+     * あったため、赤字＋太字のみで強調する（下線は付けない）。
+     */
     .kanji-yomi-sentence-block .kanji-yomi-target-char {
-      color: #c62828;
+      color: #d32f2f;
       font-weight: 900;
-      text-decoration: underline;
-      text-underline-offset: 4px;
+      text-decoration: none;
     }
     .kanji-yomi-sentence-block .kanji-yomi-underline-target {
       color: #141820;
@@ -1866,7 +1870,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
   </script>
   <script>
     // ▼ GASのURLを貼り付けてください（※前回と同じURLならそのままで大丈夫） ▼
-    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxkTBjnxwpT5YTCVxufigy3jAMwO0qmcfSP5LK2hdCzEW2c__S-NHx9HJhXQaGOGI8-sQ/exec";
+    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbwwChKq6iikAwY4VrvUYUFdfaWmsPZOXzp_JAiQGeZJRtsOLkAb8-_JpoHrnjT6c-VThA/exec";
     
     let selectedUserId = null; let currentPin = ""; let isPinResetMode = false;
     let currentModeId = ""; let currentModeName = ""; let currentUnitName = "";
@@ -6017,7 +6021,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         return String(str || "").trim();
       }
     }
-    /** れいぶん→よみ：原文を縦書きで表示し、対象かんじに下線（伏字ではなく漢字をそのまま）。 */
+    /** れいぶん→よみ：原文を縦書きで表示し、対象かんじを赤字で強調（伏字ではなく漢字をそのまま）。 */
     function kanjiYomiFormatSentenceBlockHtml(q) {
       if (!q) return "";
       let s = String(q.fullExample || "");
@@ -6038,11 +6042,19 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         return '<div class="kanji-yomi-sentence-block">' + escapeHtml(s) + "</div>";
       }
       const before = escapeHtml(s.slice(0, idx));
-      const mid = '<span class="kanji-yomi-underline-target">' + escapeHtml(k) + "</span>";
+      const mid = '<span class="kanji-yomi-target-char">' + escapeHtml(k) + "</span>";
       const after = escapeHtml(s.slice(idx + k.length));
       return '<div class="kanji-yomi-sentence-block">' + before + mid + after + "</div>";
     }
-    /** おくりがな選択：例文中のターゲット語を読み（訓）に置き換えた文を縦書き表示。読み部分に下線。 */
+    /**
+     * おくりがな選択：例文中のターゲット語を読み（訓）に置き換えた文を縦書き表示。読み部分に下線。
+     * GAS から contextSentenceReading が来ていない（旧版互換）場合のみ exampleSentenceRaw から再構成する。
+     * 再構成時は GAS 側 replaceKanjiWithReadingInExample_ と同じ規則：
+     *   - surfaceForm（correctAnswer）が文中にある  → 全長を reading に置換
+     *   - surfaceForm が漢字単独（送り仮名なし）    → 漢字 1 文字を reading に置換
+     *   - 漢字直後が surfaceForm の送り仮名と一致   → 漢字＋送り仮名の範囲を reading に置換
+     *   - いずれでもない（漢字が別用法で使われている）→ 何も生成しない（呼び出し側で空表示にフォールバック）
+     */
     function kanjiOkuriganaFormatSentenceBlockHtml(q) {
       if (!q) return "";
       let s = String(q.contextSentenceReading || "").trim();
@@ -6052,17 +6064,19 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         const rd = String(q.readingHint || "").trim();
         const surf = String(q.correctAnswer || "").trim();
         if (raw && rd && k) {
-          if (surf && raw.indexOf(surf) >= 0) {
+          if (surf && surf.length > k.length && raw.indexOf(surf) >= 0) {
             const p = raw.indexOf(surf);
             s = raw.slice(0, p) + rd + raw.slice(p + surf.length);
           } else if (raw.indexOf(k) >= 0) {
             const idx = raw.indexOf(k);
-            var tailStart = idx + k.length;
-            if (surf && surf.length > k.length && surf.indexOf(k) === 0) {
-              var okuri = surf.slice(k.length);
-              if (okuri && raw.slice(tailStart).startsWith(okuri)) tailStart += okuri.length;
+            if (!surf || surf.length === k.length) {
+              s = raw.slice(0, idx) + rd + raw.slice(idx + k.length);
+            } else if (surf.indexOf(k) === 0) {
+              const okuri = surf.slice(k.length);
+              if (okuri && raw.slice(idx + k.length).startsWith(okuri)) {
+                s = raw.slice(0, idx) + rd + raw.slice(idx + k.length + okuri.length);
+              }
             }
-            s = raw.slice(0, idx) + rd + raw.slice(tailStart);
           }
         }
       }
@@ -6133,10 +6147,15 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       }
       return true;
     }
+    /**
+     * 訓読みは「ひらがな」、音読みは「カタカナ」で答えるのが原則。
+     * スクリプトが合致していれば 1（満点）、合致していなければ 0.5（半分点）を返す。
+     * 旧仕様（合致で2倍ボーナス）からの方針転換：誤スクリプトは減点扱い。
+     */
     function kanjiQuizSentenceYomiScriptBonusMultiplier(userAnswerNorm, readingKind) {
       const k = String(readingKind || "");
-      if (k === "kun") return kanjiQuizIsAllHiraganaScript_(userAnswerNorm) ? 2 : 1;
-      if (k === "on") return kanjiQuizIsAllKatakanaScript_(userAnswerNorm) ? 2 : 1;
+      if (k === "kun") return kanjiQuizIsAllHiraganaScript_(userAnswerNorm) ? 1 : 0.5;
+      if (k === "on") return kanjiQuizIsAllKatakanaScript_(userAnswerNorm) ? 1 : 0.5;
       return 1;
     }
     function kanjiQuizTypeBadgeText(type) {
@@ -6405,7 +6424,18 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
             const surf = String(q.correctAnswer || "");
             const fallback = {};
             const surfPos = surf && exRaw.indexOf(surf) >= 0 ? exRaw.indexOf(surf) : -1;
-            const kPos = surfPos < 0 && kk && exRaw.indexOf(kk) >= 0 ? exRaw.indexOf(kk) : -1;
+            /**
+             * 漢字単独でのフォールバック挿入は、surfaceForm（correctAnswer）と漢字の長さが等しい
+             * （= 送り仮名なしの読み）か、surfaceForm が全く未指定の場合だけ許可する。
+             * surfaceForm が漢字＋送り仮名で、しかも例文中に surfaceForm が含まれない場合に
+             * 漢字位置へ候補を挿入すると、例: 例文 "上を見る" / 候補 "上と" → "上とを見る"
+             * のような不自然な選択肢が生成されてしまうため、そのケースは候補そのままを返す。
+             */
+            const kAllowAsSingleChar = !surf || surf.length === kk.length;
+            const kPos =
+              surfPos < 0 && kAllowAsSingleChar && kk && exRaw.indexOf(kk) >= 0
+                ? exRaw.indexOf(kk)
+                : -1;
             q.choices.forEach(function (c) {
               if (surfPos >= 0) {
                 fallback[c] = exRaw.slice(0, surfPos) + c + exRaw.slice(surfPos + surf.length);
@@ -6736,6 +6766,8 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
           const fall = Number(kanjiQuizSession.lastHandScore);
           var v = m != null && !isNaN(m) ? m : (!isNaN(fall) && fall > 0 ? fall : 100);
           scoreForServer = Math.max(0, Math.min(100, Math.round(v)));
+        } else if (q.type === "sentence_to_ruby") {
+          scoreForServer = Math.max(0, Math.min(100, Math.round(100 * scriptBonusMult)));
         } else {
           scoreForServer = 100;
         }
@@ -6775,9 +6807,14 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       }
       const summary = document.getElementById('kanji-play-summary');
       if (summary) {
-        if (isCorrect && q.type === "sentence_to_ruby" && scriptBonusMult >= 2) {
+        if (isCorrect && q.type === "sentence_to_ruby" && scriptBonusMult < 1) {
+          var hintScript = q.readingKind === "on"
+            ? "音読みはカタカナで答えてください。"
+            : "訓読みはひらがなで答えてください。";
           summary.innerHTML =
-            '<span style="color:#69F0AE;">せいかい！（ポイント2ばい）</span>';
+            '<span style="color:#FFD54F;">せいかい！（ただし表記がちがうため <strong>半分点</strong>）<br><span style="font-size:0.85em;color:#FFE082;">' +
+            escapeHtml(hintScript) +
+            '</span></span>';
         } else if (isCorrect) {
           summary.innerHTML = '<span style="color:#69F0AE;">せいかい！</span>';
         } else {
@@ -7111,6 +7148,26 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       M["vi"] = "ゔぃ";
       M["ve"] = "ゔぇ";
       M["vo"] = "ゔぉ";
+      M["xtu"] = "っ";
+      M["xtsu"] = "っ";
+      M["ltu"] = "っ";
+      M["ltsu"] = "っ";
+      M["xa"] = "ぁ";
+      M["xi"] = "ぃ";
+      M["xu"] = "ぅ";
+      M["xe"] = "ぇ";
+      M["xo"] = "ぉ";
+      M["la"] = "ぁ";
+      M["li"] = "ぃ";
+      M["lu"] = "ぅ";
+      M["le"] = "ぇ";
+      M["lo"] = "ぉ";
+      M["xya"] = "ゃ";
+      M["xyu"] = "ゅ";
+      M["xyo"] = "ょ";
+      M["lya"] = "ゃ";
+      M["lyu"] = "ゅ";
+      M["lyo"] = "ょ";
       ["k", "s", "t", "p", "g", "b", "z"].forEach(function (c) {
         V.forEach(function (v) {
           const one = M[c + v];
@@ -7178,12 +7235,31 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       }
       return { kana: outHira, rest: rest };
     }
+    /** 入力済み文字列のひらがな⇔カタカナを文字単位で反転する（句読点・長音符は保持）。 */
+    function kanjiYomiSwapHiraKataString_(str) {
+      return Array.from(String(str || ""))
+        .map(function (ch) {
+          const c = ch.codePointAt(0);
+          if (c >= 0x3041 && c <= 0x3096) return String.fromCodePoint(c + 0x60);
+          if (c >= 0x30a1 && c <= 0x30f6) return String.fromCodePoint(c - 0x60);
+          return ch;
+        })
+        .join("");
+    }
     function renderKanjiYomiRomajiKeyboard(containerId, targetInputId, onEnterSubmit, readingKind) {
       const container = document.getElementById(containerId);
       if (!container) return;
       container.innerHTML = "";
       window.__kanjiYomiRomajiTail = "";
       const pairs = kanjiYomiEnsureRomajiTable();
+      /**
+       * 入力スクリプトの現在状態。読みの種類（kun/on）が初期値。
+       * 「かな⇔カナ」ボタン押下のたびにトグルし、以降の確定文字もこちらに従う。
+       *   - "kun" → ひらがなで入力
+       *   - "on"  → カタカナで入力
+       * 読みの種類と一致しないまま「けってい」した場合は、採点側で半分点になる。
+       */
+      let currentScriptKind = readingKind === "on" ? "on" : "kun";
       const scalePct = parseInt(getUserPref(LS_KBD_SCALE, "100"), 10);
       const fontPx = parseInt(getUserPref(LS_KBD_FONT, "18"), 10);
       const padPx = Math.max(8, Math.round(fontPx * 0.72));
@@ -7194,9 +7270,19 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       wrap.style.setProperty("--vk-pad-px", String(padPx));
       const hint = document.createElement("div");
       hint.style.cssText =
-        "font-size:12px;color:#455a64;margin-bottom:8px;text-align:center;font-weight:700;";
+        "font-size:12px;color:#455a64;margin-bottom:6px;text-align:center;font-weight:700;";
       hint.textContent = "ローマ字をタップすると、自動でひらがな・カタカナに変換されます（英語モードのキーボードとは別仕様）";
       wrap.appendChild(hint);
+      const tailHint = document.createElement("div");
+      tailHint.style.cssText =
+        "font-size:12px;color:#3949ab;margin-bottom:8px;text-align:center;font-weight:700;min-height:1.2em;";
+      tailHint.innerHTML = '<span style="color:#666;">入力中:</span> <span id="kanji-yomi-romaji-tail-text">―</span>';
+      wrap.appendChild(tailHint);
+      function updateTailDisplay() {
+        const t = String(window.__kanjiYomiRomajiTail || "");
+        const tEl = document.getElementById("kanji-yomi-romaji-tail-text");
+        if (tEl) tEl.textContent = t ? t : "―";
+      }
       const board = document.createElement("div");
       board.className = "keyboard";
       const rows = [
@@ -7209,29 +7295,45 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         if (!inp) return;
         let tail = String(window.__kanjiYomiRomajiTail || "");
         if (lower === "-") {
-          if (readingKind === "on") {
+          if (currentScriptKind === "on") {
             inp.value += "ー";
             inp.dispatchEvent(new Event("input", { bubbles: true }));
           }
+          updateTailDisplay();
           return;
         }
         if (!/^[a-z]$/.test(lower)) return;
         tail += lower;
         const fl = kanjiYomiFlushRomajiBuffer(tail, pairs);
-        const piece = kanjiYomiHiraganaToAnswerScript(fl.kana, readingKind);
+        const piece = kanjiYomiHiraganaToAnswerScript(fl.kana, currentScriptKind);
         window.__kanjiYomiRomajiTail = fl.rest;
         if (piece) inp.value += piece;
         inp.dispatchEvent(new Event("input", { bubbles: true }));
+        updateTailDisplay();
       }
       function finalizeN() {
         const inp = document.getElementById(targetInputId);
         if (!inp) return;
         let tail = String(window.__kanjiYomiRomajiTail || "");
         if (tail === "n") {
-          inp.value += kanjiYomiHiraganaToAnswerScript("ん", readingKind);
+          inp.value += kanjiYomiHiraganaToAnswerScript("ん", currentScriptKind);
           window.__kanjiYomiRomajiTail = "";
           inp.dispatchEvent(new Event("input", { bubbles: true }));
+          updateTailDisplay();
         }
+      }
+      /**
+       * タッチ環境では click だけだと 300ms 遅延・二重発火・直前要素のフォーカス取り合いで
+       * 入力をロスすることがある。pointerdown で即座に処理し、click は no-op にして重複を防ぐ。
+       */
+      function bindKeyHandler(btn, handler) {
+        btn.addEventListener("pointerdown", function (ev) {
+          ev.preventDefault();
+          handler();
+        });
+        btn.addEventListener("click", function (ev) {
+          ev.preventDefault();
+        });
       }
       rows.forEach(function (row) {
         const rowDiv = document.createElement("div");
@@ -7241,31 +7343,71 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
           keyBtn.type = "button";
           keyBtn.className = "key";
           keyBtn.textContent = ch;
-          keyBtn.onclick = function () {
+          bindKeyHandler(keyBtn, function () {
             if (/^[a-z]$/i.test(ch)) applyChar(ch.toLowerCase());
             else if (ch === "-") applyChar("-");
-          };
+          });
           rowDiv.appendChild(keyBtn);
         });
         board.appendChild(rowDiv);
       });
       const rowBs = document.createElement("div");
       rowBs.className = "key-row";
+      /**
+       * 「かな⇔カナ」トグル：
+       *   - 既に入力済みの文字列を一括でひらがな⇔カタカナに反転
+       *   - 以降のローマ字確定文字も切り替え後のスクリプトに従う
+       *   - ボタンは現在の入力スクリプトを示す（押すと「次に切り替わる側」がラベルに）
+       * 訓読み問題でカタカナ／音読み問題でひらがなのまま提出すると採点が半分点になる。
+       */
+      const scriptBtn = document.createElement("button");
+      scriptBtn.type = "button";
+      scriptBtn.className = "key key-wide";
+      scriptBtn.style.fontSize = "calc(var(--vk-font-px,18px) * 0.9)";
+      scriptBtn.style.lineHeight = "1.15";
+      scriptBtn.style.padding = "calc(var(--vk-pad-px,12px) * 0.7) 6px";
+      function refreshScriptBtnLabel() {
+        if (currentScriptKind === "on") {
+          scriptBtn.innerHTML = '<span style="font-size:0.85em;color:#fff;opacity:0.95;">いま:カナ</span><br>かな ⇔ カナ';
+          scriptBtn.style.background = "#ff8a65";
+          scriptBtn.style.color = "#fff";
+          scriptBtn.title = "現在カタカナ入力。タップでひらがなに切替（既入力も反転）";
+        } else {
+          scriptBtn.innerHTML = '<span style="font-size:0.85em;color:#fff;opacity:0.95;">いま:かな</span><br>かな ⇔ カナ';
+          scriptBtn.style.background = "#42a5f5";
+          scriptBtn.style.color = "#fff";
+          scriptBtn.title = "現在ひらがな入力。タップでカタカナに切替（既入力も反転）";
+        }
+      }
+      refreshScriptBtnLabel();
+      bindKeyHandler(scriptBtn, function () {
+        const inp = document.getElementById(targetInputId);
+        if (!inp) return;
+        inp.value = kanjiYomiSwapHiraKataString_(String(inp.value || ""));
+        currentScriptKind = currentScriptKind === "on" ? "kun" : "on";
+        refreshScriptBtnLabel();
+        inp.dispatchEvent(new Event("input", { bubbles: true }));
+        updateTailDisplay();
+      });
+      rowBs.appendChild(scriptBtn);
       const bsBtn = document.createElement("button");
       bsBtn.type = "button";
       bsBtn.className = "key key-wide";
       bsBtn.textContent = "⌫";
-      bsBtn.onclick = function () {
+      bindKeyHandler(bsBtn, function () {
         const inp = document.getElementById(targetInputId);
         if (!inp) return;
+        const tail = String(window.__kanjiYomiRomajiTail || "");
+        if (tail.length) {
+          window.__kanjiYomiRomajiTail = tail.slice(0, -1);
+          updateTailDisplay();
+          return;
+        }
         if (inp.value.length) {
           inp.value = inp.value.slice(0, -1);
           inp.dispatchEvent(new Event("input", { bubbles: true }));
-          return;
         }
-        const tail = String(window.__kanjiYomiRomajiTail || "");
-        if (tail.length) window.__kanjiYomiRomajiTail = tail.slice(0, -1);
-      };
+      });
       rowBs.appendChild(bsBtn);
       board.appendChild(rowBs);
       const bottomRow = document.createElement("div");
@@ -7275,14 +7417,15 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       enterBtn.className = "key key-action";
       enterBtn.style.flex = "1";
       enterBtn.textContent = "けってい";
-      enterBtn.onclick = function () {
+      bindKeyHandler(enterBtn, function () {
         finalizeN();
         if (typeof onEnterSubmit === "function") onEnterSubmit();
-      };
+      });
       bottomRow.appendChild(enterBtn);
       board.appendChild(bottomRow);
       wrap.appendChild(board);
       container.appendChild(wrap);
+      updateTailDisplay();
     }
 
     let shiftMode = 0; let isShiftHoldMode = false; let shiftPressStartTime = 0; let shiftTimer1s = null; let shiftTimer2s = null;
