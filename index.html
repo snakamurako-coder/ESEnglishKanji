@@ -1380,10 +1380,84 @@
         width: 100%;
       }
       #kanji-play-yomi-input.kanji-yomi-type-input-vertical {
-        min-height: 220px;
-        width: 100%;
-        max-width: min(92vw, 520px);
+        /**
+         * iPhone・iPad 縦持ちでは画面いっぱい(width:100%)の縦書き textarea にすると、
+         * 1 列で文字が画面右端から下方向に流れた後、左へ改行して画面外に隠れることがある。
+         * width を中央寄せの細長いボックスに抑え、line-height と padding も小さめに。
+         */
+        min-height: clamp(220px, 42vh, 360px);
+        width: clamp(60px, 18vw, 110px);
+        max-width: 92vw;
+        padding: 10px 8px;
+        line-height: 1.5;
+        letter-spacing: 0.08em;
+        font-size: clamp(18px, 5vw, 24px);
       }
+      .kanji-yomi-sentence-block {
+        font-size: clamp(18px, 4.6vw, 24px);
+        padding: 14px 10px;
+      }
+    }
+    /**
+     * iPad 横持ち（おおむね 861〜1180px）レンジ向けの微調整：
+     * デスクトップ用レイアウトのままだと、textarea が clamp(56px,9vw,80px) で細すぎ・
+     * 全体高 min(62vh,520px) で縦に余裕が無い。タブレット幅では一段ゆったりさせる。
+     */
+    @media (min-width: 861px) and (max-width: 1180px) {
+      .kanji-yomi-vertical-stack {
+        min-height: min(56vh, 480px);
+        gap: clamp(8px, 1.6vw, 14px);
+      }
+      #kanji-play-yomi-input.kanji-yomi-type-input-vertical {
+        width: clamp(80px, 11vw, 110px);
+        min-height: min(50vh, 460px);
+        padding: 12px 9px;
+        letter-spacing: 0.08em;
+        line-height: 1.55;
+        font-size: clamp(20px, 2.6vw, 26px);
+      }
+      .kanji-yomi-sentence-block {
+        font-size: clamp(20px, 2.5vw, 26px);
+      }
+      .kanji-okurigana-vertical-wrap .kanji-yomi-sentence-block {
+        width: clamp(160px, 28vw, 260px);
+        min-height: clamp(240px, 44vh, 360px);
+      }
+    }
+    /**
+     * タッチ操作環境（タブレット・スマホの大半）向けの底上げ：
+     * フォント／パディング設定が px 値で固定されていると、指でタップしづらかったり、
+     * iPad で縦書き textarea のラインが詰まりすぎて読みにくくなる。最低値を引き上げる。
+     */
+    @media (pointer: coarse) {
+      #kanji-yomi-keyboard-container .keyboard .key {
+        min-height: 40px;
+        min-width: 30px;
+      }
+      #kanji-yomi-keyboard-container .keyboard .key-row {
+        gap: 4px;
+      }
+      #kanji-play-yomi-input.kanji-yomi-type-input-vertical {
+        line-height: 1.6;
+        letter-spacing: 0.06em;
+      }
+    }
+    /**
+     * キーボード（10列）が iPad 縦持ちなどで右へはみ出すと押せないキーが出るため、
+     * コンテナを横スクロール可能にし、内部のキーボードはコンテンツ幅を維持して中央寄せ。
+     */
+    #kanji-yomi-keyboard-container {
+      width: 100%;
+      max-width: 100%;
+      overflow-x: auto;
+      overflow-y: hidden;
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior: contain;
+      box-sizing: border-box;
+    }
+    #kanji-yomi-keyboard-container .keyboard {
+      min-width: max-content;
+      margin: 0 auto;
     }
     #section-kanji-quiz-play.kanji-quiz-drill-section .kanji-quiz-play-footer-btns .kanji-drill-footer-v {
       writing-mode: vertical-rl;
@@ -6486,7 +6560,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
             const hidNow = document.getElementById("kanji-play-input");
             if (hidNow) hidNow.value = val;
             submitKanjiQuizScore();
-          }, q.readingKind || "kun");
+          });
         } else {
           typingWrap.style.display = "none";
         }
@@ -7246,20 +7320,20 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         })
         .join("");
     }
-    function renderKanjiYomiRomajiKeyboard(containerId, targetInputId, onEnterSubmit, readingKind) {
+    function renderKanjiYomiRomajiKeyboard(containerId, targetInputId, onEnterSubmit) {
       const container = document.getElementById(containerId);
       if (!container) return;
       container.innerHTML = "";
       window.__kanjiYomiRomajiTail = "";
       const pairs = kanjiYomiEnsureRomajiTable();
       /**
-       * 入力スクリプトの現在状態。読みの種類（kun/on）が初期値。
-       * 「かな⇔カナ」ボタン押下のたびにトグルし、以降の確定文字もこちらに従う。
-       *   - "kun" → ひらがなで入力
-       *   - "on"  → カタカナで入力
+       * 入力スクリプトの現在状態。常に「ひらがな（kun）」で開始する。
+       * 訓読み／音読みに応じた自動的な誘導（kun→ひらがな・on→カタカナ）は意図的に行わない：
+       * 「どちらで答えるべきか」をユーザー自身が判断する学習機会を残すため、
+       * 必要なら「かな⇔カナ」ボタンで明示的に切替してもらう。
        * 読みの種類と一致しないまま「けってい」した場合は、採点側で半分点になる。
        */
-      let currentScriptKind = readingKind === "on" ? "on" : "kun";
+      let currentScriptKind = "kun";
       const scalePct = parseInt(getUserPref(LS_KBD_SCALE, "100"), 10);
       const fontPx = parseInt(getUserPref(LS_KBD_FONT, "18"), 10);
       const padPx = Math.max(8, Math.round(fontPx * 0.72));
@@ -7271,7 +7345,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       const hint = document.createElement("div");
       hint.style.cssText =
         "font-size:12px;color:#455a64;margin-bottom:6px;text-align:center;font-weight:700;";
-      hint.textContent = "ローマ字をタップすると、自動でひらがな・カタカナに変換されます（英語モードのキーボードとは別仕様）";
+      hint.textContent = "ローマ字 → ひらがな で入力されます。カタカナで答える場合は「かな⇔カナ」ボタンで切替を。";
       wrap.appendChild(hint);
       const tailHint = document.createElement("div");
       tailHint.style.cssText =
@@ -7363,9 +7437,15 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       const scriptBtn = document.createElement("button");
       scriptBtn.type = "button";
       scriptBtn.className = "key key-wide";
-      scriptBtn.style.fontSize = "calc(var(--vk-font-px,18px) * 0.9)";
+      /**
+       * --vk-font-px / --vk-pad-px は数値（px 単位なし）で渡る運用。
+       * フォールバックも単位なしに揃え、calc() で *1px して長さに変換する。
+       * （旧コードは "12px" を渡し、--vk-pad-px が設定済みのときに calc(数値*係数) が
+       *  単位なしになり padding が無効化される問題があった）
+       */
+      scriptBtn.style.fontSize = "calc(var(--vk-font-px, 16) * 1px * 0.9)";
       scriptBtn.style.lineHeight = "1.15";
-      scriptBtn.style.padding = "calc(var(--vk-pad-px,12px) * 0.7) 6px";
+      scriptBtn.style.padding = "calc(var(--vk-pad-px, 12) * 1px * 0.75) 6px";
       function refreshScriptBtnLabel() {
         if (currentScriptKind === "on") {
           scriptBtn.innerHTML = '<span style="font-size:0.85em;color:#fff;opacity:0.95;">いま:カナ</span><br>かな ⇔ カナ';
