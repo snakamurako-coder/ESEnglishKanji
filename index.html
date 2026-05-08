@@ -1290,6 +1290,17 @@
       text-decoration-thickness: 3px;
       text-underline-offset: 5px;
     }
+    .kanji-okurigana-vertical-wrap {
+      max-width: min(720px, 96vw);
+      margin: 0 auto;
+    }
+    .kanji-okurigana-vertical-wrap .kanji-yomi-sentence-block {
+      width: clamp(140px, 32vw, 280px);
+      min-height: clamp(220px, 48vh, 380px);
+      max-height: 60vh;
+      font-size: clamp(20px, 4vw, 28px);
+      margin: 0 auto;
+    }
     #kanji-play-yomi-input.kanji-yomi-type-input {
       width: 100%;
       box-sizing: border-box;
@@ -1304,14 +1315,27 @@
     }
     #kanji-play-yomi-input.kanji-yomi-type-input-vertical {
       writing-mode: vertical-rl;
+      -webkit-writing-mode: vertical-rl;
       text-orientation: upright;
+      -webkit-text-orientation: upright;
       min-height: min(52vh, 440px);
-      width: clamp(44px, 8vw, 64px);
+      width: clamp(56px, 9vw, 80px);
       max-width: 100%;
       padding: 14px 10px;
       text-align: start;
       letter-spacing: 0.12em;
       line-height: 1.65;
+      resize: none;
+      overflow-y: auto;
+      overflow-x: hidden;
+      white-space: pre-wrap;
+      word-break: break-all;
+      font-family: inherit;
+      display: block;
+    }
+    /* 旧 input 残置時の互換用 */
+    input#kanji-play-yomi-input.kanji-yomi-type-input-vertical {
+      white-space: nowrap;
     }
     #kanji-play-yomi-input.kanji-yomi-type-input:focus {
       outline: 2px solid #3949ab;
@@ -1661,7 +1685,7 @@
             <div class="kanji-yomi-vertical-stack">
               <div id="kanji-yomi-sentence-box"></div>
               <div id="kanji-yomi-type-root">
-                <input type="text" id="kanji-play-yomi-input" class="kanji-yomi-type-input kanji-yomi-type-input-vertical" inputmode="text" lang="ja" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="ローマ字→かな" readonly>
+                <textarea id="kanji-play-yomi-input" class="kanji-yomi-type-input kanji-yomi-type-input-vertical" inputmode="text" lang="ja" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="ローマ字→かな" readonly rows="1"></textarea>
               </div>
             </div>
           </div>
@@ -6010,6 +6034,24 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       const after = escapeHtml(s.slice(idx + k.length));
       return '<div class="kanji-yomi-sentence-block">' + before + mid + after + "</div>";
     }
+    /** おくりがな選択：例文中のターゲット語を読み（訓）に置き換えた文を縦書き表示。読み部分に下線。 */
+    function kanjiOkuriganaFormatSentenceBlockHtml(q) {
+      if (!q) return "";
+      const s = String(q.contextSentenceReading || "").trim();
+      if (!s) return "";
+      const reading = String(q.readingHint || "").trim();
+      if (!reading) {
+        return '<div class="kanji-yomi-sentence-block">' + escapeHtml(s) + "</div>";
+      }
+      const idx = s.indexOf(reading);
+      if (idx < 0) {
+        return '<div class="kanji-yomi-sentence-block">' + escapeHtml(s) + "</div>";
+      }
+      const before = escapeHtml(s.slice(0, idx));
+      const mid = '<span class="kanji-yomi-underline-target">' + escapeHtml(reading) + "</span>";
+      const after = escapeHtml(s.slice(idx + reading.length));
+      return '<div class="kanji-yomi-sentence-block">' + before + mid + after + "</div>";
+    }
     function kanjiYomiBindTypingInputOnce() {
       const el = document.getElementById("kanji-play-yomi-input");
       if (!el || el.dataset.kanjiYomiBound === "1") return;
@@ -6163,23 +6205,6 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
           charEl.style.marginLeft = "";
           charEl.style.marginRight = "";
           charEl.style.textAlign = "";
-          if (q.type === "okurigana_shift") {
-            const ctx = String(q.contextSentenceReading || "").trim();
-            if (ctx) {
-              charEl.innerText = ctx;
-              charEl.style.fontSize = "clamp(15px, 3.4vw, 22px)";
-              charEl.style.fontWeight = "700";
-              charEl.style.whiteSpace = "pre-wrap";
-              charEl.style.lineHeight = "1.55";
-              charEl.style.maxWidth = "min(920px, 96vw)";
-              charEl.style.marginLeft = "auto";
-              charEl.style.marginRight = "auto";
-              charEl.style.textAlign = "center";
-            } else {
-              charEl.style.fontSize = "";
-              charEl.style.fontWeight = "";
-            }
-          }
           if (q.type === "stroke_count") {
             charEl.style.fontSize = "clamp(72px,18vw,120px)";
           }
@@ -6292,8 +6317,15 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       }
       if (detail) {
         if (q.type === "okurigana_shift") {
-          detail.innerHTML =
-            '<div style="color:#333;font-size:clamp(14px,3.2vw,18px);line-height:1.55;">例のぶんでは、ターゲットの<strong>かんじ</strong>を<strong>よみがな（訓）</strong>に置きかえています（文のつながりがわかりやすくなります）。<strong>おくりがなのつながり</strong>としてもっともふさわしいひょうきをタップしてください。</div>';
+          var okuriDescHtml =
+            '<div style="color:#333;font-size:clamp(14px,3.2vw,18px);line-height:1.55;margin-bottom:10px;">例のぶんでは、ターゲットの<strong>かんじ</strong>を<strong>よみがな（訓）</strong>に置きかえています（文のつながりがわかりやすくなります）。<strong>おくりがなのつながり</strong>としてもっともふさわしいひょうきをタップしてください。</div>';
+          var okuriBoxHtml = kanjiOkuriganaFormatSentenceBlockHtml(q);
+          var okuriBoxWrap = okuriBoxHtml
+            ? '<div class="kanji-okurigana-vertical-wrap" style="display:flex;justify-content:center;align-items:flex-start;width:100%;margin:0 auto;">' +
+              okuriBoxHtml +
+              "</div>"
+            : "";
+          detail.innerHTML = okuriDescHtml + okuriBoxWrap;
         } else if (q.type === "ruby_to_kanji") {
           detail.innerHTML = "";
         } else if (q.type === "stroke_count") {
