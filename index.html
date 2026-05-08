@@ -607,6 +607,14 @@
       writing-mode: horizontal-tb;
       text-orientation: mixed;
     }
+    /* 上記 * セレクタが縦書き表示を潰すため、例文ブロックとタイピング欄だけ縦書きを復元する */
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-drill-section #kanji-play-typing-wrap .kanji-yomi-sentence-block,
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-drill-section #kanji-play-typing-wrap textarea.kanji-yomi-type-input-vertical {
+      writing-mode: vertical-rl !important;
+      -webkit-writing-mode: vertical-rl !important;
+      text-orientation: upright !important;
+      -webkit-text-orientation: upright !important;
+    }
     /* 手書きブロックは物理的に「前文 → キャンバス → 後文」の縦積み（子は横書き） */
     body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-drill-section #kanji-quiz-drill-handwriting {
       writing-mode: horizontal-tb !important;
@@ -1685,7 +1693,7 @@
             <div class="kanji-yomi-vertical-stack">
               <div id="kanji-yomi-sentence-box"></div>
               <div id="kanji-yomi-type-root">
-                <textarea id="kanji-play-yomi-input" class="kanji-yomi-type-input kanji-yomi-type-input-vertical" inputmode="text" lang="ja" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="ローマ字→かな" readonly rows="1"></textarea>
+                <textarea id="kanji-play-yomi-input" class="kanji-yomi-type-input kanji-yomi-type-input-vertical" inputmode="none" lang="ja" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="ローマ字→かな" rows="1"></textarea>
               </div>
             </div>
           </div>
@@ -6037,7 +6045,27 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
     /** おくりがな選択：例文中のターゲット語を読み（訓）に置き換えた文を縦書き表示。読み部分に下線。 */
     function kanjiOkuriganaFormatSentenceBlockHtml(q) {
       if (!q) return "";
-      const s = String(q.contextSentenceReading || "").trim();
+      let s = String(q.contextSentenceReading || "").trim();
+      if (!s && q.exampleSentenceRaw && q.kanji && q.readingHint) {
+        const raw = String(q.exampleSentenceRaw || "");
+        const k = String(q.kanji || "");
+        const rd = String(q.readingHint || "").trim();
+        const surf = String(q.correctAnswer || "").trim();
+        if (raw && rd && k) {
+          if (surf && raw.indexOf(surf) >= 0) {
+            const p = raw.indexOf(surf);
+            s = raw.slice(0, p) + rd + raw.slice(p + surf.length);
+          } else if (raw.indexOf(k) >= 0) {
+            const idx = raw.indexOf(k);
+            var tailStart = idx + k.length;
+            if (surf && surf.length > k.length && surf.indexOf(k) === 0) {
+              var okuri = surf.slice(k.length);
+              if (okuri && raw.slice(tailStart).startsWith(okuri)) tailStart += okuri.length;
+            }
+            s = raw.slice(0, idx) + rd + raw.slice(tailStart);
+          }
+        }
+      }
       if (!s) return "";
       const reading = String(q.readingHint || "").trim();
       if (!reading) {
@@ -6056,6 +6084,23 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       const el = document.getElementById("kanji-play-yomi-input");
       if (!el || el.dataset.kanjiYomiBound === "1") return;
       el.dataset.kanjiYomiBound = "1";
+      /**
+       * readonly は仕様上スクリプトによる value 代入を禁止しないが、誤解や環境差を避けるため使わない。
+       * 画面キーボード経由の入力だけを想定し、直接入力・ペースト・IME はブロックする。
+       */
+      function blockDirectEdit(ev) {
+        ev.preventDefault();
+      }
+      el.addEventListener("keydown", function (ev) {
+        if (ev.key === "Tab" || ev.key === "Escape") return;
+        blockDirectEdit(ev);
+      });
+      el.addEventListener("paste", blockDirectEdit);
+      el.addEventListener("drop", blockDirectEdit);
+      el.addEventListener("cut", blockDirectEdit);
+      el.addEventListener("beforeinput", function (ev) {
+        if (ev.isTrusted) ev.preventDefault();
+      });
       el.addEventListener("input", function () {
         const v = el.value;
         try {
