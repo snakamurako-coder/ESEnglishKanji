@@ -1302,35 +1302,48 @@ function maskKanjiInExampleOnce_(sentence, kanjiCol) {
 }
 
 /**
- * 訓読みの末尾に紛れ込んだ助詞「を」を除去する。
- *   - 「を」は訓読みの一部にならないため、安全に切り落とせる。
- *   - 「は／が／に／へ／で」は実際の訓読み末尾（例：「出る」ので等）に現れるので除去しない。
+ * 訓読みから格助詞「を」を取り除く（送り仮名選択肢に「を」が紛れ込むのを防ぐ）。
+ *   - 末尾の「を」は安全に切り落とせる（「を」は訓読みの一部にならない）。
+ *   - 末尾以外に「を」が混在している reading は破損データとみなし、空文字を返して呼び出し側に
+ *     その reading を使わせない（ダミープール／本問のいずれにも採用させない）。
+ *   - 「は／が／に／へ／で」は実際の訓読み末尾（例：「出る」の「で」等）に現れるため除去しない。
  */
 function stripJoshiTailFromReading_(reading) {
   var s = String(reading || "");
   if (s.length > 1 && s.slice(-1) === "を") {
-    return s.slice(0, -1);
+    s = s.slice(0, -1);
   }
+  if (s.indexOf("を") >= 0) return "";
   return s;
+}
+
+/** 候補文字列に「を」が含まれていれば true（送り仮名候補としては不正）。 */
+function okuriganaCandidateHasWo_(cand) {
+  return String(cand || "").indexOf("を") >= 0;
 }
 
 /**
  * 例文中の「正解の表層形（漢字＋送り仮名）」を選択肢候補に置き換えた表示用文字列を返す。
  *   例: example="音がなる", kanji="音", surfaceCorrect="音", candidate="音と"
  *       → "音とがなる"
- *   候補が "漢字のみ" の場合（送り仮名なしのケース）は、surfaceCorrect が "漢字" のままで一致する。
+ *
+ * 例文内に surfaceCorrect が無い場合は、漢字単独で無理に置換すると例えば
+ *   example="上を見る", kanji="上", surfaceCorrect="上がる", candidate="上と"
+ * のとき "上とを見る" のような不自然な文を生むため、置換せず候補そのもの（cand）を返す。
+ * 呼び出し側（buildOkuriganaShiftQuizQuestion_）は surfaceCorrect を含む例文だけを採用するため
+ * 通常はこのフォールバックには到達しないが、汚染データに対する防御として残している。
  */
 function renderOkuriganaChoiceInExample_(example, kanji, surfaceCorrect, candidate) {
   var ex = String(example || "");
   var cand = String(candidate || "");
   if (!ex) return cand;
-  var surf = String(surfaceCorrect || kanji || "");
+  var k = String(kanji || "");
+  var surf = String(surfaceCorrect || k || "");
   if (surf && ex.indexOf(surf) >= 0) {
     var p = ex.indexOf(surf);
     return ex.slice(0, p) + cand + ex.slice(p + surf.length);
   }
-  var k = String(kanji || "");
-  if (k && ex.indexOf(k) >= 0) {
+  if (k && (!surf || surf.length === k.length) && ex.indexOf(k) >= 0) {
     var p2 = ex.indexOf(k);
     return ex.slice(0, p2) + cand + ex.slice(p2 + k.length);
   }
@@ -1339,8 +1352,17 @@ function renderOkuriganaChoiceInExample_(example, kanji, surfaceCorrect, candida
 
 /**
  * 例文中のターゲット語をよみがなに置き換え（訓読み提示用）。
- * 漢字のみ差し替えると「持」→「もつ」かつ後続の「つ」が残り「もつつ」になるため、
- * surfaceForm（漢字＋送り仮名の表層形＝正解のかたち）が渡されたときはその全体を reading で置換する。
+ *
+ * 想定する surfaceForm の取り扱い：
+ *   - surfaceForm 未指定 or surfaceForm == kanji（送り仮名なしの読み）→ 漢字 1 文字を reading に置換
+ *   - surfaceForm が漢字＋送り仮名の場合 →
+ *       (a) 例文中に surfaceForm そのものがあればその範囲を reading に置換（「持つ」→「もつ」）
+ *       (b) 例文には漢字しかないが、続く文字が surfaceForm の送り仮名と一致 → 同上
+ *       (c) いずれでもない（例文の漢字が別用法・別語幹で使われている） → 「""」を返す
+ *
+ * (c) を返すのは、例えば surfaceForm="上がる" で例文 "上を見る" のような場合。
+ * 旧実装は漢字だけを reading に差し替えて "あがるを見る" のような壊れた文を出していた。
+ * このようなケースは呼び出し側でフォールバック（原文表示や別例文採用）に任せる。
  */
 function replaceKanjiWithReadingInExample_(sentence, kanjiCol, readingText, surfaceForm) {
   const s = String(sentence || "");
@@ -1354,17 +1376,16 @@ function replaceKanjiWithReadingInExample_(sentence, kanjiCol, readingText, surf
   }
   const idx = s.indexOf(k);
   if (idx < 0) return "";
-  if (surf && surf.length > k.length && s.slice(idx).startsWith(surf)) {
-    return s.slice(0, idx) + rd + s.slice(idx + surf.length);
+  if (!surf || surf.length === k.length) {
+    return s.slice(0, idx) + rd + s.slice(idx + k.length);
   }
-  var tailStart = idx + k.length;
-  if (surf && surf.length > k.length && surf.indexOf(k) === 0) {
+  if (surf.indexOf(k) === 0) {
     var okuri = surf.slice(k.length);
-    if (okuri && s.slice(tailStart).startsWith(okuri)) {
-      tailStart += okuri.length;
+    if (okuri && s.slice(idx + k.length).startsWith(okuri)) {
+      return s.slice(0, idx) + rd + s.slice(idx + k.length + okuri.length);
     }
   }
-  return s.slice(0, idx) + rd + s.slice(tailStart);
+  return "";
 }
 
 /**
@@ -1383,6 +1404,7 @@ function collectOkuriganaDummyPoolByKanjiKanjiQuiz_(items) {
       if (r.kind !== "kun") return;
       const reading = stripJoshiTailFromReading_(String(r.reading || ""));
       if (reading.length < 2) return;
+      if (okuriganaCandidateHasWo_(reading)) return;
       let bestSplitPos = 1;
       for (let s = 1; s <= reading.length; s++) {
         const cand = k + reading.substring(s);
@@ -1392,9 +1414,10 @@ function collectOkuriganaDummyPoolByKanjiKanjiQuiz_(items) {
         }
       }
       const correct = k + reading.substring(bestSplitPos);
+      if (okuriganaCandidateHasWo_(correct)) return;
       for (let splitPos = 1; splitPos <= reading.length; splitPos++) {
         const cand = k + reading.substring(splitPos);
-        if (cand !== correct) poolMap[k].push(cand);
+        if (cand !== correct && !okuriganaCandidateHasWo_(cand)) poolMap[k].push(cand);
       }
     });
   });
@@ -1405,7 +1428,8 @@ function buildOkuriganaShiftQuizQuestion_(item, dummyPoolByKanji) {
   const k = String(item.kanji || "");
   if (k.length !== 1) return null;
   const readings = (Array.isArray(item.readings) ? item.readings : []).filter(function (r) {
-    return r.kind === "kun" && stripJoshiTailFromReading_(String(r.reading || "")).length >= 2;
+    var rd = stripJoshiTailFromReading_(String(r.reading || ""));
+    return r.kind === "kun" && rd.length >= 2 && !okuriganaCandidateHasWo_(rd);
   });
   if (!readings.length) return null;
   const r = readings[Math.floor(Math.random() * readings.length)];
@@ -1419,14 +1443,15 @@ function buildOkuriganaShiftQuizQuestion_(item, dummyPoolByKanji) {
     }
   }
   const correct = k + reading.substring(bestSplitPos);
+  if (okuriganaCandidateHasWo_(correct)) return null;
   const wrongSet = {};
   const sameKanjiPool = (dummyPoolByKanji && dummyPoolByKanji[k]) || [];
   sameKanjiPool.forEach(function (d) {
-    if (d && d !== correct) wrongSet[d] = true;
+    if (d && d !== correct && !okuriganaCandidateHasWo_(d)) wrongSet[d] = true;
   });
   for (let splitPos = 1; splitPos <= reading.length; splitPos++) {
     const cand = k + reading.substring(splitPos);
-    if (cand !== correct) wrongSet[cand] = true;
+    if (cand !== correct && !okuriganaCandidateHasWo_(cand)) wrongSet[cand] = true;
   }
   const wrongList = shuffleKanjiQuizArray_(Object.keys(wrongSet));
   const picks = wrongList.slice(0, 3);
@@ -1441,6 +1466,13 @@ function buildOkuriganaShiftQuizQuestion_(item, dummyPoolByKanji) {
   });
   if (uniq.length < 2) return null;
   const examples = Array.isArray(r.examples) ? r.examples : [];
+  /**
+   * 例文選定は「正解の表層形（correct = 漢字＋送り仮名）を含む例文」だけに限定する。
+   * 旧実装は correct が見つからないとき漢字単独でもフォールバックしていたが、
+   * 例えば correct="上がる" で例文 "上を見る"（「上」が名詞用法）のように
+   * 別用法で漢字を使った文が拾われ、置換結果が崩壊する問題があったため廃止。
+   * 該当例文がなければ contextExample を空のまま返し、設問は漢字一文字＋選択肢のみで構成する。
+   */
   var contextExample = "";
   for (var ei = 0; ei < examples.length; ei++) {
     var exTry = String(examples[ei] || "");
@@ -1449,18 +1481,10 @@ function buildOkuriganaShiftQuizQuestion_(item, dummyPoolByKanji) {
       break;
     }
   }
-  if (!contextExample) {
-    for (var ej = 0; ej < examples.length; ej++) {
-      var exTry2 = String(examples[ej] || "");
-      if (exTry2.indexOf(k) >= 0) {
-        contextExample = exTry2;
-        break;
-      }
-    }
-  }
   var contextSentenceReading = contextExample
     ? replaceKanjiWithReadingInExample_(contextExample, k, reading, correct)
     : "";
+  if (!contextSentenceReading) contextExample = "";
   var choicesDisplayMap = {};
   if (contextExample) {
     uniq.forEach(function (c) {
@@ -1540,13 +1564,10 @@ function buildSentenceToRubyQuizQuestion_(item) {
     rowIndex: item.rowIndex,
     readingKind: pick.r.kind,
     readingLabel: pick.r.label,
-    /** 設問表示は原文＋下線（フロント）。互換のため伏字も残す */
+    /** 設問表示は原文＋赤字強調（フロント）。互換のため伏字も残す */
     fullExample: pick.ex,
     sentence: masked.masked,
-    prompt:
-      "ローマ字キーボードで入力すると、自動でかなに変換されます。" +
-      hintOn +
-      " 例のぶんでは、該当かんじに下線がついています。",
+    prompt: "赤字のかんじの よみを 入力しましょう。" + hintOn,
     correctAnswer: ans,
     searchText: searchParts
   };
