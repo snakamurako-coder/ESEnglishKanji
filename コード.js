@@ -1302,6 +1302,42 @@ function maskKanjiInExampleOnce_(sentence, kanjiCol) {
 }
 
 /**
+ * 訓読みの末尾に紛れ込んだ助詞「を」を除去する。
+ *   - 「を」は訓読みの一部にならないため、安全に切り落とせる。
+ *   - 「は／が／に／へ／で」は実際の訓読み末尾（例：「出る」ので等）に現れるので除去しない。
+ */
+function stripJoshiTailFromReading_(reading) {
+  var s = String(reading || "");
+  if (s.length > 1 && s.slice(-1) === "を") {
+    return s.slice(0, -1);
+  }
+  return s;
+}
+
+/**
+ * 例文中の「正解の表層形（漢字＋送り仮名）」を選択肢候補に置き換えた表示用文字列を返す。
+ *   例: example="音がなる", kanji="音", surfaceCorrect="音", candidate="音と"
+ *       → "音とがなる"
+ *   候補が "漢字のみ" の場合（送り仮名なしのケース）は、surfaceCorrect が "漢字" のままで一致する。
+ */
+function renderOkuriganaChoiceInExample_(example, kanji, surfaceCorrect, candidate) {
+  var ex = String(example || "");
+  var cand = String(candidate || "");
+  if (!ex) return cand;
+  var surf = String(surfaceCorrect || kanji || "");
+  if (surf && ex.indexOf(surf) >= 0) {
+    var p = ex.indexOf(surf);
+    return ex.slice(0, p) + cand + ex.slice(p + surf.length);
+  }
+  var k = String(kanji || "");
+  if (k && ex.indexOf(k) >= 0) {
+    var p2 = ex.indexOf(k);
+    return ex.slice(0, p2) + cand + ex.slice(p2 + k.length);
+  }
+  return cand;
+}
+
+/**
  * 例文中のターゲット語をよみがなに置き換え（訓読み提示用）。
  * 漢字のみ差し替えると「持」→「もつ」かつ後続の「つ」が残り「もつつ」になるため、
  * surfaceForm（漢字＋送り仮名の表層形＝正解のかたち）が渡されたときはその全体を reading で置換する。
@@ -1345,7 +1381,7 @@ function collectOkuriganaDummyPoolByKanjiKanjiQuiz_(items) {
     const readings = Array.isArray(item.readings) ? item.readings : [];
     readings.forEach(function (r) {
       if (r.kind !== "kun") return;
-      const reading = String(r.reading || "");
+      const reading = stripJoshiTailFromReading_(String(r.reading || ""));
       if (reading.length < 2) return;
       let bestSplitPos = 1;
       for (let s = 1; s <= reading.length; s++) {
@@ -1369,11 +1405,11 @@ function buildOkuriganaShiftQuizQuestion_(item, dummyPoolByKanji) {
   const k = String(item.kanji || "");
   if (k.length !== 1) return null;
   const readings = (Array.isArray(item.readings) ? item.readings : []).filter(function (r) {
-    return r.kind === "kun" && String(r.reading || "").length >= 2;
+    return r.kind === "kun" && stripJoshiTailFromReading_(String(r.reading || "")).length >= 2;
   });
   if (!readings.length) return null;
   const r = readings[Math.floor(Math.random() * readings.length)];
-  const reading = String(r.reading || "");
+  const reading = stripJoshiTailFromReading_(String(r.reading || ""));
   let bestSplitPos = 1;
   for (let s = 1; s <= reading.length; s++) {
     const cand = k + reading.substring(s);
@@ -1425,6 +1461,12 @@ function buildOkuriganaShiftQuizQuestion_(item, dummyPoolByKanji) {
   var contextSentenceReading = contextExample
     ? replaceKanjiWithReadingInExample_(contextExample, k, reading, correct)
     : "";
+  var choicesDisplayMap = {};
+  if (contextExample) {
+    uniq.forEach(function (c) {
+      choicesDisplayMap[c] = renderOkuriganaChoiceInExample_(contextExample, k, correct, c);
+    });
+  }
   const searchParts = [k, reading, r.label, contextSentenceReading, contextExample].concat(uniq).join(" ");
   return {
     type: "okurigana_shift",
@@ -1435,8 +1477,8 @@ function buildOkuriganaShiftQuizQuestion_(item, dummyPoolByKanji) {
     readingHint: reading,
     exampleSentenceRaw: contextExample,
     contextSentenceReading: contextSentenceReading,
-    prompt:
-      "例のぶんでは、ターゲットのかんじをつながるよみがな（訓）に置きかえてあります。おくりがなのつながりとして正しいひょうきを選びましょう。",
+    choicesDisplayMap: choicesDisplayMap,
+    prompt: "正しい送り仮名を選びましょう。",
     choices: uniq,
     correctAnswer: correct,
     searchText: searchParts
