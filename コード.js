@@ -1301,15 +1301,34 @@ function maskKanjiInExampleOnce_(sentence, kanjiCol) {
   return { ok: true, masked: s.slice(0, idx) + "＿" + s.slice(idx + k.length) };
 }
 
-/** 例文中の最初の kanji をよみがな文字列に置き換え（訓読み提示用） */
-function replaceKanjiWithReadingInExample_(sentence, kanjiCol, readingText) {
+/**
+ * 例文中のターゲット語をよみがなに置き換え（訓読み提示用）。
+ * 漢字のみ差し替えると「持」→「もつ」かつ後続の「つ」が残り「もつつ」になるため、
+ * surfaceForm（漢字＋送り仮名の表層形＝正解のかたち）が渡されたときはその全体を reading で置換する。
+ */
+function replaceKanjiWithReadingInExample_(sentence, kanjiCol, readingText, surfaceForm) {
   const s = String(sentence || "");
   const k = String(kanjiCol || "");
   const rd = String(readingText || "");
+  const surf = surfaceForm != null ? String(surfaceForm) : "";
   if (!s || !k || !rd) return "";
+  if (surf && surf.length > k.length && s.indexOf(surf) >= 0) {
+    const p = s.indexOf(surf);
+    return s.slice(0, p) + rd + s.slice(p + surf.length);
+  }
   const idx = s.indexOf(k);
   if (idx < 0) return "";
-  return s.slice(0, idx) + rd + s.slice(idx + k.length);
+  if (surf && surf.length > k.length && s.slice(idx).startsWith(surf)) {
+    return s.slice(0, idx) + rd + s.slice(idx + surf.length);
+  }
+  var tailStart = idx + k.length;
+  if (surf && surf.length > k.length && surf.indexOf(k) === 0) {
+    var okuri = surf.slice(k.length);
+    if (okuri && s.slice(tailStart).startsWith(okuri)) {
+      tailStart += okuri.length;
+    }
+  }
+  return s.slice(0, idx) + rd + s.slice(tailStart);
 }
 
 /**
@@ -1403,7 +1422,9 @@ function buildOkuriganaShiftQuizQuestion_(item, dummyPoolByKanji) {
       }
     }
   }
-  var contextSentenceReading = contextExample ? replaceKanjiWithReadingInExample_(contextExample, k, reading) : "";
+  var contextSentenceReading = contextExample
+    ? replaceKanjiWithReadingInExample_(contextExample, k, reading, correct)
+    : "";
   const searchParts = [k, reading, r.label, contextSentenceReading, contextExample].concat(uniq).join(" ");
   return {
     type: "okurigana_shift",
