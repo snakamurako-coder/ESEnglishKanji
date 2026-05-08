@@ -1301,6 +1301,17 @@ function maskKanjiInExampleOnce_(sentence, kanjiCol) {
   return { ok: true, masked: s.slice(0, idx) + "＿" + s.slice(idx + k.length) };
 }
 
+/** 例文中の最初の kanji をよみがな文字列に置き換え（訓読み提示用） */
+function replaceKanjiWithReadingInExample_(sentence, kanjiCol, readingText) {
+  const s = String(sentence || "");
+  const k = String(kanjiCol || "");
+  const rd = String(readingText || "");
+  if (!s || !k || !rd) return "";
+  const idx = s.indexOf(k);
+  if (idx < 0) return "";
+  return s.slice(0, idx) + rd + s.slice(idx + k.length);
+}
+
 /**
  * 送り仮名ダミー候補プール（漢字ごと）。
  * 問題の漢字と同じ漢字からのみダミーを出し、他漢字の混入を防ぐ。
@@ -1374,7 +1385,26 @@ function buildOkuriganaShiftQuizQuestion_(item, dummyPoolByKanji) {
     }
   });
   if (uniq.length < 2) return null;
-  const searchParts = [k, reading, r.label].concat(uniq).join(" ");
+  const examples = Array.isArray(r.examples) ? r.examples : [];
+  var contextExample = "";
+  for (var ei = 0; ei < examples.length; ei++) {
+    var exTry = String(examples[ei] || "");
+    if (exTry.indexOf(correct) >= 0) {
+      contextExample = exTry;
+      break;
+    }
+  }
+  if (!contextExample) {
+    for (var ej = 0; ej < examples.length; ej++) {
+      var exTry2 = String(examples[ej] || "");
+      if (exTry2.indexOf(k) >= 0) {
+        contextExample = exTry2;
+        break;
+      }
+    }
+  }
+  var contextSentenceReading = contextExample ? replaceKanjiWithReadingInExample_(contextExample, k, reading) : "";
+  const searchParts = [k, reading, r.label, contextSentenceReading, contextExample].concat(uniq).join(" ");
   return {
     type: "okurigana_shift",
     kanji: k,
@@ -1382,7 +1412,10 @@ function buildOkuriganaShiftQuizQuestion_(item, dummyPoolByKanji) {
     readingLabel: r.label,
     readingKind: "kun",
     readingHint: reading,
-    prompt: "訓読みのつながりとして正しい表記を選びましょう。",
+    exampleSentenceRaw: contextExample,
+    contextSentenceReading: contextSentenceReading,
+    prompt:
+      "例のぶんでは、ターゲットのかんじをつながるよみがな（訓）に置きかえてあります。おくりがなのつながりとして正しいひょうきを選びましょう。",
     choices: uniq,
     correctAnswer: correct,
     searchText: searchParts
@@ -1444,8 +1477,13 @@ function buildSentenceToRubyQuizQuestion_(item) {
     rowIndex: item.rowIndex,
     readingKind: pick.r.kind,
     readingLabel: pick.r.label,
+    /** 設問表示は原文＋下線（フロント）。互換のため伏字も残す */
+    fullExample: pick.ex,
     sentence: masked.masked,
-    prompt: "空欄に当てはまる読みを、タイピングで入力しましょう。" + hintOn,
+    prompt:
+      "ローマ字キーボードで入力すると、自動でかなに変換されます。" +
+      hintOn +
+      " 例のぶんでは、該当かんじに下線がついています。",
     correctAnswer: ans,
     searchText: searchParts
   };

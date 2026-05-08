@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
@@ -1226,12 +1226,35 @@
       max-width: 620px;
     }
     .kanji-yomi-question-col {
-      flex: 0 0 clamp(180px, 24vw, 260px);
+      flex: 1 1 auto;
       display: flex;
       flex-direction: column;
       align-items: stretch;
       gap: 10px;
-      min-width: 160px;
+      min-width: 0;
+      max-width: min(980px, 98vw);
+    }
+    .kanji-yomi-vertical-stack {
+      display: flex;
+      flex-direction: row;
+      align-items: stretch;
+      justify-content: center;
+      gap: 14px;
+      width: 100%;
+      min-height: min(62vh, 520px);
+      box-sizing: border-box;
+    }
+    .kanji-yomi-vertical-stack > #kanji-yomi-sentence-box,
+    .kanji-yomi-vertical-stack > #kanji-yomi-type-root {
+      flex: 1 1 calc(50% - 8px);
+      min-width: 0;
+      max-width: calc(50% - 8px);
+      display: flex;
+      align-items: stretch;
+      justify-content: center;
+    }
+    .kanji-yomi-vertical-stack #kanji-yomi-type-root {
+      padding: 4px 0;
     }
     .kanji-yomi-sentence-block {
       margin: 0;
@@ -1252,12 +1275,20 @@
       border-radius: 10px;
       box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
       box-sizing: border-box;
+      width: 100%;
     }
     .kanji-yomi-sentence-block .kanji-yomi-target-char {
       color: #c62828;
       font-weight: 900;
       text-decoration: underline;
       text-underline-offset: 4px;
+    }
+    .kanji-yomi-sentence-block .kanji-yomi-underline-target {
+      color: #141820;
+      font-weight: 900;
+      text-decoration: underline;
+      text-decoration-thickness: 3px;
+      text-underline-offset: 5px;
     }
     #kanji-play-yomi-input.kanji-yomi-type-input {
       width: 100%;
@@ -1270,6 +1301,17 @@
       background: #fff;
       color: #111;
       font-weight: 800;
+    }
+    #kanji-play-yomi-input.kanji-yomi-type-input-vertical {
+      writing-mode: vertical-rl;
+      text-orientation: upright;
+      min-height: min(52vh, 440px);
+      width: clamp(44px, 8vw, 64px);
+      max-width: 100%;
+      padding: 14px 10px;
+      text-align: start;
+      letter-spacing: 0.12em;
+      line-height: 1.65;
     }
     #kanji-play-yomi-input.kanji-yomi-type-input:focus {
       outline: 2px solid #3949ab;
@@ -1289,6 +1331,22 @@
       }
       .kanji-yomi-sentence-block {
         min-height: 180px;
+      }
+      .kanji-yomi-vertical-stack {
+        flex-direction: column;
+        align-items: center;
+        min-height: auto;
+      }
+      .kanji-yomi-vertical-stack > #kanji-yomi-sentence-box,
+      .kanji-yomi-vertical-stack > #kanji-yomi-type-root {
+        flex: 1 1 auto;
+        max-width: 100%;
+        width: 100%;
+      }
+      #kanji-play-yomi-input.kanji-yomi-type-input-vertical {
+        min-height: 220px;
+        width: 100%;
+        max-width: min(92vw, 520px);
       }
     }
     #section-kanji-quiz-play.kanji-quiz-drill-section .kanji-quiz-play-footer-btns .kanji-drill-footer-v {
@@ -1600,9 +1658,11 @@
             <div id="kanji-yomi-keyboard-container"></div>
           </div>
           <div class="kanji-yomi-question-col">
-            <div id="kanji-yomi-sentence-box"></div>
-            <div id="kanji-yomi-type-root" style="width:100%;box-sizing:border-box;">
-              <input type="text" id="kanji-play-yomi-input" class="kanji-yomi-type-input" inputmode="text" lang="ja" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="ひらがな／カタカナで入力" readonly>
+            <div class="kanji-yomi-vertical-stack">
+              <div id="kanji-yomi-sentence-box"></div>
+              <div id="kanji-yomi-type-root">
+                <input type="text" id="kanji-play-yomi-input" class="kanji-yomi-type-input kanji-yomi-type-input-vertical" inputmode="text" lang="ja" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="ローマ字→かな" readonly>
+              </div>
             </div>
           </div>
         </div>
@@ -5925,27 +5985,28 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         return String(str || "").trim();
       }
     }
-    /** れいぶん→よみ：伏字にせず原文の漢字をそのまま表示。対象字のみ赤で強調。 */
+    /** れいぶん→よみ：原文を縦書きで表示し、対象かんじに下線（伏字ではなく漢字をそのまま）。 */
     function kanjiYomiFormatSentenceBlockHtml(q) {
       if (!q) return "";
-      let s = String(q.sentence || "");
+      let s = String(q.fullExample || "");
       const k = String(q.kanji || "");
-      if (!s && q.maskedSentence && k) {
-        const ms = String(q.maskedSentence);
-        const i = ms.search(/[〼＿_]/);
-        if (i >= 0) {
-          s = ms.slice(0, i) + k + ms.slice(i + 1).replace(/^[〼＿_]+/, "");
-        } else {
-          s = ms;
+      if (!s && k) {
+        const base = String(q.sentence || "");
+        if (base && /[〼＿_]/.test(base)) {
+          const i = base.search(/[〼＿_]/);
+          if (i >= 0) {
+            s = base.slice(0, i) + k + base.slice(i + 1).replace(/^[〼＿_]+/, "");
+          }
         }
       }
+      if (!s) s = String(q.sentence || "");
       if (!s) return "";
       const idx = k && s.indexOf(k) >= 0 ? s.indexOf(k) : -1;
       if (idx < 0) {
         return '<div class="kanji-yomi-sentence-block">' + escapeHtml(s) + "</div>";
       }
       const before = escapeHtml(s.slice(0, idx));
-      const mid = '<span class="kanji-yomi-target-char">' + escapeHtml(k) + "</span>";
+      const mid = '<span class="kanji-yomi-underline-target">' + escapeHtml(k) + "</span>";
       const after = escapeHtml(s.slice(idx + k.length));
       return '<div class="kanji-yomi-sentence-block">' + before + mid + after + "</div>";
     }
@@ -6027,6 +6088,9 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       try {
         if (kanjiQuizSession) kanjiQuizSession.sentenceYomiRecognized = "";
       } catch (eY2) {}
+      try {
+        window.__kanjiYomiRomajiTail = "";
+      } catch (eRm) {}
       const subBtn = document.getElementById("kanji-play-submit-btn");
       if (subBtn) subBtn.style.display = "none";
       const summary = document.getElementById("kanji-play-summary");
@@ -6093,6 +6157,29 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         charEl.style.color = "";
         if (q.type === "okurigana_shift" || q.type === "stroke_count") {
           charEl.innerText = q.kanji || "？";
+          charEl.style.whiteSpace = "";
+          charEl.style.lineHeight = "";
+          charEl.style.maxWidth = "";
+          charEl.style.marginLeft = "";
+          charEl.style.marginRight = "";
+          charEl.style.textAlign = "";
+          if (q.type === "okurigana_shift") {
+            const ctx = String(q.contextSentenceReading || "").trim();
+            if (ctx) {
+              charEl.innerText = ctx;
+              charEl.style.fontSize = "clamp(15px, 3.4vw, 22px)";
+              charEl.style.fontWeight = "700";
+              charEl.style.whiteSpace = "pre-wrap";
+              charEl.style.lineHeight = "1.55";
+              charEl.style.maxWidth = "min(920px, 96vw)";
+              charEl.style.marginLeft = "auto";
+              charEl.style.marginRight = "auto";
+              charEl.style.textAlign = "center";
+            } else {
+              charEl.style.fontSize = "";
+              charEl.style.fontWeight = "";
+            }
+          }
           if (q.type === "stroke_count") {
             charEl.style.fontSize = "clamp(72px,18vw,120px)";
           }
@@ -6100,11 +6187,8 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
           charEl.innerText = "";
           charEl.style.display = "none";
         } else if (q.type === "sentence_to_ruby") {
-          charEl.style.display = "";
-          charEl.style.fontSize = "clamp(20px, 4.5vw, 30px)";
-          charEl.style.fontWeight = "800";
-          charEl.style.color = "#c62828";
-          charEl.innerText = q.kanji ? "「" + q.kanji + "」の よみ" : q.readingLabel ? String(q.readingLabel) : "このかんじの よみ";
+          charEl.innerText = "";
+          charEl.style.display = "none";
         } else {
           charEl.innerText = "かな";
         }
@@ -6208,8 +6292,8 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       }
       if (detail) {
         if (q.type === "okurigana_shift") {
-          detail.innerHTML = `<div style="color:#333;font-size:clamp(16px,3.5vw,22px);line-height:1.55;"><strong>上</strong>に おいた かんじについて、<strong>おくりがなのつながり</strong>として もっとも ふさわしい ひょうきを、<strong>タップ</strong>して えらんでください。</div>
-            <div style="margin-top:10px;font-size:clamp(14px,3.2vw,18px);color:#555;">※ まるごとの よみは だしていません。<strong>かたち</strong>だけを みて えらびましょう。</div>`;
+          detail.innerHTML =
+            '<div style="color:#333;font-size:clamp(14px,3.2vw,18px);line-height:1.55;">例のぶんでは、ターゲットの<strong>かんじ</strong>を<strong>よみがな（訓）</strong>に置きかえています（文のつながりがわかりやすくなります）。<strong>おくりがなのつながり</strong>としてもっともふさわしいひょうきをタップしてください。</div>';
         } else if (q.type === "ruby_to_kanji") {
           detail.innerHTML = "";
         } else if (q.type === "stroke_count") {
@@ -6258,7 +6342,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
           if (yomiInp) yomiInp.value = "";
           const sentenceBox = document.getElementById("kanji-yomi-sentence-box");
           if (sentenceBox) sentenceBox.innerHTML = kanjiYomiFormatSentenceBlockHtml(q);
-          renderCustomKeyboard(false, false, "kanji-yomi-keyboard-container", "kanji-play-yomi-input", function () {
+          renderKanjiYomiRomajiKeyboard("kanji-yomi-keyboard-container", "kanji-play-yomi-input", function () {
             if (!kanjiQuizSession) return;
             const yomiInputNow = document.getElementById("kanji-play-yomi-input");
             const val = yomiInputNow ? String(yomiInputNow.value || "") : "";
@@ -6266,7 +6350,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
             const hidNow = document.getElementById("kanji-play-input");
             if (hidNow) hidNow.value = val;
             submitKanjiQuizScore();
-          });
+          }, q.readingKind || "kun");
         } else {
           typingWrap.style.display = "none";
         }
@@ -6835,6 +6919,264 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         ansTypeEl.value = normalized;
       }
       return String(ansTypeEl.value || "").trim();
+    }
+
+    function kanjiYomiHiraganaToAnswerScript(hira, readingKind) {
+      if (readingKind === "on") {
+        return Array.from(String(hira || ""))
+          .map(function (ch) {
+            const c = ch.codePointAt(0);
+            if (c >= 0x3041 && c <= 0x3096) return String.fromCodePoint(c + 0x60);
+            return ch;
+          })
+          .join("");
+      }
+      return String(hira || "");
+    }
+    function kanjiYomiEnsureRomajiTable() {
+      if (window.__kanjiYomiRomajiPairs) return window.__kanjiYomiRomajiPairs;
+      const M = {};
+      const V = ["a", "i", "u", "e", "o"];
+      const VA = ["あ", "い", "う", "え", "お"];
+      V.forEach(function (v, i) {
+        M[v] = VA[i];
+      });
+      function row(prefix, chars) {
+        const arr = chars.split("");
+        V.forEach(function (v, i) {
+          if (arr[i]) M[prefix + v] = arr[i];
+        });
+      }
+      row("k", "かきくけこ");
+      row("g", "がぎぐげご");
+      row("s", "さしすせそ");
+      row("z", "ざじずぜぞ");
+      row("t", "たちつてと");
+      row("d", "だぢづでど");
+      row("n", "なにぬねの");
+      row("h", "はひふへほ");
+      row("b", "ばびぶべぼ");
+      row("p", "ぱぴぷぺぽ");
+      row("m", "まみむめも");
+      row("r", "らりるれろ");
+      M["ya"] = "や";
+      M["yi"] = "い";
+      M["yu"] = "ゆ";
+      M["ye"] = "いぇ";
+      M["yo"] = "よ";
+      M["wa"] = "わ";
+      M["wi"] = "うぃ";
+      M["we"] = "うぇ";
+      M["wo"] = "を";
+      M["wu"] = "う";
+      M["shi"] = "し";
+      M["si"] = "し";
+      M["chi"] = "ち";
+      M["ti"] = "ち";
+      M["tsu"] = "つ";
+      M["tu"] = "つ";
+      M["fu"] = "ふ";
+      M["hu"] = "ふ";
+      M["ji"] = "じ";
+      M["zi"] = "じ";
+      const yoGo = [
+        ["ky", "きゃ", "きゅ", "きょ"],
+        ["gy", "ぎゃ", "ぎゅ", "ぎょ"],
+        ["sh", "しゃ", "しゅ", "しょ"],
+        ["ch", "ちゃ", "ちゅ", "ちょ"],
+        ["ny", "にゃ", "にゅ", "にょ"],
+        ["hy", "ひゃ", "ひゅ", "ひょ"],
+        ["by", "びゃ", "びゅ", "びょ"],
+        ["py", "ぴゃ", "ぴゅ", "ぴょ"],
+        ["my", "みゃ", "みゅ", "みょ"],
+        ["ry", "りゃ", "りゅ", "りょ"],
+        ["jy", "じゃ", "じゅ", "じょ"]
+      ];
+      yoGo.forEach(function (rowY) {
+        const p = rowY[0];
+        M[p + "a"] = rowY[1];
+        M[p + "u"] = rowY[2];
+        M[p + "o"] = rowY[3];
+      });
+      M["nn"] = "ん";
+      M["xn"] = "ん";
+      M["vu"] = "ゔ";
+      M["va"] = "ゔぁ";
+      M["vi"] = "ゔぃ";
+      M["ve"] = "ゔぇ";
+      M["vo"] = "ゔぉ";
+      ["k", "s", "t", "p", "g", "b", "z"].forEach(function (c) {
+        V.forEach(function (v) {
+          const one = M[c + v];
+          if (one) M[c + c + v] = "っ" + one;
+        });
+      });
+      M["ssa"] = "っさ";
+      M["ssi"] = "っし";
+      M["ssu"] = "っす";
+      M["sse"] = "っせ";
+      M["sso"] = "っそ";
+      M["tta"] = "った";
+      M["tti"] = "っち";
+      M["ttu"] = "っつ";
+      M["tte"] = "って";
+      M["tto"] = "っと";
+      M["hha"] = "っは";
+      M["hhi"] = "っひ";
+      M["hhu"] = "っふ";
+      M["hhe"] = "っへ";
+      M["hho"] = "っほ";
+      M["aa"] = "ああ";
+      M["ii"] = "いい";
+      M["uu"] = "うう";
+      M["ee"] = "ええ";
+      M["ei"] = "えい";
+      M["oo"] = "おお";
+      M["ou"] = "おう";
+      const pairs = Object.keys(M).map(function (k) {
+        return [k, M[k]];
+      });
+      pairs.sort(function (a, b) {
+        return b[0].length - a[0].length;
+      });
+      window.__kanjiYomiRomajiPairs = pairs;
+      return pairs;
+    }
+    function kanjiYomiFlushRomajiBuffer(buffer, pairs) {
+      let outHira = "";
+      let rest = String(buffer || "")
+        .toLowerCase()
+        .replace(/[^a-z\-]/g, "");
+      while (rest.length) {
+        let matched = false;
+        for (let i = 0; i < pairs.length; i++) {
+          const pat = pairs[i][0];
+          const hira = pairs[i][1];
+          if (rest.startsWith(pat)) {
+            outHira += hira;
+            rest = rest.slice(pat.length);
+            matched = true;
+            break;
+          }
+        }
+        if (matched) continue;
+        if (rest.length >= 2 && rest.charAt(0) === "n") {
+          const c2 = rest.charAt(1);
+          if ("aeiouy".indexOf(c2) < 0 && c2 !== "n") {
+            outHira += "ん";
+            rest = rest.slice(1);
+            continue;
+          }
+        }
+        break;
+      }
+      return { kana: outHira, rest: rest };
+    }
+    function renderKanjiYomiRomajiKeyboard(containerId, targetInputId, onEnterSubmit, readingKind) {
+      const container = document.getElementById(containerId);
+      if (!container) return;
+      container.innerHTML = "";
+      window.__kanjiYomiRomajiTail = "";
+      const pairs = kanjiYomiEnsureRomajiTable();
+      const scalePct = parseInt(getUserPref(LS_KBD_SCALE, "100"), 10);
+      const fontPx = parseInt(getUserPref(LS_KBD_FONT, "18"), 10);
+      const padPx = Math.max(8, Math.round(fontPx * 0.72));
+      const wrap = document.createElement("div");
+      wrap.className = "keyboard-scale-wrap";
+      wrap.style.setProperty("--kb-scale", String(Math.max(0.5, Math.min(2.5, scalePct / 100))));
+      wrap.style.setProperty("--vk-font-px", String(fontPx));
+      wrap.style.setProperty("--vk-pad-px", String(padPx));
+      const hint = document.createElement("div");
+      hint.style.cssText =
+        "font-size:12px;color:#455a64;margin-bottom:8px;text-align:center;font-weight:700;";
+      hint.textContent = "ローマ字をタップすると、自動でひらがな・カタカナに変換されます（英語モードのキーボードとは別仕様）";
+      wrap.appendChild(hint);
+      const board = document.createElement("div");
+      board.className = "keyboard";
+      const rows = [
+        ["q", "w", "e", "r", "t", "y", "u", "i", "o", "p"],
+        ["a", "s", "d", "f", "g", "h", "j", "k", "l"],
+        ["z", "x", "c", "v", "b", "n", "m", "-"]
+      ];
+      function applyChar(lower) {
+        const inp = document.getElementById(targetInputId);
+        if (!inp) return;
+        let tail = String(window.__kanjiYomiRomajiTail || "");
+        if (lower === "-") {
+          if (readingKind === "on") {
+            inp.value += "ー";
+            inp.dispatchEvent(new Event("input", { bubbles: true }));
+          }
+          return;
+        }
+        if (!/^[a-z]$/.test(lower)) return;
+        tail += lower;
+        const fl = kanjiYomiFlushRomajiBuffer(tail, pairs);
+        const piece = kanjiYomiHiraganaToAnswerScript(fl.kana, readingKind);
+        window.__kanjiYomiRomajiTail = fl.rest;
+        if (piece) inp.value += piece;
+        inp.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+      function finalizeN() {
+        const inp = document.getElementById(targetInputId);
+        if (!inp) return;
+        let tail = String(window.__kanjiYomiRomajiTail || "");
+        if (tail === "n") {
+          inp.value += kanjiYomiHiraganaToAnswerScript("ん", readingKind);
+          window.__kanjiYomiRomajiTail = "";
+          inp.dispatchEvent(new Event("input", { bubbles: true }));
+        }
+      }
+      rows.forEach(function (row) {
+        const rowDiv = document.createElement("div");
+        rowDiv.className = "key-row";
+        row.forEach(function (ch) {
+          const keyBtn = document.createElement("button");
+          keyBtn.type = "button";
+          keyBtn.className = "key";
+          keyBtn.textContent = ch;
+          keyBtn.onclick = function () {
+            if (/^[a-z]$/i.test(ch)) applyChar(ch.toLowerCase());
+            else if (ch === "-") applyChar("-");
+          };
+          rowDiv.appendChild(keyBtn);
+        });
+        board.appendChild(rowDiv);
+      });
+      const rowBs = document.createElement("div");
+      rowBs.className = "key-row";
+      const bsBtn = document.createElement("button");
+      bsBtn.type = "button";
+      bsBtn.className = "key key-wide";
+      bsBtn.textContent = "⌫";
+      bsBtn.onclick = function () {
+        const inp = document.getElementById(targetInputId);
+        if (!inp) return;
+        if (inp.value.length) {
+          inp.value = inp.value.slice(0, -1);
+          inp.dispatchEvent(new Event("input", { bubbles: true }));
+          return;
+        }
+        const tail = String(window.__kanjiYomiRomajiTail || "");
+        if (tail.length) window.__kanjiYomiRomajiTail = tail.slice(0, -1);
+      };
+      rowBs.appendChild(bsBtn);
+      board.appendChild(rowBs);
+      const bottomRow = document.createElement("div");
+      bottomRow.className = "key-row";
+      const enterBtn = document.createElement("button");
+      enterBtn.type = "button";
+      enterBtn.className = "key key-action";
+      enterBtn.style.flex = "1";
+      enterBtn.textContent = "けってい";
+      enterBtn.onclick = function () {
+        finalizeN();
+        if (typeof onEnterSubmit === "function") onEnterSubmit();
+      };
+      bottomRow.appendChild(enterBtn);
+      board.appendChild(bottomRow);
+      wrap.appendChild(board);
+      container.appendChild(wrap);
     }
 
     let shiftMode = 0; let isShiftHoldMode = false; let shiftPressStartTime = 0; let shiftTimer1s = null; let shiftTimer2s = null;
