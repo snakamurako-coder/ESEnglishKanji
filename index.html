@@ -1866,7 +1866,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
   </script>
   <script>
     // ▼ GASのURLを貼り付けてください（※前回と同じURLならそのままで大丈夫） ▼
-    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzVW0rUoIqhEmlZJw62WXcG4uJw03PPzenKjyL8R-jllFq8ia8GTobKnc_JS1mJY00DnQ/exec";
+    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxkTBjnxwpT5YTCVxufigy3jAMwO0qmcfSP5LK2hdCzEW2c__S-NHx9HJhXQaGOGI8-sQ/exec";
     
     let selectedUserId = null; let currentPin = ""; let isPinResetMode = false;
     let currentModeId = ""; let currentModeName = ""; let currentUnitName = "";
@@ -6266,6 +6266,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       const promptEl = document.getElementById('kanji-play-prompt');
       if (promptEl) {
         if (q.type === "ruby_to_kanji") promptEl.innerText = "";
+        else if (q.type === "okurigana_shift") promptEl.innerText = "正しい送り仮名を選びましょう。";
         else promptEl.innerText = q.prompt || "";
       }
       const detail = document.getElementById('kanji-play-detail');
@@ -6362,15 +6363,13 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       }
       if (detail) {
         if (q.type === "okurigana_shift") {
-          var okuriDescHtml =
-            '<div style="color:#333;font-size:clamp(14px,3.2vw,18px);line-height:1.55;margin-bottom:10px;">例のぶんでは、ターゲットの<strong>かんじ</strong>を<strong>よみがな（訓）</strong>に置きかえています（文のつながりがわかりやすくなります）。<strong>おくりがなのつながり</strong>としてもっともふさわしいひょうきをタップしてください。</div>';
           var okuriBoxHtml = kanjiOkuriganaFormatSentenceBlockHtml(q);
           var okuriBoxWrap = okuriBoxHtml
-            ? '<div class="kanji-okurigana-vertical-wrap" style="display:flex;justify-content:center;align-items:flex-start;width:100%;margin:0 auto;">' +
+            ? '<div class="kanji-okurigana-vertical-wrap" style="display:flex;justify-content:center;align-items:flex-start;width:100%;margin:8px auto 0;">' +
               okuriBoxHtml +
               "</div>"
             : "";
-          detail.innerHTML = okuriDescHtml + okuriBoxWrap;
+          detail.innerHTML = okuriBoxWrap;
         } else if (q.type === "ruby_to_kanji") {
           detail.innerHTML = "";
         } else if (q.type === "stroke_count") {
@@ -6389,12 +6388,42 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         if (q.type === "okurigana_shift" || q.type === "stroke_count") {
           choicesBox.style.display = "flex";
           const arr = shuffleKanjiQuizChoicesArray(q.choices);
+          let dispMap =
+            q.type === "okurigana_shift" && q.choicesDisplayMap && typeof q.choicesDisplayMap === "object"
+              ? q.choicesDisplayMap
+              : null;
+          if (
+            !dispMap &&
+            q.type === "okurigana_shift" &&
+            q.exampleSentenceRaw &&
+            q.kanji &&
+            q.correctAnswer &&
+            Array.isArray(q.choices)
+          ) {
+            const exRaw = String(q.exampleSentenceRaw || "");
+            const kk = String(q.kanji || "");
+            const surf = String(q.correctAnswer || "");
+            const fallback = {};
+            const surfPos = surf && exRaw.indexOf(surf) >= 0 ? exRaw.indexOf(surf) : -1;
+            const kPos = surfPos < 0 && kk && exRaw.indexOf(kk) >= 0 ? exRaw.indexOf(kk) : -1;
+            q.choices.forEach(function (c) {
+              if (surfPos >= 0) {
+                fallback[c] = exRaw.slice(0, surfPos) + c + exRaw.slice(surfPos + surf.length);
+              } else if (kPos >= 0) {
+                fallback[c] = exRaw.slice(0, kPos) + c + exRaw.slice(kPos + kk.length);
+              } else {
+                fallback[c] = c;
+              }
+            });
+            dispMap = fallback;
+          }
           arr.forEach(function (c) {
             const b = document.createElement("button");
             b.type = "button";
             b.className = "kanji-drill-choice-btn";
-            b.innerText = c;
-            b.setAttribute("aria-label", "選択肢 " + c);
+            const labelText = dispMap && dispMap[c] ? String(dispMap[c]) : c;
+            b.innerText = labelText;
+            b.setAttribute("aria-label", "選択肢 " + labelText);
             b.onclick = function (e) {
               e.preventDefault();
               if (!kanjiQuizSession) return;
