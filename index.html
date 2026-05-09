@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
@@ -337,19 +337,42 @@
       max-width: none;
       padding: 4px 0;
     }
+    /**
+     * 漢字モードのリザルトはセクション全体が writing-mode: vertical-rl で右→左に流れるため、
+     * ボタングループだけは横書きに戻し、縦積み（column）にして、
+     * セクション高さに入りきらない時は内側だけ縦スクロール可能にする。
+     * 5 つボタンが並んでも下端に隠れない。
+     */
     body.kanji-study-mode #section-result.active > div:not(#result-content) {
+      writing-mode: horizontal-tb !important;
+      text-orientation: mixed !important;
+      direction: ltr !important;
       margin: 0 0 0 30px !important;
       display: flex !important;
-      flex-direction: row !important;
-      gap: 15px !important;
-      align-items: flex-start !important;
-      max-width: none !important;
+      flex-direction: column !important;
+      gap: 12px !important;
+      align-items: stretch !important;
+      align-self: center !important;
+      max-width: min(92vw, 22rem) !important;
+      max-height: calc(100vh - 80px);
+      max-height: calc(100dvh - 80px);
+      overflow-y: auto;
+      overflow-x: hidden;
+      -webkit-overflow-scrolling: touch;
+      padding: 4px 2px;
+      box-sizing: border-box;
     }
-    body.kanji-study-mode #section-result.active button {
+    body.kanji-study-mode #section-result.active > div:not(#result-content) > button {
       writing-mode: horizontal-tb;
+      text-orientation: mixed;
       margin: 0;
-      min-width: 200px;
+      min-width: 0;
+      width: 100%;
+      max-width: none;
       text-align: center;
+      white-space: normal;
+      line-height: 1.35;
+      flex: 0 0 auto;
     }
 
     body.kanji-study-mode #global-header {
@@ -885,10 +908,18 @@
         align-content: flex-start;
         padding: 24px 12px;
       }
-      body.kanji-study-mode #section-result.active button {
+      body.kanji-study-mode #section-result.active > div:not(#result-content) {
+        margin: 16px auto 0 !important;
+        align-self: stretch !important;
+        max-height: none;
+        overflow: visible;
+        padding: 0;
+        max-width: min(92vw, 22rem) !important;
+      }
+      body.kanji-study-mode #section-result.active > div:not(#result-content) > button {
         min-width: 0;
         width: 100%;
-        max-width: min(280px, 88vw);
+        max-width: none;
       }
       body.kanji-study-mode #section-kanji-learning.active,
       body.kanji-study-mode #section-kanji-quiz-sets.active,
