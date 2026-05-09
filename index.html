@@ -3041,6 +3041,9 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       document.body.classList.toggle('kanji-study-mode', isKanjiFlow);
       if (id === 'section-kanji-quiz-sets') {
         syncKanjiQuizFormatSelectFromStorage();
+        // クイズをキャンセルして戻ってきた直後（abandonKanjiQuizPlayIfLeavingSection で
+        // __kanjiQuizHwFrameReadyP がクリアされた直後）でも、書き取り iframe を再ウォームアップ。
+        try { warmupKanjiQuizHandwritingFrame(); } catch (e) {}
       }
       setTimeout(() => syncKanjiVerticalSelects(isKanjiFlow), 10);
     }
@@ -5005,6 +5008,73 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       );
     }
     const __kanjiQuizSetsSessionCache = Object.create(null);
+    /**
+     * セット一覧表示時に、各セットの問題JSONを idle 時間で先読みしてキャッシュする。
+     * これにより、ユーザーが「セット ○」を押した瞬間の GAS 往復を消せる。
+     * すべての出題形式（書き取り・選択・タイピング・画数）に効く。
+     * 既にキャッシュ済みのセットはスキップ。失敗は無視（次回フォールバックで通常fetch）。
+     */
+    function prefetchKanjiQuizQuestionsForSets(modeId, unitName, sets) {
+      if (!Array.isArray(sets) || !sets.length) return;
+      var startPrefetch = function () {
+        sets.forEach(function (s) {
+          var sid = String((s && s.setId) != null ? s.setId : "");
+          if (!sid) return;
+          var qKey = kanjiQuizDrillCacheKeyQuestions(modeId, unitName, sid);
+          try {
+            if (localStorage.getItem(qKey)) return;
+          } catch (e) {
+            return;
+          }
+          fetch(GAS_API_URL, {
+            method: "POST",
+            body: JSON.stringify({
+              action: "get_kanji_quiz_questions",
+              modeId: modeId,
+              unitName: unitName,
+              setId: sid
+            })
+          })
+            .then(function (r) { return r.json(); })
+            .then(function (q) {
+              if (q && q.status === "success") {
+                try { localStorage.setItem(qKey, JSON.stringify(q)); } catch (_) {}
+              }
+            })
+            .catch(function () {});
+        });
+      };
+      try {
+        if (typeof requestIdleCallback === "function") {
+          requestIdleCallback(startPrefetch, { timeout: 3000 });
+        } else {
+          setTimeout(startPrefetch, 200);
+        }
+      } catch (e) {
+        try { setTimeout(startPrefetch, 200); } catch (_) {}
+      }
+    }
+    /**
+     * 「漢字を書いてこたえる」用の iframe（#kp-pro-frame）を先行ロードしてキャッシュする。
+     * セット一覧表示や、クイズキャンセル後のセット再入場でも呼び出すことで、
+     * 「セット ○」を押してから「さいてんようの データを じゅんびしています…」の待ち時間を消す。
+     * ensureKanjiHwFrameReadyOnce() を介して __kanjiQuizHwFrameReadyP に Promise を保持する点が重要。
+     * 直接 ensureKanjiPracticeFrameReady() を呼ぶと毎回新しい Promise が作られ、
+     * polling 1サイクル分のラグが残ってしまう。
+     */
+    function warmupKanjiQuizHandwritingFrame() {
+      try {
+        if (typeof requestIdleCallback === "function") {
+          requestIdleCallback(function () {
+            try { ensureKanjiHwFrameReadyOnce(); } catch (_) {}
+          }, { timeout: 2500 });
+        } else {
+          setTimeout(function () {
+            try { ensureKanjiHwFrameReadyOnce(); } catch (_) {}
+          }, 120);
+        }
+      } catch (e) {}
+    }
     function openKanjiQuizSets(modeId, modeName, unitName, btn, origText) {
       const title = document.getElementById('kanji-quiz-title');
       if (title) title.innerText = `【${modeName}】${formatUnitSheetDisplayLabel(unitName)}`;
@@ -5070,17 +5140,10 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
           };
           box.appendChild(b);
         });
-        try {
-          if (typeof requestIdleCallback === "function") {
-            requestIdleCallback(function () {
-              ensureKanjiPracticeFrameReady();
-            }, { timeout: 2500 });
-          } else {
-            setTimeout(function () {
-              ensureKanjiPracticeFrameReady();
-            }, 120);
-          }
-        } catch (e) {}
+        // ① 「漢字を書いてこたえる」用 iframe を idle 時間に先行ウォームアップ
+        warmupKanjiQuizHandwritingFrame();
+        // ⑤ 全セットの問題JSONを idle 時間に先読みしてキャッシュ（押した瞬間の GAS 往復を消す）
+        prefetchKanjiQuizQuestionsForSets(modeId, unitName, sets);
       };
       if (__kanjiQuizSetsSessionCache[setsCacheKey]) {
         renderSetsButtons(__kanjiQuizSetsSessionCache[setsCacheKey]);
