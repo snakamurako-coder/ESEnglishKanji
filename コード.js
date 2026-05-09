@@ -136,7 +136,27 @@ function setupSystem() {
       ["漢字採点_高得点回数上限_週", 3],
       ["漢字採点_回数上限後倍率", 0.1],
       ["漢字採点_回復率_日", 0.15],
-      ["漢字採点_完全回復日数", 7]
+      ["漢字採点_完全回復日数", 7],
+      ["漢字基本Pt_送り仮名選択_90以上", 10],
+      ["漢字基本Pt_送り仮名選択_80以上", 5],
+      ["漢字基本Pt_送り仮名選択_70以上", 4],
+      ["漢字基本Pt_送り仮名選択_60以上", 3],
+      ["漢字基本Pt_送り仮名選択_50以上", 1],
+      ["漢字基本Pt_書取り_90以上", 10],
+      ["漢字基本Pt_書取り_80以上", 5],
+      ["漢字基本Pt_書取り_70以上", 4],
+      ["漢字基本Pt_書取り_60以上", 3],
+      ["漢字基本Pt_書取り_50以上", 1],
+      ["漢字基本Pt_読みタイピング_90以上", 10],
+      ["漢字基本Pt_読みタイピング_80以上", 5],
+      ["漢字基本Pt_読みタイピング_70以上", 4],
+      ["漢字基本Pt_読みタイピング_60以上", 3],
+      ["漢字基本Pt_読みタイピング_50以上", 1],
+      ["漢字基本Pt_画数_90以上", 10],
+      ["漢字基本Pt_画数_80以上", 5],
+      ["漢字基本Pt_画数_70以上", 4],
+      ["漢字基本Pt_画数_60以上", 3],
+      ["漢字基本Pt_画数_50以上", 1]
     ];
     defaultPointRows.forEach(row => {
       if (!existingKeys.has(row[0])) {
@@ -542,14 +562,58 @@ function getAppSettingsMap_(adminSs) {
   return out;
 }
 
-function getKanjiBasePointsByScore_(score, settings) {
+/**
+ * 問題タイプ（フロントの q.type）→ アプリ設定のキー接頭辞「漢字基本Pt_<別名>_」に対応。
+ * タイプ別キーが未設定のときは従来どおり共通キー「漢字基本Pt_採点_XX以上」を参照する。
+ */
+var KANJI_QTYPE_PT_PREFIX_ = {
+  okurigana_shift: "漢字基本Pt_送り仮名選択_",
+  ruby_to_kanji: "漢字基本Pt_書取り_",
+  sentence_to_ruby: "漢字基本Pt_読みタイピング_",
+  stroke_count: "漢字基本Pt_画数_"
+};
+
+function kanjiSettingNumber_(settings, key, fallbackNum) {
+  const v = settings[key];
+  if (v === undefined || v === null || String(v).trim() === "") return fallbackNum;
+  const n = Number(v);
+  return isNaN(n) ? fallbackNum : n;
+}
+
+function getKanjiBasePointsByScore_(score, settings, questionType) {
   const s = Number(score) || 0;
-  if (s >= 90) return Number(settings["漢字基本Pt_採点_90以上"] || 10);
-  if (s >= 80) return Number(settings["漢字基本Pt_採点_80以上"] || 5);
-  if (s >= 70) return Number(settings["漢字基本Pt_採点_70以上"] || 4);
-  if (s >= 60) return Number(settings["漢字基本Pt_採点_60以上"] || 3);
-  if (s >= 50) return Number(settings["漢字基本Pt_採点_50以上"] || 1);
-  return 0;
+  let suffix = null;
+  let globalDefault = 0;
+  if (s >= 90) {
+    suffix = "90以上";
+    globalDefault = 10;
+  } else if (s >= 80) {
+    suffix = "80以上";
+    globalDefault = 5;
+  } else if (s >= 70) {
+    suffix = "70以上";
+    globalDefault = 4;
+  } else if (s >= 60) {
+    suffix = "60以上";
+    globalDefault = 3;
+  } else if (s >= 50) {
+    suffix = "50以上";
+    globalDefault = 1;
+  } else {
+    return 0;
+  }
+  const qt = String(questionType || "").trim();
+  const pref = KANJI_QTYPE_PT_PREFIX_[qt];
+  if (pref) {
+    const typeKey = pref + suffix;
+    const v = settings[typeKey];
+    if (v !== undefined && v !== null && String(v).trim() !== "") {
+      const n = Number(v);
+      if (!isNaN(n)) return n;
+    }
+  }
+  const globalKey = "漢字基本Pt_採点_" + suffix;
+  return kanjiSettingNumber_(settings, globalKey, globalDefault);
 }
 
 function toDateOnly_(d) {
@@ -628,7 +692,7 @@ function handleSaveLearningSession(req) {
     const settings = getAppSettingsMap_(adminSs);
     const charKey = String(req.kanjiChar);
     const score = Number(req.score) || 0;
-    const basePt = getKanjiBasePointsByScore_(score, settings);
+    const basePt = getKanjiBasePointsByScore_(score, settings, req.kanjiQuestionType);
     if (!userData.historyJson.__kanjiChallenge) userData.historyJson.__kanjiChallenge = {};
     if (!userData.historyJson.__kanjiChallenge[charKey]) userData.historyJson.__kanjiChallenge[charKey] = { highScoreDates: [] };
     const cHist = userData.historyJson.__kanjiChallenge[charKey];
