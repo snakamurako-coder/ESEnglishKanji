@@ -1071,8 +1071,8 @@
       width: 100%;
       max-width: min(480px, 100%);
       margin: 0 auto;
-      min-height: 280px;
-      max-height: min(72vh, 760px);
+      min-height: 320px;
+      max-height: min(82vh, 820px);
       border: 2px solid #e57373;
       border-radius: 10px;
       overflow: auto;
@@ -4589,10 +4589,57 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
     }
     function kpComputeFrameHeight_(frame, bodyH, htmlH) {
       if (kpFrameInWrongModelWrap_(frame)) {
-        const cap = Math.min(window.innerHeight * 0.72, 760);
-        return Math.min(Math.max(bodyH, htmlH, 260), cap) + 8;
+        const cap = Math.min(window.innerHeight * 0.82, 820);
+        return Math.min(Math.max(bodyH, htmlH, 320), cap) + 8;
       }
       return Math.max(bodyH, htmlH, 620) + 8;
+    }
+    /**
+     * 不正解パネル内に kp-pro-frame を埋め込んで使うときだけ、
+     * iframe 内の余白・タイトル装飾・「練習用の設定ツール群（KanjiVG.txt 更新／プロフィール／
+     * 調整／設定／厳密採点／飾りを消す）」を一時的に隠してコンパクト表示にする。
+     * 元の練習画面に戻すときは isOn=false で属性を外せば、CSS は無効化されて元のレイアウトに戻る。
+     * iframe 文書側の改変は全て同一ドキュメント前提（srcdoc）で安全に行う。
+     */
+    function applyKpQuizWrongPanelCompactMode(frame, isOn) {
+      try {
+        if (!frame) return;
+        const doc = frame.contentDocument;
+        if (!doc || !doc.body || !doc.documentElement) return;
+        if (doc.documentElement.dataset.kpWrongCompactTagged !== "1") {
+          try {
+            const syncBtn = doc.querySelector('button[onclick*="syncData"]');
+            if (syncBtn && syncBtn.closest('.controls')) {
+              syncBtn.closest('.controls').setAttribute('data-kp-section', 'tools');
+            }
+            const strictCb = doc.getElementById('cb-strict-mode');
+            if (strictCb && strictCb.closest('.controls')) {
+              strictCb.closest('.controls').setAttribute('data-kp-section', 'strict');
+            }
+          } catch (_eTag) {}
+          doc.documentElement.dataset.kpWrongCompactTagged = "1";
+        }
+        if (!doc.getElementById('kp-wrong-panel-compact-style')) {
+          const style = doc.createElement('style');
+          style.id = 'kp-wrong-panel-compact-style';
+          style.textContent =
+            "body[data-kp-quiz-wrong='1']{padding-top:4px!important;padding-bottom:12px!important;}" +
+            "body[data-kp-quiz-wrong='1'] h2{font-size:15px!important;font-weight:700!important;margin:0 0 6px!important;padding:4px 8px!important;color:#1a73e8!important;background:#f0f6ff!important;border-bottom:1px solid #d4e3ff!important;border-radius:6px!important;width:auto!important;text-align:center!important;box-sizing:border-box!important;}" +
+            "body[data-kp-quiz-wrong='1'] #kanji-selector-area{display:none!important;}" +
+            "body[data-kp-quiz-wrong='1'] [data-kp-section='tools']{display:none!important;}" +
+            "body[data-kp-quiz-wrong='1'] [data-kp-section='strict']{display:none!important;}" +
+            "body[data-kp-quiz-wrong='1'] #mode-msg{margin:4px 0 6px!important;font-size:12px!important;line-height:1.35!important;}" +
+            "body[data-kp-quiz-wrong='1'] #result-box{margin-top:8px!important;padding:8px 12px!important;}" +
+            "body[data-kp-quiz-wrong='1'] #result-box .score{font-size:32px!important;line-height:1.1!important;}" +
+            "body[data-kp-quiz-wrong='1'] #result-box .msg{font-size:12px!important;margin-top:6px!important;line-height:1.4!important;}";
+          doc.documentElement.appendChild(style);
+        }
+        if (isOn) {
+          doc.body.setAttribute('data-kp-quiz-wrong', '1');
+        } else {
+          doc.body.removeAttribute('data-kp-quiz-wrong');
+        }
+      } catch (_e) {}
     }
     function kpResizeFrameToContent() {
       const frame = document.getElementById('kp-pro-frame');
@@ -6160,6 +6207,9 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       const slot = document.getElementById("kp-iframe-slot-practice");
       const frame = document.getElementById("kp-pro-frame");
       if (!frame || !slot) return;
+      try {
+        applyKpQuizWrongPanelCompactMode(frame, false);
+      } catch (_eRk) {}
       if (frame.parentElement !== slot) {
         slot.appendChild(frame);
       }
@@ -6410,6 +6460,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       const frame = document.getElementById("kp-pro-frame");
       const hid = document.getElementById("kp-pro-frame-quiz-hidden");
       if (frame && hid && wrap && frame.parentElement === wrap) {
+        applyKpQuizWrongPanelCompactMode(frame, false);
         hid.appendChild(frame);
         frame.style.width = "";
         frame.style.maxWidth = "";
@@ -6426,6 +6477,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
           modelWrap.innerHTML = "";
           modelWrap.appendChild(frame);
         }
+        applyKpQuizWrongPanelCompactMode(frame, true);
         frame.style.width = "100%";
         frame.style.maxWidth = "100%";
         frame.style.minHeight = "320px";
@@ -6711,6 +6763,10 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       try {
         kanjiQuizHideWrongFeedback();
       } catch (e) {}
+      try {
+        const skipHw = document.getElementById("kanji-quiz-skip-hw-btn");
+        stopKanjiActionBusy(skipHw);
+      } catch (eSk) {}
       const drillHand = document.getElementById("kanji-quiz-drill-handwriting");
       if (drillHand) drillHand.style.display = "none";
       const refreshLayoutBtn = document.getElementById("kanji-quiz-layout-refresh-btn");
@@ -7328,6 +7384,9 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       const user = JSON.parse(localStorage.getItem('app_kid_user') || 'null');
       if (!user || !user.id) {
         alert("ログイン情報が見つかりません。");
+        try {
+          stopKanjiActionBusy(document.getElementById("kanji-quiz-skip-hw-btn"));
+        } catch (_eSkip) {}
         return;
       }
       if (__kanjiQuizSubmitInFlight) return;
@@ -7488,6 +7547,9 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         try {
           if (__kjSubmitBtn) stopKanjiActionBusy(__kjSubmitBtn);
         } catch (_eRestoreBtn) {}
+        try {
+          stopKanjiActionBusy(document.getElementById("kanji-quiz-skip-hw-btn"));
+        } catch (_eSkipHw) {}
       });
     }
     function loadQuestionsForSettings(btn, mId, mName, uName, categoryHint) { 
