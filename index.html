@@ -330,6 +330,13 @@
       color: #555;
       font-size: clamp(13px, 3vw, 16px);
     }
+    #section-materials .kanji-study-materials-wrap .kanji-page-title-stack {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
     body.kanji-study-mode #section-kanji-learning.active,
     body.kanji-study-mode #section-kanji-quiz-sets.active,
     body.kanji-study-mode #section-materials.active {
@@ -352,13 +359,44 @@
       text-align: start;
       padding: 10px 6px 10px 16px;
     }
-    body.kanji-study-mode #section-kanji-learning.active .kanji-study-vertical-wrap h1,
-    body.kanji-study-mode #section-kanji-quiz-sets.active .kanji-study-vertical-wrap h1 {
-      margin: 0 0.4em 0 0;
+    body.kanji-study-mode #section-kanji-learning.active .kanji-study-vertical-wrap .kanji-page-title-stack h1,
+    body.kanji-study-mode #section-kanji-quiz-sets.active .kanji-study-vertical-wrap .kanji-page-title-stack h1 {
+      margin: 0;
       font-size: clamp(1.55rem, 5vw, 2.25rem);
       font-weight: 800;
       letter-spacing: 0.06em;
       color: #111;
+      writing-mode: vertical-rl;
+      text-orientation: upright;
+    }
+    body.kanji-study-mode #section-kanji-learning.active .kanji-study-vertical-wrap .kanji-page-title-stack,
+    body.kanji-study-mode #section-kanji-quiz-sets.active .kanji-study-vertical-wrap .kanji-page-title-stack,
+    body.kanji-study-mode #section-materials.active .kanji-study-materials-wrap .kanji-page-title-stack {
+      writing-mode: horizontal-tb;
+      display: inline-flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 10px;
+      margin: 0 12px 0 0;
+      vertical-align: top;
+    }
+    body.kanji-study-mode #section-kanji-learning.active .kanji-menu-back-btn,
+    body.kanji-study-mode #section-kanji-quiz-sets.active .kanji-menu-back-btn,
+    body.kanji-study-mode #section-materials.active .kanji-menu-back-btn {
+      writing-mode: horizontal-tb !important;
+      text-orientation: mixed !important;
+      width: auto !important;
+      min-height: 0 !important;
+      min-width: 0 !important;
+      max-width: none !important;
+      padding: 9px 16px !important;
+      margin: 0 !important;
+      font-size: clamp(14px, 2.8vw, 17px) !important;
+      font-weight: 700 !important;
+      line-height: 1.35 !important;
+      border-radius: 10px !important;
+      align-self: flex-start;
+      white-space: nowrap;
     }
     body.kanji-study-mode #section-kanji-learning.active .kanji-study-lead,
     body.kanji-study-mode #section-kanji-quiz-sets.active .kanji-study-lead {
@@ -518,11 +556,13 @@
       text-align: start;
       padding: 10px 6px 10px 16px;
     }
-    body.kanji-study-mode #section-materials.active #materials-title {
-      margin: 0 0.4em 0 0;
+    body.kanji-study-mode #section-materials.active .kanji-page-title-stack #materials-title {
+      margin: 0;
       font-size: clamp(1.45rem, 4.5vw, 2.1rem);
       font-weight: 800;
       color: #111;
+      writing-mode: vertical-rl;
+      text-orientation: upright;
     }
     body.kanji-study-mode #section-materials.active #materials-container {
       writing-mode: vertical-rl;
@@ -565,8 +605,11 @@
     body.kanji-study-mode #section-kanji-practice.active .kanji-practice-vertical-head {
       writing-mode: horizontal-tb;
       text-orientation: mixed;
-      margin: 0 auto 10px;
-      display: block;
+      margin: 0 auto 14px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
       text-align: center;
       max-width: 1200px;
     }
@@ -598,20 +641,50 @@
       max-width: 1200px;
       margin: 0 auto 10px !important;
     }
-    body.kanji-study-mode #section-kanji-practice.active > .cancel-btn {
+    body.kanji-study-mode #section-kanji-practice.active .kanji-practice-vertical-head .kanji-menu-back-btn {
       writing-mode: horizontal-tb;
       text-orientation: mixed;
       width: auto;
       min-height: 0;
       max-width: none;
       padding: 10px 14px;
-      margin-top: 16px;
+      margin: 0;
       font-size: 16px;
       font-weight: 700;
       border-radius: 10px;
       background: #eef2f7 !important;
       color: #333 !important;
       border: 1px solid #90a4ae !important;
+    }
+    body.kanji-study-mode #section-kanji-practice.active .kanji-practice-vertical-head .kp-page-title {
+      margin: 0 0 4px;
+      font-size: clamp(1.2rem, 3.8vw, 1.65rem);
+      font-weight: 800;
+      color: #222;
+    }
+    #section-kanji-nigate .kanji-nigate-title-block {
+      text-align: center;
+      margin: 0 auto 16px;
+      max-width: 720px;
+    }
+    #section-kanji-nigate .kanji-nigate-title-block h1 {
+      margin: 0 0 12px;
+      font-size: clamp(1.35rem, 4vw, 1.95rem);
+      font-weight: 800;
+      color: #1a1a1a;
+    }
+    #section-kanji-nigate .kanji-nigate-title-block .kanji-menu-back-btn {
+      writing-mode: horizontal-tb;
+      text-orientation: mixed;
+      width: auto;
+      min-height: 0;
+      padding: 10px 18px;
+      font-size: 16px;
+      font-weight: 700;
+      border-radius: 10px;
+      background: #e8e4dc;
+      color: #333;
+      border: 2px solid #a99880;
     }
     /* Removed duplicate kanji-quiz-drill-wrap styles */
     body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-drill-section .kanji-quiz-play-footer-btns {
@@ -1681,7 +1754,10 @@
   </div>
   <div id="section-kanji-learning" class="section">
     <div class="kanji-study-vertical-wrap">
-    <h1>漢字の自由学習</h1>
+    <div class="kanji-page-title-stack">
+      <h1>漢字の自由学習</h1>
+      <button type="button" class="cancel-btn kanji-menu-back-btn" onclick="showHome(JSON.parse(localStorage.getItem('app_kid_user')))">ホームにもどる</button>
+    </div>
     <p class="kanji-study-lead">やりたい学習をえらんでね</p>
     <div class="kanji-hw-hand-setting" id="kanji-hw-hand-setting">
       <span class="kanji-hw-hand-setting-label" id="kanji-hw-hand-label">かんじをかいてこたえるときの利き手</span>
@@ -1704,11 +1780,12 @@
         <button type="button" class="cancel-btn" style="flex:1; min-width:130px; margin:0;" onclick="discardKanjiQuizRecoveryDraft()">✖ 復帰データを消す</button>
       </div>
     </div>
-    <button class="cancel-btn" style="margin-top:20px;" onclick="showHome(JSON.parse(localStorage.getItem('app_kid_user')))">ホームにもどる</button>
     </div>
   </div>
   <div id="section-kanji-practice" class="section" style="background:#ffffff;color:#222;min-height:100vh;">
     <div class="kanji-practice-vertical-head">
+    <h1 class="kp-page-title">漢字練習・設定調整</h1>
+    <button type="button" class="cancel-btn kanji-menu-back-btn" onclick="openKanjiLearningMenu()">漢字学習メニューにもどる</button>
     <p style="text-align:center;color:#666;max-width:980px;margin:0 auto 10px;font-size:14px;">練習・調整（キャリブレーション／ペン設定）モードです。教材セットから選んで、漢字／よみで検索できます。</p>
     </div>
     <div class="kp-controls-row" style="width:96vw;max-width:1200px;margin:0 auto 10px;background:#f5f7fa;border:1px solid #d8dde5;border-radius:12px;padding:12px;box-sizing:border-box;">
@@ -1726,12 +1803,14 @@
       <iframe id="kp-pro-frame" src="about:blank" title="Kanji Practice Pro" scrolling="no" style="width:100%;height:900px;min-height:620px;border:1px solid #ccd3db;border-radius:10px;background:#fff;overflow:hidden;"></iframe>
       </div>
     </div>
-    <button class="cancel-btn" style="margin-top:16px;" onclick="openKanjiLearningMenu()">漢字学習メニューにもどる</button>
   </div>
 
   <div id="section-kanji-nigate" class="section" style="background:#faf8ff;color:#222;min-height:100vh;">
     <div class="kanji-study-vertical-wrap">
-      <h1>漢字ニガテ特訓</h1>
+      <div class="kanji-nigate-title-block">
+        <h1>漢字ニガテ特訓</h1>
+        <button type="button" class="cancel-btn kanji-menu-back-btn" onclick="openKanjiLearningMenu()">漢字学習メニューにもどる</button>
+      </div>
       <p class="kanji-study-lead">ふだんのクイズ・練習でためた「よわみ」から、スコープを決めて復習します。</p>
       <div class="kp-controls-row" style="width:96vw;max-width:560px;margin:0 auto 12px;background:#f0ebff;border:1px solid #c9c2e8;border-radius:12px;padding:12px;box-sizing:border-box;">
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;justify-content:center;">
@@ -1751,7 +1830,6 @@
         <p style="margin-top:8px;font-size:13px;color:#5c5270;">「全セット」ではシート内の弱みが対象です。手書きの詳細ログはサーバに送りません。</p>
       </div>
       <button type="button" class="submit-btn btn-purple" style="width:90%;max-width:360px;margin:8px auto;display:block;" onclick="startKanjiNigateReviewFromUi()">この条件で特訓スタート</button>
-      <button class="cancel-btn" style="margin-top:20px;" onclick="openKanjiLearningMenu()">漢字学習メニューにもどる</button>
     </div>
   </div>
 
@@ -1770,14 +1848,19 @@
   
   <div id="section-materials" class="section">
     <div class="kanji-study-materials-wrap">
-    <h1 id="materials-title">なにを勉強する？</h1>
+    <div class="kanji-page-title-stack">
+      <h1 id="materials-title">なにを勉強する？</h1>
+      <button type="button" class="cancel-btn kanji-menu-back-btn" onclick="backFromMaterials()">もどる</button>
+    </div>
     <div id="materials-container" style="display: flex; flex-direction: column; gap: 15px; max-width: 400px; margin: 0 auto;"></div>
-    <button class="cancel-btn" style="margin-top:20px;" onclick="backFromMaterials()">もどる</button>
     </div>
   </div>
   <div id="section-kanji-quiz-sets" class="section">
     <div class="kanji-study-vertical-wrap">
-    <h1 id="kanji-quiz-title">漢字クイズに挑戦</h1>
+    <div class="kanji-page-title-stack">
+      <h1 id="kanji-quiz-title">漢字クイズに挑戦</h1>
+      <button type="button" class="cancel-btn kanji-menu-back-btn" onclick="openKanjiLearningMenu()">もどる</button>
+    </div>
     <div id="kanji-quiz-format-wrap" class="kanji-quiz-format-wrap">
       <label for="kanji-quiz-format-select">もんだいのしかた</label>
       <select id="kanji-quiz-format-select" class="large-select" onchange="onKanjiQuizFormatChange()">
@@ -1788,7 +1871,6 @@
       </select>
     </div>
     <div id="kanji-quiz-sets-container" class="kanji-quiz-sets-stack"></div>
-    <button class="cancel-btn" style="margin-top:20px;" onclick="openKanjiLearningMenu()">もどる</button>
     </div>
   </div>
   <div id="section-kanji-quiz-play" class="section kanji-quiz-drill-section">
