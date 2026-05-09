@@ -1944,7 +1944,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
   </script>
   <script>
     // ▼ GASのURLを貼り付けてください（※前回と同じURLならそのままで大丈夫） ▼
-    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbwwChKq6iikAwY4VrvUYUFdfaWmsPZOXzp_JAiQGeZJRtsOLkAb8-_JpoHrnjT6c-VThA/exec";
+    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzMBYXNJDCnWY5mt1m52kXNDxcbtb5HmoXzS0BoNT1IikahflSVgbFASpKmfIBUlORUUQ/exec";
     
     let selectedUserId = null; let currentPin = ""; let isPinResetMode = false;
     let currentModeId = ""; let currentModeName = ""; let currentUnitName = "";
@@ -2311,6 +2311,133 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       if (p < 0) p = 0;
       if (p > 100) p = 100;
       return p;
+    }
+
+    /** 漢字セット単位の時間経過倍率（GAS handleSaveLearningSession と同様）。lastStudyJson が無ければ 1。 */
+    function computeKanjiQuizTimeMultiplierClient(modeName, unitName, setId) {
+      try {
+        const user = JSON.parse(localStorage.getItem("app_kid_user") || "{}");
+        const scopeId =
+          "KANJI_" + String(modeName || "") + "_" + String(unitName || "") + "_SET" + String(setId || "");
+        const lastStudyJson = user.lastStudyJson || {};
+        const lastStudyTimeStr = lastStudyJson[scopeId];
+        if (!lastStudyTimeStr) return 1.0;
+        const lastTime = new Date(lastStudyTimeStr);
+        if (isNaN(lastTime.getTime())) return 1.0;
+        const diffHours = (Date.now() - lastTime.getTime()) / (1000 * 60 * 60);
+        let basePercent = 10 + Math.floor(diffHours / 2) * 10;
+        if (basePercent > 100) basePercent = 100;
+        return basePercent / 100;
+      } catch (e) {
+        return 1.0;
+      }
+    }
+
+    /**
+     * GAS calcKanjiCharRecoveryRate_ と同じ式（クライアント版）。
+     * 直近1週間の高得点回数（合格＝score>=60 として記録される highScoreDates）が上限以上のときだけ、
+     * 上限到達日から経った日数に応じて 0.1 → 1.0 へ徐々に回復する。アプリ設定が読めないので既定値を使う：
+     *   - 高得点回数上限_週: 3
+     *   - 回数上限後倍率   : 0.1
+     *   - 回復率_日       : 0.15
+     *   - 完全回復日数    : 7
+     */
+    function calcKanjiCharRecoveryRateClient_(highScoreDates, now) {
+      const maxHighTimes = 3;
+      const overRate = 0.1;
+      const recoverPerDay = 0.15;
+      const maxDays = 7;
+      const weekAgoMs = now.getTime() - 7 * 24 * 60 * 60 * 1000;
+      const recent = (Array.isArray(highScoreDates) ? highScoreDates : [])
+        .map(function (v) { return new Date(v); })
+        .filter(function (d) { return !isNaN(d.getTime()) && d.getTime() >= weekAgoMs; })
+        .sort(function (a, b) { return a.getTime() - b.getTime(); });
+      if (recent.length < maxHighTimes) return 1.0;
+      const triggerDate = recent[maxHighTimes - 1];
+      const dateOnly = function (d) { return new Date(d.getFullYear(), d.getMonth(), d.getDate()); };
+      const days = Math.max(0, Math.floor((dateOnly(now) - dateOnly(triggerDate)) / (24 * 60 * 60 * 1000)));
+      if (days >= maxDays) return 1.0;
+      return Math.min(1, overRate + recoverPerDay * days);
+    }
+
+    /** localStorage の app_kid_user.historyJson.__kanjiChallenge[char].highScoreDates を取り出す。 */
+    function readKanjiChallengeHighScoreDatesClient_(kanjiChar) {
+      try {
+        const user = JSON.parse(localStorage.getItem("app_kid_user") || "{}");
+        const root = (user.historyJson && user.historyJson.__kanjiChallenge) || {};
+        const rec = root[String(kanjiChar || "")];
+        return rec && Array.isArray(rec.highScoreDates) ? rec.highScoreDates : [];
+      } catch (e) {
+        return [];
+      }
+    }
+
+    /**
+     * セット全問で満点相当のときの「実際にもらえそうな」獲得ポイント見積り。
+     *   各問: 既定の上位帯素点 10 × その漢字の回復率(直近一週間の高得点回数で減衰)
+     *   × セット時間経過倍率 × 単元シート%
+     * タイプ別Pt変更や次の問題以降の lastStudy 更新は反映できないため「およそ」の値。
+     */
+    function estimateKanjiQuizPerfectSessionPointsClient(unitName, modeName, setId, questions) {
+      const sheetPct = parseUnitSheetPointPercentClient(unitName);
+      const timeMult = computeKanjiQuizTimeMultiplierClient(modeName, unitName, setId);
+      const list = Array.isArray(questions) ? questions : [];
+      if (!list.length) return 0;
+      const defaultTopBandPt = 10;
+      const now = new Date();
+      let total = 0;
+      list.forEach(function (q) {
+        const ch = (q && q.kanji) ? String(q.kanji) : "";
+        const dates = readKanjiChallengeHighScoreDatesClient_(ch);
+        const recRate = calcKanjiCharRecoveryRateClient_(dates, now);
+        total += defaultTopBandPt * recRate * timeMult * (sheetPct / 100);
+      });
+      return Math.round(total * 100) / 100;
+    }
+
+    /**
+     * 「同じ漢字を週内に何回も高得点で取ると次回以降のもらえる量が減る」回復率による減衰、
+     * もしくは単元シート末尾の得点％ < 100 のいずれかが効いていれば確認ダイアログを出す。
+     * キャンセルで false（呼び出し側はそこで開始を中止する）。
+     */
+    function confirmKanjiQuizIfReducedSheetPoints(unitName, modeName, setId, questions) {
+      const sheetPct = parseUnitSheetPointPercentClient(unitName);
+      const list = Array.isArray(questions) ? questions : [];
+      const n = list.length;
+      const defaultTopBandPt = 10;
+      const idealTotal = n * defaultTopBandPt;
+      const approx = estimateKanjiQuizPerfectSessionPointsClient(unitName, modeName, setId, list);
+      // 計算誤差の吸収（おおよそ満額なら確認しない）
+      const reduced = sheetPct < 100 || approx + 0.05 < idealTotal;
+      if (!reduced) return true;
+      const approxStr = formatPointDisplayNum(approx);
+      const idealStr = formatPointDisplayNum(idealTotal);
+      const reasons = [];
+      if (sheetPct < 100) reasons.push("単元シートの獲得 " + sheetPct + "%");
+      // 回復率の影響を見やすくするため、実際に減衰している漢字の数を数える
+      const now = new Date();
+      let decayedChars = 0;
+      list.forEach(function (q) {
+        const ch = (q && q.kanji) ? String(q.kanji) : "";
+        const dates = readKanjiChallengeHighScoreDatesClient_(ch);
+        const r = calcKanjiCharRecoveryRateClient_(dates, now);
+        if (r < 1) decayedChars += 1;
+      });
+      if (decayedChars > 0) {
+        reasons.push("最近よくできた漢字の回復まちが " + decayedChars + " 字");
+      }
+      const reasonStr = reasons.length ? "（" + reasons.join(" / ") + "）" : "";
+      const msg =
+        "もらえるポイントが少なくなっています。\n" +
+        "すべて正解でおおよそ " +
+        approxStr +
+        " ポイントです。\n" +
+        "本来の最大は " +
+        idealStr +
+        " ポイント。\n" +
+        reasonStr +
+        "\n※ 日付をまたぐと回復します。\n\n取り組みますか？";
+      return confirm(msg);
     }
 
     /** handleSaveLearningSession と同じ係数（時間・ニガテ・ランダム） */
@@ -5855,7 +5982,8 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
             questionId: unitScope + "_" + kanjiChar,
             questionCorrect: score >= KANJI_QUIZ_HAND_PASS,
             kanjiSetScopeId: unitScope,
-            kanjiSetContinuation: true
+            kanjiSetContinuation: true,
+            kanjiQuestionType: "ruby_to_kanji"
           })
         })
           .then(function (r) {
@@ -6597,6 +6725,16 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         alert("このセットには問題がありません。");
         return;
       }
+      if (
+        !confirmKanjiQuizIfReducedSheetPoints(
+          ctx.unitName,
+          ctx.modeName,
+          ctx.setId,
+          questions
+        )
+      ) {
+        return;
+      }
       const proceed = function () {
         kanjiQuizSession = {
           modeId: ctx.modeId,
@@ -6873,6 +7011,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         questionCorrect: isCorrect,
         kanjiSetScopeId: kanjiSetScopeId,
         kanjiSetContinuation: kanjiQuizSession.index > 0,
+        kanjiQuestionType: q.type || "",
         kanjiScriptBonusMult: scriptBonusMult
       };
       if (kanjiQuizSession.isTrainingMode) {
