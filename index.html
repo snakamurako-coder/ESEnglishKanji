@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
@@ -282,14 +282,38 @@
     body.kanji-study-mode .kanji-result-title {
       color: #b22222; margin: 0 0.5em 0 0; font-size: 1.5em; font-weight: bold;
     }
-    body.kanji-study-mode .kanji-result-pts {
-      margin: 0 0.5em 0 0; font-weight: bold; color: #111;
+    /* 得点・アラビア数字は縦書きフローから切り離して横書きで表示 */
+    body.kanji-study-mode .kanji-result-scorebox {
+      writing-mode: horizontal-tb;
+      text-orientation: mixed;
+      direction: ltr;
+      display: block;
+      box-sizing: border-box;
+      margin: 0.75em 0 0;
+      padding: 14px 16px;
+      max-width: min(92vw, 28rem);
+      border: 2px solid #c9c2b8;
+      border-radius: 8px;
+      background: #faf8f5;
+      text-align: left;
     }
-    body.kanji-study-mode .kanji-result-pts-val {
+    body.kanji-study-mode .kanji-result-scorebox .kanji-result-pts {
+      margin: 0 0 10px;
+      font-weight: bold;
+      color: #111;
+    }
+    body.kanji-study-mode .kanji-result-scorebox .kanji-result-pts-val {
       color: #d32f2f; font-size: 1.5em;
     }
     body.kanji-study-mode .kanji-result-hr {
       border: none; border-left: 2px dashed #ccc; width: 2px; height: 100%; margin: 0 1em;
+    }
+    body.kanji-study-mode .kanji-result-scorebox .kanji-result-hr {
+      border-left: none;
+      border-top: 2px dashed #ccc;
+      width: 100%;
+      height: 0;
+      margin: 12px 0;
     }
     body.kanji-study-mode .kanji-result-logs {
       writing-mode: horizontal-tb;
@@ -307,6 +331,11 @@
       text-align: left;
       box-sizing: border-box;
       word-break: break-word;
+    }
+    body.kanji-study-mode .kanji-result-scorebox .kanji-result-logs {
+      width: 100%;
+      max-width: none;
+      padding: 4px 0;
     }
     body.kanji-study-mode #section-result.active > div:not(#result-content) {
       margin: 0 0 0 30px !important;
@@ -872,6 +901,9 @@
         width: min(92vw, 42rem);
         max-width: min(92vw, 42rem);
         max-height: 60vh;
+      }
+      body.kanji-study-mode .kanji-result-scorebox {
+        max-width: min(92vw, 42rem);
       }
     }
     #section-kanji-quiz-play.kanji-quiz-drill-section.active {
@@ -2071,6 +2103,8 @@
     <div id="result-content" class="item-card" style="text-align:center;"></div>
     <div style="display: flex; flex-direction: column; align-items: center; gap: 10px; margin-top: 20px;">
       <button onclick="prepareQuiz()" id="result-retry-btn" class="submit-btn btn-orange" style="display:none; width: 90%; max-width: 350px; margin:0;">🔄 もう一度やる</button>
+      <button type="button" id="result-kanji-same-book-btn" class="submit-btn btn-blue" style="display:none; width: 90%; max-width: 350px; margin:0;">おなじ学年（ブック）の違うセットに取り組む</button>
+      <button type="button" id="result-kanji-other-book-btn" class="submit-btn btn-blue" style="display:none; width: 90%; max-width: 350px; margin:0;">ちがう学年（ブック）のセットに取り組む</button>
       <button onclick="openSettingsScreen()" id="result-settings-btn" class="submit-btn btn-blue" style="display:none; width: 90%; max-width: 350px; margin:0;">⚙️ 同じ単元を学習する</button>
       <button onclick="showHome(JSON.parse(localStorage.getItem('app_kid_user')))" id="result-home-btn" class="submit-btn btn-gray" style="display:none; width: 90%; max-width: 350px; margin:0;">🏠 ホームにもどる</button>
     </div>
@@ -5288,6 +5322,16 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
             if (b.dataset.kjBusyOriginalLabel != null) return;
             startKanjiActionBusy(b, "じゅんびちゅう");
             disableKanjiButtonGroupExcept(__setBtnGroup, b);
+            /** 必ず startKanjiQuizPlay（confirm キャンセル可）より前にビジー解除する */
+            const releaseBusyThenStartFromQuestions = function (q, sid) {
+              stopKanjiActionBusy(b);
+              restoreKanjiButtonGroup(__setBtnGroup);
+              try {
+                startFromQuestionsPayload(q, sid);
+              } catch (err) {
+                console.error("セット開始処理で例外:", err);
+              }
+            };
             const qKey = kanjiQuizDrillCacheKeyQuestions(modeId, unitName, s.setId);
             const cachedQ = localStorage.getItem(qKey);
             if (cachedQ) {
@@ -5299,9 +5343,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
                   // ボタン状態は switchSection で本セクションが非表示になることで自然解消されるが、
                   // 万一 startKanjiQuizPlay がキャンセル（ユーザーが警告を閉じる）された場合に戻れるよう、
                   // ここで一度復元してから呼ぶ。
-                  stopKanjiActionBusy(b);
-                  restoreKanjiButtonGroup(__setBtnGroup);
-                  startFromQuestionsPayload(q, q.setId != null ? q.setId : s.setId);
+                  releaseBusyThenStartFromQuestions(q, q.setId != null ? q.setId : s.setId);
                   return;
                 }
               } catch (e) {}
@@ -5311,9 +5353,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
                 if (q.status === "success") {
                   try { localStorage.setItem(qKey, JSON.stringify(q)); } catch (e) {}
                 }
-                stopKanjiActionBusy(b);
-                restoreKanjiButtonGroup(__setBtnGroup);
-                startFromQuestionsPayload(q, s.setId);
+                releaseBusyThenStartFromQuestions(q, s.setId);
               })
               .catch(() => {
                 stopKanjiActionBusy(b);
@@ -7201,6 +7241,8 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       const retryBtn = document.getElementById('result-retry-btn');
       const settingsBtn = document.getElementById('result-settings-btn');
       const homeBtn = document.getElementById('result-home-btn');
+      const sameBookBtn = document.getElementById('result-kanji-same-book-btn');
+      const otherBookBtn = document.getElementById('result-kanji-other-book-btn');
       if (!rc || !retryBtn || !settingsBtn || !homeBtn) return;
       const rows = (Array.isArray(logs) ? logs : []).map(function (v) {
         const mark = v.isCorrect ? "○" : "×";
@@ -7227,19 +7269,23 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
           "</div>";
       }
       rc.innerHTML = `<h2 class="kanji-result-title">✨ 漢字セット完了！ ✨</h2>
+        <div class="kanji-result-scorebox">
         <p class="kanji-result-pts">かくとくポイント: <span class="kanji-result-pts-val">+${Number(totalEarned || 0).toFixed(2)}</span></p>
         <hr class="kanji-result-hr">
         <div class="kanji-result-logs">${rows || "結果なし"}</div>
-        ${totalLine}` + nigateBlock;
-      // 結果ページの3ボタンは、後続処理（再フェッチ・セクション切替・ホーム描画）が走るので
+        ${totalLine}
+        </div>` + nigateBlock;
+      // 結果ページのボタンは、後続処理（再フェッチ・セクション切替・ホーム描画）が走るので
       // 多重タップで二重起動しないよう、押した瞬間にビジー化する。元画面に戻る場合は
       // それぞれの handler が switchSection を呼ぶため、ボタン要素は一旦非表示になる。
       var __resultBtnGroup = [retryBtn, settingsBtn, homeBtn];
+      if (sameBookBtn) __resultBtnGroup.push(sameBookBtn);
+      if (otherBookBtn) __resultBtnGroup.push(otherBookBtn);
       function wrapResultBtnAction(busyLabel, fn) {
         return function () {
-          if (retryBtn.dataset.kjBusyOriginalLabel != null
-            || settingsBtn.dataset.kjBusyOriginalLabel != null
-            || homeBtn.dataset.kjBusyOriginalLabel != null) {
+          if (__resultBtnGroup.some(function (b) {
+            return b && b.dataset.kjBusyOriginalLabel != null;
+          })) {
             return; // どれか1つでも押下中なら無視
           }
           var self = this;
@@ -7285,6 +7331,29 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       homeBtn.onclick = wrapResultBtnAction("もどっています", function () {
         showHome(JSON.parse(localStorage.getItem('app_kid_user')));
       });
+      var ctxNav = lastKanjiQuizContext;
+      var canSameBookNav =
+        ctxNav &&
+        ctxNav.modeId != null &&
+        ctxNav.modeId !== "" &&
+        String(ctxNav.unitName || "").trim() !== "";
+      if (sameBookBtn) {
+        if (canSameBookNav) {
+          sameBookBtn.style.display = "block";
+          sameBookBtn.onclick = wrapResultBtnAction("ひらいています", function () {
+            openKanjiQuizSets(ctxNav.modeId, ctxNav.modeName || "", ctxNav.unitName, null, null);
+          });
+        } else {
+          sameBookBtn.style.display = "none";
+          sameBookBtn.onclick = null;
+        }
+      }
+      if (otherBookBtn) {
+        otherBookBtn.style.display = "block";
+        otherBookBtn.onclick = wrapResultBtnAction("ひらいています", function () {
+          loadKanjiMaterials(null);
+        });
+      }
     }
     function cancelKanjiQuizPlay() {
       var goNigate = !!(lastKanjiQuizContext && lastKanjiQuizContext.nigateTraining);
@@ -9462,6 +9531,12 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       switchSection('section-result'); 
       document.getElementById('result-content').innerHTML = "<p>おくっています...</p>"; 
       document.getElementById('result-retry-btn').style.display = "none"; document.getElementById('result-settings-btn').style.display = "none"; document.getElementById('result-home-btn').style.display = "none";
+      (function () {
+        var __kb = document.getElementById('result-kanji-same-book-btn');
+        var __ko = document.getElementById('result-kanji-other-book-btn');
+        if (__kb) __kb.style.display = "none";
+        if (__ko) __ko.style.display = "none";
+      })();
 
       const user = JSON.parse(localStorage.getItem('app_kid_user') || 'null');
       if (!user || !user.id) {
@@ -9485,6 +9560,12 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         document.getElementById('result-retry-btn').style.display = "none";
         document.getElementById('result-settings-btn').style.display = "none";
         document.getElementById('result-home-btn').style.display = "none";
+        (function () {
+          var __kb = document.getElementById('result-kanji-same-book-btn');
+          var __ko = document.getElementById('result-kanji-other-book-btn');
+          if (__kb) __kb.style.display = "none";
+          if (__ko) __ko.style.display = "none";
+        })();
         doSubmit();
       };
 
@@ -9533,6 +9614,13 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         }
         clearQuizRecoveryDraft();
 
+        (function () {
+          var __kb = document.getElementById('result-kanji-same-book-btn');
+          var __ko = document.getElementById('result-kanji-other-book-btn');
+          if (__kb) __kb.style.display = "none";
+          if (__ko) __ko.style.display = "none";
+        })();
+
         if (!isTrainingMode) {
           document.getElementById('result-retry-btn').style.display = "block";
           document.getElementById('result-retry-btn').innerText = "🔄 もう一度やる";
@@ -9577,6 +9665,12 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
                   `<hr style="border-color:#444;"><p>合計ポイント: ${escapeHtml(String(d.newTotal != null ? d.newTotal : user.points || 0))}</p>` +
                   `<p style="color:#FF9800;font-size:12px;">（描画中に軽微なエラーがありましたが、保存は完了しました。）</p>`;
                 document.getElementById('result-home-btn').style.display = "block";
+                (function () {
+                  var __kb = document.getElementById('result-kanji-same-book-btn');
+                  var __ko = document.getElementById('result-kanji-other-book-btn');
+                  if (__kb) __kb.style.display = "none";
+                  if (__ko) __ko.style.display = "none";
+                })();
               }
               return;
             }
