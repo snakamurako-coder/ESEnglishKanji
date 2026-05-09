@@ -9138,7 +9138,12 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       document.getElementById('result-content').innerHTML = "<p>おくっています...</p>"; 
       document.getElementById('result-retry-btn').style.display = "none"; document.getElementById('result-settings-btn').style.display = "none"; document.getElementById('result-home-btn').style.display = "none";
 
-      const user = JSON.parse(localStorage.getItem('app_kid_user'));
+      const user = JSON.parse(localStorage.getItem('app_kid_user') || 'null');
+      if (!user || !user.id) {
+        document.getElementById('result-content').innerHTML = `<h2 style="color:#F44336;">ログイン情報が見つかりません</h2><p>ホームにもどってから再ログインしてください。</p>`;
+        document.getElementById('result-home-btn').style.display = "block";
+        return;
+      }
       const isRandom = document.getElementById('setting-order').value === 'random';
       const detailedUnitId = getDetailedUnitId(); 
 
@@ -9148,35 +9153,124 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         payload.trainingMenuId = currentTrainingMenuId;
       }
 
-      fetch(GAS_API_URL, { method: 'POST', body: JSON.stringify(payload) })
-      .then(r => r.json()).then(d => {
-        if(d.status === "success") {
-          let bonusMsg = "";
-          if (currentIsReviewMode) bonusMsg += `<p style="color:#FF9800;font-weight:bold;margin:5px 0;">🔥 ニガテ特訓ボーナス適用</p>`;
-          if (d.bonusApplied) bonusMsg += `<p style="color:#e50914;font-weight:bold;margin:5px 0;">🎲 ランダム出題ボーナス（10%UP）</p>`;
-          if (isTrainingMode) bonusMsg += `<p style="color:#9C27B0;font-weight:bold;margin:5px 0;">🎯 特訓ルートクリア！</p>`;
-          if (d.sheetPointPercent != null && Number(d.sheetPointPercent) < 100) {
-            bonusMsg += `<p style="color:#90CAF9;font-size:15px;margin:6px 0;">📎 ${escapeHtml(formatUnitSheetDisplayLabel(currentUnitName))} のため、かくとくポイントは <strong>${d.sheetPointPercent}%</strong> になっています。</p>`;
-          }
+      // 失敗時に同じペイロードで再送できるよう、ボタンから呼ぶ用のリトライ関数。
+      // window に出して onclick から参照する。
+      window.__retryFinishQuizSubmit = function () {
+        document.getElementById('result-content').innerHTML = "<p>おくっています...（さいど）</p>";
+        document.getElementById('result-retry-btn').style.display = "none";
+        document.getElementById('result-settings-btn').style.display = "none";
+        document.getElementById('result-home-btn').style.display = "none";
+        doSubmit();
+      };
 
-          document.getElementById('result-content').innerHTML = `<h2 style="color:#4CAF50;">✨ おつかれさま！ ✨</h2>` + bonusMsg + `<p>かくとくポイント: <span style="color:gold;font-size:30px;">+${d.earnedPoints}</span></p><hr style="border-color:#444;"><p>合計ポイント: ${d.newTotal}</p>`;
-          user.points = d.newTotal; user.historyJson = d.historyJson; user.dailyPointsJson = d.dailyPointsJson; 
-          if(d.trainingProgressJson) {
-            user.trainingProgressJson = d.trainingProgressJson;
-          }
-          localStorage.setItem('app_kid_user', JSON.stringify(user));
-          clearQuizRecoveryDraft();
-          
-          if (!isTrainingMode) {
-              document.getElementById('result-retry-btn').style.display = "block"; 
-              document.getElementById('result-settings-btn').style.display = "block"; 
-          }
-          document.getElementById('result-home-btn').style.display = "block";
-        }
-      }).catch(() => {
-        document.getElementById('result-content').innerHTML = `<h2 style="color:#F44336;">通信エラー</h2><p>結果の送信に失敗しました。<br>「ホームにもどる」で復帰データを使って再開できます。</p>`;
+      function showSubmitError(title, detailHtml, allowRetry) {
+        const safeTitle = escapeHtml(String(title || "エラー"));
+        document.getElementById('result-content').innerHTML =
+          `<h2 style="color:#F44336;">⚠️ ${safeTitle}</h2>` +
+          (detailHtml || "") +
+          `<p style="margin-top:8px;">回答ログは <strong>「ホームにもどる」</strong> 後の復帰データに保存されています。</p>`;
         document.getElementById('result-home-btn').style.display = "block";
-      });
+        if (allowRetry) {
+          const retryBtn = document.getElementById('result-retry-btn');
+          if (retryBtn) {
+            retryBtn.style.display = "block";
+            retryBtn.innerText = "🔁 もういちど結果を送る";
+            retryBtn.onclick = function () { window.__retryFinishQuizSubmit(); };
+          }
+        }
+      }
+
+      function applySuccessResult(d) {
+        let bonusMsg = "";
+        if (currentIsReviewMode) bonusMsg += `<p style="color:#FF9800;font-weight:bold;margin:5px 0;">🔥 ニガテ特訓ボーナス適用</p>`;
+        if (d.bonusApplied) bonusMsg += `<p style="color:#e50914;font-weight:bold;margin:5px 0;">🎲 ランダム出題ボーナス（10%UP）</p>`;
+        if (isTrainingMode) bonusMsg += `<p style="color:#9C27B0;font-weight:bold;margin:5px 0;">🎯 特訓ルートクリア！</p>`;
+        if (d.sheetPointPercent != null && Number(d.sheetPointPercent) < 100) {
+          var labelTry = "";
+          try { labelTry = formatUnitSheetDisplayLabel(currentUnitName) || ""; } catch (_) { labelTry = String(currentUnitName || ""); }
+          bonusMsg += `<p style="color:#90CAF9;font-size:15px;margin:6px 0;">📎 ${escapeHtml(labelTry)} のため、かくとくポイントは <strong>${d.sheetPointPercent}%</strong> になっています。</p>`;
+        }
+
+        const earnedTxt = (d.earnedPoints != null) ? String(d.earnedPoints) : "0";
+        const totalTxt = (d.newTotal != null) ? String(d.newTotal) : String(user.points || 0);
+        document.getElementById('result-content').innerHTML =
+          `<h2 style="color:#4CAF50;">✨ おつかれさま！ ✨</h2>` + bonusMsg +
+          `<p>かくとくポイント: <span style="color:gold;font-size:30px;">+${earnedTxt}</span></p>` +
+          `<hr style="border-color:#444;"><p>合計ポイント: ${totalTxt}</p>`;
+        try {
+          if (d.newTotal != null) user.points = d.newTotal;
+          if (d.historyJson) user.historyJson = d.historyJson;
+          if (d.dailyPointsJson) user.dailyPointsJson = d.dailyPointsJson;
+          if (d.trainingProgressJson) user.trainingProgressJson = d.trainingProgressJson;
+          localStorage.setItem('app_kid_user', JSON.stringify(user));
+        } catch (eUserSave) {
+          console.warn("user info update failed (points were saved on server):", eUserSave);
+        }
+        clearQuizRecoveryDraft();
+
+        if (!isTrainingMode) {
+          document.getElementById('result-retry-btn').style.display = "block";
+          document.getElementById('result-retry-btn').innerText = "🔄 もう一度やる";
+          document.getElementById('result-retry-btn').onclick = function () { prepareQuiz(); };
+          document.getElementById('result-settings-btn').style.display = "block";
+        }
+        document.getElementById('result-home-btn').style.display = "block";
+      }
+
+      function doSubmit() {
+        let httpStatus = 0;
+        let rawText = "";
+        fetch(GAS_API_URL, { method: 'POST', body: JSON.stringify(payload) })
+          .then(function (r) {
+            httpStatus = r.status;
+            return r.text();
+          })
+          .then(function (txt) {
+            rawText = String(txt || "");
+            let d = null;
+            try { d = JSON.parse(rawText); } catch (e) { d = null; }
+            if (!d) {
+              console.error("save_learning_session: 非JSON応答 status=" + httpStatus, rawText.slice(0, 500));
+              showSubmitError(
+                "サーバー応答が読めませんでした",
+                `<p style="font-size:13px;color:#666;">HTTP ${httpStatus}。<br>もう一度送るか、ホームにもどってから再開できます。</p>`,
+                true
+              );
+              return;
+            }
+            if (d.status === "success") {
+              try {
+                applySuccessResult(d);
+              } catch (eApply) {
+                console.error("結果表示中にエラー（保存自体は成功）:", eApply);
+                // サーバ側は成功しているのでドラフトは消し、「合計ポイントが画面に出ない」だけの状態にしないため、
+                // 最低限の成功表示を描き直す。
+                clearQuizRecoveryDraft();
+                document.getElementById('result-content').innerHTML =
+                  `<h2 style="color:#4CAF50;">✨ おつかれさま！ ✨</h2>` +
+                  `<p>かくとくポイント: <span style="color:gold;font-size:30px;">+${escapeHtml(String(d.earnedPoints != null ? d.earnedPoints : 0))}</span></p>` +
+                  `<hr style="border-color:#444;"><p>合計ポイント: ${escapeHtml(String(d.newTotal != null ? d.newTotal : user.points || 0))}</p>` +
+                  `<p style="color:#FF9800;font-size:12px;">（描画中に軽微なエラーがありましたが、保存は完了しました。）</p>`;
+                document.getElementById('result-home-btn').style.display = "block";
+              }
+              return;
+            }
+            // d.status !== "success"
+            console.error("save_learning_session error:", d);
+            const detail = `<p style="font-size:13px;color:#666;">${escapeHtml(String(d.message || "サーバーが error を返しました。"))}</p>`;
+            showSubmitError("結果の保存に失敗しました", detail, true);
+          })
+          .catch(function (e) {
+            console.error("save_learning_session network/parse error:", e);
+            showSubmitError(
+              "通信エラー",
+              `<p>結果の送信ができませんでした。<br>電波・Wi-Fi をかくにんして「もういちど結果を送る」をおしてください。</p>`,
+              true
+            );
+          });
+      }
+
+      doSubmit();
     }
 
     document.addEventListener('keydown', (e) => {
