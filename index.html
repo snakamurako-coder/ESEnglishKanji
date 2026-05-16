@@ -6318,8 +6318,8 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         __kanjiEarnedPtsToastTimer = null;
       }, 2000);
     }
-    /** 手書き採点の点数を画面下部に約2秒表示（pointer-events なし。他 UI を塞がない） */
-    function showKanjiHandScoreToast(scoreRaw, kanjiOpt) {
+    /** 手書き採点の点数（＋任意で獲得ポイント）を画面下部に約2秒表示 */
+    function showKanjiHandScoreToast(scoreRaw, kanjiOpt, earnedPtsOpt) {
       var n = Math.max(0, Math.min(100, Math.round(Number(scoreRaw) || 0)));
       var ch = kanjiOpt != null ? String(kanjiOpt).trim() : "";
       var el = document.getElementById("kanji-hand-score-toast");
@@ -6333,10 +6333,23 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
           "z-index:10050;padding:10px 18px;border-radius:12px;background:rgba(30,30,30,0.92);color:#fff;" +
           "font-size:clamp(16px,4vw,20px);font-weight:700;box-shadow:0 4px 20px rgba(0,0,0,0.22);" +
           "pointer-events:none;opacity:0;transition:opacity 0.2s ease;text-align:center;line-height:1.35;" +
-          "max-width:min(92vw,300px);";
+          "max-width:min(92vw,320px);";
         document.body.appendChild(el);
       }
-      el.textContent = ch ? "「" + ch + "」 " + n + " てん" : n + " てん";
+      var scoreLine = ch ? "「" + ch + "」 " + n + " てん" : n + " てん";
+      if (earnedPtsOpt !== undefined && earnedPtsOpt !== null) {
+        var earned = Number(earnedPtsOpt);
+        if (isNaN(earned)) earned = 0;
+        var ptSign = earned >= 0 ? "+" : "";
+        el.innerHTML =
+          scoreLine +
+          '<div style="margin-top:6px;color:#FFD54F;font-size:clamp(14px,3.5vw,18px);font-weight:800;">ポイント ' +
+          ptSign +
+          formatPointDisplayNum(earned) +
+          " Pt</div>";
+      } else {
+        el.textContent = scoreLine;
+      }
       el.style.opacity = "1";
       if (__kanjiHandScoreToastTimer) clearTimeout(__kanjiHandScoreToastTimer);
       __kanjiHandScoreToastTimer = setTimeout(function () {
@@ -6418,7 +6431,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
           .then(function (d) {
             if (!d || d.status !== "success") return;
             try {
-              showKanjiEarnedPointsToast(d.earnedPoints);
+              showKanjiHandScoreToast(score, kanjiChar, d.earnedPoints);
             } catch (ePt) {}
             if (typeof d.newTotal === "number") {
               kidUser.points = d.newTotal;
