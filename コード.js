@@ -637,6 +637,66 @@ function calcKanjiCharRecoveryRate_(highScoreDates, now, settings) {
   return Math.min(1, overRate + recoverPerDay * days);
 }
 
+/** users シートの履歴_JSON 列（1セル約5万文字上限）に収める */
+var HISTORY_JSON_CELL_MAX_CHARS_ = 45000;
+var SESSION_SUBMIT_MAX_KEYS_ = 80;
+
+function pruneHistoryJsonToFit_(historyJson, lastStudyJson, maxChars) {
+  const max = maxChars || HISTORY_JSON_CELL_MAX_CHARS_;
+  const root = historyJson || {};
+  let serialized = JSON.stringify(root);
+  if (serialized.length <= max) return root;
+  const unitKeys = Object.keys(root).filter(function (k) {
+    return k && !String(k).startsWith("__");
+  });
+  unitKeys.sort(function (a, b) {
+    const ta = (lastStudyJson && lastStudyJson[a]) ? String(lastStudyJson[a]) : "";
+    const tb = (lastStudyJson && lastStudyJson[b]) ? String(lastStudyJson[b]) : "";
+    return ta.localeCompare(tb);
+  });
+  for (let i = 0; i < unitKeys.length; i++) {
+    delete root[unitKeys[i]];
+    serialized = JSON.stringify(root);
+    if (serialized.length <= max) return root;
+  }
+  return root;
+}
+
+function pruneSessionSubmitLocks_(locksRoot) {
+  if (!locksRoot || typeof locksRoot !== "object") return;
+  const keys = Object.keys(locksRoot);
+  if (keys.length <= SESSION_SUBMIT_MAX_KEYS_) return;
+  keys.sort(function (a, b) {
+    const ta = (locksRoot[a] && locksRoot[a].at) ? String(locksRoot[a].at) : "";
+    const tb = (locksRoot[b] && locksRoot[b].at) ? String(locksRoot[b].at) : "";
+    return ta.localeCompare(tb);
+  });
+  const drop = keys.length - SESSION_SUBMIT_MAX_KEYS_;
+  for (let i = 0; i < drop; i++) delete locksRoot[keys[i]];
+}
+
+function getSessionSubmitLock_(userData, sessionSubmitId) {
+  const id = String(sessionSubmitId || "").trim();
+  if (!id) return null;
+  const root = userData.historyJson.__sessionSubmits;
+  if (!root || !root[id]) return null;
+  const rec = root[id];
+  if (rec.earnedPoints == null || rec.newTotal == null) return null;
+  return rec;
+}
+
+function rememberSessionSubmitLock_(userData, sessionSubmitId, earnedPoints, newTotal, nowIso) {
+  const id = String(sessionSubmitId || "").trim();
+  if (!id) return;
+  if (!userData.historyJson.__sessionSubmits) userData.historyJson.__sessionSubmits = {};
+  userData.historyJson.__sessionSubmits[id] = {
+    earnedPoints: earnedPoints,
+    newTotal: newTotal,
+    at: nowIso
+  };
+  pruneSessionSubmitLocks_(userData.historyJson.__sessionSubmits);
+}
+
 // 学習結果の保存（進捗チェックの更新を追加）
 function handleSaveLearningSession(req) {
   const props = PropertiesService.getScriptProperties();
@@ -661,6 +721,26 @@ function handleSaveLearningSession(req) {
     }
   }
   if (targetRowIdx === -1) return sendResponse({ status: "error", message: "ユーザーが見つかりません" });
+
+  const priorLock = getSessionSubmitLock_(userData, req.sessionSubmitId);
+  if (priorLock) {
+    const sheetPointPercent = parseUnitSheetPointPercent_(req.unitSheetName);
+    const resp = {
+      status: "success",
+      earnedPoints: priorLock.earnedPoints,
+      newTotal: priorLock.newTotal,
+      alreadyProcessed: true,
+      bonusApplied: req.isRandom,
+      sheetPointPercent: sheetPointPercent,
+      historyUnitId: String(req.unitId || ""),
+      historyUnitPatch: userData.historyJson[req.unitId] || {},
+      dailyPointsJson: userData.dailyPointsJson
+    };
+    if (req.trainingStepIndex) {
+      resp.trainingProgressJson = userData.trainingProgressJson;
+    }
+    return sendResponse(resp);
+  }
 
   const now = new Date();
   const todayStr = now.toISOString().split('T')[0];
@@ -753,13 +833,41 @@ function handleSaveLearningSession(req) {
     userData.trainingProgressJson[todayStr][midStr][req.trainingStepIndex] = true;
   }
 
+  rememberSessionSubmitLock_(userData, req.sessionSubmitId, earnedPoints, newTotalPoints, now.toISOString());
+  userData.historyJson = pruneHistoryJsonToFit_(userData.historyJson, userData.lastStudyJson);
+
   usersSheet.getRange(targetRowIdx, 4).setValue(newTotalPoints);
   usersSheet.getRange(targetRowIdx, 5).setValue(JSON.stringify(userData.lastStudyJson));
   usersSheet.getRange(targetRowIdx, 6).setValue(JSON.stringify(userData.historyJson));
   usersSheet.getRange(targetRowIdx, 7).setValue(JSON.stringify(userData.dailyPointsJson));
   usersSheet.getRange(targetRowIdx, 8).setValue(JSON.stringify(userData.trainingProgressJson)); // ★ 保存
 
-  return sendResponse({ status: "success", earnedPoints: earnedPoints, newTotal: newTotalPoints, historyJson: userData.historyJson, dailyPointsJson: userData.dailyPointsJson, bonusApplied: req.isRandom, trainingProgressJson: userData.trainingProgressJson, sheetPointPercent: sheetPointPercent });
+  const resp = {
+    status: "success",
+    earnedPoints: earnedPoints,
+    newTotal: newTotalPoints,
+    historyUnitId: String(req.unitId || ""),
+    historyUnitPatch: unitHistory,
+    dailyPointsJson: userData.dailyPointsJson,
+    bonusApplied: req.isRandom,
+    sheetPointPercent: sheetPointPercent
+  };
+  if (lastStudyKey) {
+    resp.lastStudyKey = lastStudyKey;
+    resp.lastStudyAt = now.toISOString();
+  }
+  if (req.trainingStepIndex) {
+    resp.trainingProgressJson = userData.trainingProgressJson;
+  }
+  if (req.learningCategory === "kanji" && req.challengeType === "score" && req.kanjiChar) {
+    const charKey = String(req.kanjiChar);
+    const kRoot = userData.historyJson.__kanjiChallenge || {};
+    if (kRoot[charKey]) {
+      resp.kanjiChallengeChar = charKey;
+      resp.kanjiChallengePatch = kRoot[charKey];
+    }
+  }
+  return sendResponse(resp);
 }
 
 /** 漢字ニガテ：historyJson.__kanjiWeak へ薄いシグナルだけマージ（キー数・recent 上限あり） */
