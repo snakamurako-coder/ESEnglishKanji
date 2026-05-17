@@ -362,6 +362,7 @@ function doPost(e) {
     else if (action === "get_kanji_quiz_questions") return handleGetKanjiQuizQuestions(requestData);
     else if (action === "append_kanji_weak_signals") return handleAppendKanjiWeakSignals(requestData);
     else if (action === "get_kanji_weak_review_plan") return handleGetKanjiWeakReviewPlan(requestData);
+    else if (action === "record_kanji_nigate_pass") return handleRecordKanjiNigatePass(requestData);
     
     // ★ 特訓ルート用のAPI
     else if (action === "get_training_route") return handleGetTrainingRoute(requestData);
@@ -873,6 +874,7 @@ function handleSaveLearningSession(req) {
 /** 漢字ニガテ：historyJson.__kanjiWeak へ薄いシグナルだけマージ（キー数・recent 上限あり） */
 var KANJI_WEAK_MAX_KEYS_ = 200;
 var KANJI_WEAK_RECENT_MAX_ = 12;
+var KANJI_NIGATE_PASS_REQUIRED_ = 3;
 
 function kanjiWeakMakeKey_(modeId, unitName, setId, kanji) {
   return [String(modeId || ""), String(unitName || ""), String(setId || ""), String(kanji || "")].join("\x1f");
@@ -892,13 +894,40 @@ function pruneKanjiWeakIfNeeded_(weakRoot) {
   for (let i = 0; i < drop; i++) delete weakRoot[scored[i].k];
 }
 
+function normalizeKanjiWeakSignalPayload_(sig) {
+  if (!sig || typeof sig !== "object") return null;
+  const kanji = String(sig.kanji || sig.kanjiChar || "").trim();
+  if (!kanji) return null;
+  let signal = String(sig.signal || "").trim();
+  if (!signal) {
+    if (sig.readingMistake === true) signal = "reading_mistake";
+    else if (sig.strokeCountQuizWrong === true) signal = "stroke_count_fail";
+    else if (sig.handwritingFail === true) signal = "handwriting_fail";
+    else signal = "hand_analytics";
+  }
+  return {
+    kanji: kanji,
+    modeId: String(sig.modeId || "").trim(),
+    unitName: String(sig.unitName || "").trim(),
+    setId: String(sig.setId || "").trim(),
+    signal: signal,
+    questionId: sig.questionId,
+    hasStrokeOrderIssue: sig.hasStrokeOrderIssue,
+    brushEndingAllOk: sig.brushEndingAllOk,
+    strokeCountMismatch: sig.strokeCountMismatch,
+    referenceStrokeCount: sig.referenceStrokeCount,
+    handScore: sig.handScore
+  };
+}
+
 function mergeKanjiWeakFromRequest_(userData, req, nowIso) {
-  const kanji = String(req.kanji || "").trim();
-  if (!kanji) return { ok: false, message: "kanji が空です" };
-  const modeId = String(req.modeId || "").trim();
-  const unitName = String(req.unitName || "").trim();
-  const setId = String(req.setId || "").trim();
-  const signal = String(req.signal || "hand_analytics");
+  const norm = normalizeKanjiWeakSignalPayload_(req);
+  if (!norm) return { ok: false, message: "kanji が空です" };
+  const kanji = norm.kanji;
+  const modeId = norm.modeId;
+  const unitName = norm.unitName;
+  const setId = norm.setId;
+  const signal = norm.signal;
   if (!userData.historyJson.__kanjiWeak) userData.historyJson.__kanjiWeak = {};
   const weakRoot = userData.historyJson.__kanjiWeak;
   const key = kanjiWeakMakeKey_(modeId, unitName, setId, kanji);
@@ -912,6 +941,7 @@ function mergeKanjiWeakFromRequest_(userData, req, nowIso) {
       brushFails: 0,
       strokeCountFails: 0,
       readingFails: 0,
+      handwritingFails: 0,
       lastRefStrokeCount: null,
       recent: [],
       updatedAt: nowIso
@@ -919,23 +949,31 @@ function mergeKanjiWeakFromRequest_(userData, req, nowIso) {
   }
   const row = weakRoot[key];
   if (signal === "hand_analytics") {
-    if (req.strokeCountMismatch === true) row.strokeCountFails++;
-    if (req.hasStrokeOrderIssue === true) row.strokeOrderFails++;
-    if (req.brushEndingAllOk === false) row.brushFails++;
-    if (req.referenceStrokeCount != null && !isNaN(Number(req.referenceStrokeCount))) {
-      row.lastRefStrokeCount = Number(req.referenceStrokeCount);
+    if (norm.strokeCountMismatch === true) row.strokeCountFails++;
+    if (norm.hasStrokeOrderIssue === true) row.strokeOrderFails++;
+    if (norm.brushEndingAllOk === false) row.brushFails++;
+    if (norm.referenceStrokeCount != null && !isNaN(Number(norm.referenceStrokeCount))) {
+      row.lastRefStrokeCount = Number(norm.referenceStrokeCount);
     }
+    if (norm.handScore != null && Number(norm.handScore) < 60) row.handwritingFails++;
   } else if (signal === "reading_mistake") {
     row.readingFails++;
+  } else if (signal === "stroke_count_fail") {
+    row.strokeCountFails++;
+  } else if (signal === "handwriting_fail") {
+    row.handwritingFails = (Number(row.handwritingFails) || 0) + 1;
+    row.lastQuestionType = "ruby_to_kanji";
+    if (norm.brushEndingAllOk === false) row.brushFails++;
   }
   const ev = {
     at: nowIso,
     signal: signal,
-    q: String(req.questionId || "")
+    q: String(norm.questionId || "")
   };
-  if (req.hasStrokeOrderIssue != null) ev.hso = !!req.hasStrokeOrderIssue;
-  if (req.brushEndingAllOk != null) ev.bok = !!req.brushEndingAllOk;
-  if (req.strokeCountMismatch != null) ev.scm = !!req.strokeCountMismatch;
+  if (norm.hasStrokeOrderIssue != null) ev.hso = !!norm.hasStrokeOrderIssue;
+  if (norm.brushEndingAllOk != null) ev.bok = !!norm.brushEndingAllOk;
+  if (norm.strokeCountMismatch != null) ev.scm = !!norm.strokeCountMismatch;
+  if (norm.handScore != null) ev.hs = Number(norm.handScore);
   if (!Array.isArray(row.recent)) row.recent = [];
   row.recent.push(ev);
   while (row.recent.length > KANJI_WEAK_RECENT_MAX_) row.recent.shift();
@@ -968,15 +1006,201 @@ function handleAppendKanjiWeakSignals(req) {
   }
   if (targetRowIdx === -1) return sendResponse({ status: "error", message: "ユーザーが見つかりません" });
   const nowIso = new Date().toISOString();
-  const r = mergeKanjiWeakFromRequest_(userData, req, nowIso);
-  if (!r.ok) return sendResponse({ status: "error", message: r.message || "マージ失敗" });
+  const list = Array.isArray(req.signals) ? req.signals : [req];
+  let merged = 0;
+  let lastErr = "";
+  list.forEach(function (sig) {
+    const r = mergeKanjiWeakFromRequest_(userData, sig, nowIso);
+    if (r.ok) merged++;
+    else lastErr = r.message || lastErr;
+  });
+  if (!merged) return sendResponse({ status: "error", message: lastErr || "マージ対象がありません" });
+  userData.historyJson = pruneHistoryJsonToFit_(userData.historyJson, userData.lastStudyJson);
   usersSheet.getRange(targetRowIdx, 6).setValue(JSON.stringify(userData.historyJson));
-  return sendResponse({ status: "success", historyJson: userData.historyJson });
+  return sendResponse({ status: "success", merged: merged });
+}
+
+function normalizeNigateTrainMode_(trainMode) {
+  const s = String(trainMode || "").trim();
+  if (s === "write_kanji" || s === "stroke_order" || s === "brush") return "ruby_to_kanji";
+  if (s === "select_kana") return "okurigana_shift";
+  if (s === "reading" || s === "type_yomi") return "sentence_to_ruby";
+  if (!s) return "ruby_to_kanji";
+  return s;
+}
+
+function kanjiNigatePassKey_(modeId, unitName, setId, kanji, trainMode) {
+  return kanjiWeakMakeKey_(modeId, unitName, setId, kanji) + "\x1f" + normalizeNigateTrainMode_(trainMode);
+}
+
+function getKanjiNigatePassRecord_(historyJson, modeId, unitName, setId, kanji, trainMode) {
+  if (!historyJson.__kanjiNigatePass) return { passCount: 0, passes: [] };
+  const key = kanjiNigatePassKey_(modeId, unitName, setId, kanji, trainMode);
+  const rec = historyJson.__kanjiNigatePass[key];
+  if (!rec) return { passCount: 0, passes: [] };
+  return {
+    passCount: Number(rec.passCount) || 0,
+    passes: Array.isArray(rec.passes) ? rec.passes : []
+  };
+}
+
+function recordKanjiNigatePass_(userData, modeId, unitName, setId, kanji, trainMode, nowIso, passRequired) {
+  const need = passRequired || KANJI_NIGATE_PASS_REQUIRED_;
+  const axis = normalizeNigateTrainMode_(trainMode);
+  if (!userData.historyJson.__kanjiNigatePass) userData.historyJson.__kanjiNigatePass = {};
+  const key = kanjiNigatePassKey_(modeId, unitName, setId, kanji, axis);
+  if (!userData.historyJson.__kanjiNigatePass[key]) {
+    userData.historyJson.__kanjiNigatePass[key] = { passCount: 0, passes: [] };
+  }
+  const rec = userData.historyJson.__kanjiNigatePass[key];
+  rec.passCount = (Number(rec.passCount) || 0) + 1;
+  if (!Array.isArray(rec.passes)) rec.passes = [];
+  rec.passes.push(nowIso);
+  while (rec.passes.length > 24) rec.passes.shift();
+  rec.updatedAt = nowIso;
+  return {
+    passCount: rec.passCount,
+    passRequired: need,
+    graduated: rec.passCount >= need
+  };
+}
+
+function handleRecordKanjiNigatePass(req) {
+  const userId = req.userId;
+  if (!userId) return sendResponse({ status: "error", message: "userId が必要です" });
+  const kanji = String(req.kanji || req.kanjiChar || "").trim();
+  if (!kanji) return sendResponse({ status: "error", message: "kanji が空です" });
+  const props = PropertiesService.getScriptProperties();
+  const adminSs = SpreadsheetApp.openById(props.getProperty("ADMIN_SS_ID"));
+  const usersSheet = adminSs.getSheetByName("users");
+  const data = usersSheet.getDataRange().getValues();
+  let targetRowIdx = -1;
+  let userData = null;
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] === userId) {
+      targetRowIdx = i + 1;
+      userData = {
+        historyJson: JSON.parse(data[i][5] || "{}"),
+        lastStudyJson: JSON.parse(data[i][4] || "{}")
+      };
+      break;
+    }
+  }
+  if (targetRowIdx === -1) return sendResponse({ status: "error", message: "ユーザーが見つかりません" });
+  const nowIso = new Date().toISOString();
+  const passRequired = parseInt(req.passRequired, 10) || KANJI_NIGATE_PASS_REQUIRED_;
+  const result = recordKanjiNigatePass_(
+    userData,
+    String(req.modeId || ""),
+    String(req.unitName || ""),
+    String(req.setId || ""),
+    kanji,
+    String(req.trainMode || req.nigateAxis || "ruby_to_kanji"),
+    nowIso,
+    passRequired
+  );
+  userData.historyJson = pruneHistoryJsonToFit_(userData.historyJson, userData.lastStudyJson);
+  usersSheet.getRange(targetRowIdx, 6).setValue(JSON.stringify(userData.historyJson));
+  return sendResponse({ status: "success", kanji: kanji, passCount: result.passCount, passRequired: result.passRequired, graduated: result.graduated });
+}
+
+function findKanjiItemInGroups_(groups, kanji, preferredSetId) {
+  const k = String(kanji || "");
+  if (!k || !groups || !groups.length) return null;
+  if (preferredSetId) {
+    const g0 = groups.find(function (g) { return String(g.setId) === String(preferredSetId); });
+    if (g0 && g0.items) {
+      const hit = g0.items.find(function (it) { return String(it.kanji) === k; });
+      if (hit) return { item: hit, setId: String(g0.setId) };
+    }
+  }
+  for (let i = 0; i < groups.length; i++) {
+    const g = groups[i];
+    if (!g || !g.items) continue;
+    const hit = g.items.find(function (it) { return String(it.kanji) === k; });
+    if (hit) return { item: hit, setId: String(g.setId) };
+  }
+  return null;
+}
+
+function buildStrokeCountQuizQuestionForNigate_(kanji, refCount) {
+  const k = String(kanji || "");
+  let correct = parseInt(refCount, 10);
+  if (isNaN(correct) || correct < 1) correct = 5;
+  const raw = [correct - 2, correct - 1, correct, correct + 1, correct + 2].filter(function (n) { return n >= 1; });
+  const seen = {};
+  const choices = [];
+  raw.forEach(function (n) {
+    const s = String(n);
+    if (!seen[s]) {
+      seen[s] = true;
+      choices.push(s);
+    }
+  });
+  while (choices.length < 4) {
+    const extra = String(correct + choices.length);
+    if (!seen[extra]) {
+      seen[extra] = true;
+      choices.push(extra);
+    } else break;
+  }
+  return {
+    type: "stroke_count",
+    kanji: k,
+    prompt: "この漢字の画数を選びましょう。",
+    choices: shuffleKanjiQuizArray_(choices),
+    correctAnswer: String(correct),
+    searchText: k + " 画数 " + correct
+  };
+}
+
+function buildNigateQuestionForWeakRow_(trainMode, item, weakRow, dummyPoolByKanji) {
+  if (!item) return null;
+  const axis = normalizeNigateTrainMode_(trainMode);
+  if (axis === "sentence_to_ruby") return buildSentenceToRubyQuizQuestion_(item);
+  if (axis === "stroke_count") {
+    return buildStrokeCountQuizQuestionForNigate_(weakRow.kanji, weakRow.lastRefStrokeCount);
+  }
+  if (axis === "okurigana_shift") {
+    return buildOkuriganaShiftQuizQuestion_(item, dummyPoolByKanji || {});
+  }
+  return buildRubyToKanjiQuizQuestion_(item);
+}
+
+function kanjiWeakAxisWeight_(row, trainMode) {
+  const axis = normalizeNigateTrainMode_(trainMode);
+  if (axis === "sentence_to_ruby") return Number(row.readingFails) || 0;
+  if (axis === "stroke_count") return Number(row.strokeCountFails) || 0;
+  if (axis === "okurigana_shift") return Number(row.readingFails) || 0;
+  if (axis === "ruby_to_kanji") {
+    const hw = Number(row.handwritingFails) || 0;
+    if (hw > 0) return hw;
+    if (row.lastQuestionType === "ruby_to_kanji") return 1;
+    return 0;
+  }
+  return Number(row.handwritingFails) || 0;
+}
+
+function dedupeWeakRowsByKanji_(rows) {
+  const seen = {};
+  const out = [];
+  (rows || []).forEach(function (r) {
+    const k = String(r.kanji || "");
+    if (!k || seen[k]) return;
+    seen[k] = true;
+    out.push(r);
+  });
+  return out;
 }
 
 function handleGetKanjiWeakReviewPlan(req) {
   const userId = req.userId;
   if (!userId) return sendResponse({ status: "error", message: "userId が必要です" });
+  const modeId = String(req.modeId || "").trim();
+  const unitName = String(req.unitName || (Array.isArray(req.unitNames) && req.unitNames[0]) || "").trim();
+  if (!modeId || !unitName) {
+    return sendResponse({ status: "error", message: "modeId / unitName が必要です" });
+  }
   const props = PropertiesService.getScriptProperties();
   const adminSs = SpreadsheetApp.openById(props.getProperty("ADMIN_SS_ID"));
   const usersSheet = adminSs.getSheetByName("users");
@@ -990,48 +1214,85 @@ function handleGetKanjiWeakReviewPlan(req) {
   }
   if (!historyJson) return sendResponse({ status: "error", message: "ユーザーが見つかりません" });
   const weakRoot = historyJson.__kanjiWeak || {};
-  const modeId = String(req.modeId || "");
-  const unitNames = Array.isArray(req.unitNames) ? req.unitNames.map(function (x) { return String(x); }) : [];
-  const setIds = Array.isArray(req.setIds) ? req.setIds.map(function (x) { return String(x); }) : [];
-  const setScopes = Array.isArray(req.setScopes)
-    ? req.setScopes.map(function (x) {
-        return { unitName: String((x && x.unitName) || ""), setId: String((x && x.setId) || "") };
-      })
-      .filter(function (x) { return x.unitName && x.setId; })
-    : [];
-  const trainMode = String(req.trainMode || "stroke_order");
-  const rows = [];
+  const setIds = Array.isArray(req.setIds) ? req.setIds.map(function (x) { return String(x); }).filter(Boolean) : [];
+  const trainMode = normalizeNigateTrainMode_(req.nigateAxis || req.trainMode || "ruby_to_kanji");
+  const passRequired = parseInt(req.passRequired, 10) || KANJI_NIGATE_PASS_REQUIRED_;
+  const limit = Math.min(12, Math.max(1, parseInt(req.limit, 10) || 12));
+  const candidateRows = [];
   Object.keys(weakRoot).forEach(function (k) {
     const r = weakRoot[k];
     if (!r || !r.kanji) return;
     if (modeId && String(r.modeId) !== modeId) return;
-    if (unitNames.length && unitNames.indexOf(String(r.unitName)) < 0) return;
-    if (setScopes.length) {
-      var inScope = setScopes.some(function (sc) {
-        return String(r.unitName) === sc.unitName && String(r.setId) === sc.setId;
-      });
-      if (!inScope) return;
-    } else if (setIds.length && setIds.indexOf(String(r.setId)) < 0) return;
-    let w = 0;
-    if (trainMode === "reading") w = Number(r.readingFails) || 0;
-    else if (trainMode === "brush") w = Number(r.brushFails) || 0;
-    else if (trainMode === "stroke_count") w = Number(r.strokeCountFails) || 0;
-    else w = Number(r.strokeOrderFails) || 0;
-    rows.push({
+    if (unitName && String(r.unitName) !== unitName) return;
+    if (setIds.length && setIds.indexOf(String(r.setId)) < 0) return;
+    const w = kanjiWeakAxisWeight_(r, trainMode);
+    if (w <= 0) return;
+    const passRec = getKanjiNigatePassRecord_(historyJson, r.modeId, r.unitName, r.setId, r.kanji, trainMode);
+    if (passRec.passCount >= passRequired) return;
+    candidateRows.push({
       modeId: r.modeId,
       unitName: r.unitName,
       setId: r.setId,
       kanji: r.kanji,
       w: w,
-      strokeOrderFails: r.strokeOrderFails || 0,
-      brushFails: r.brushFails || 0,
-      strokeCountFails: r.strokeCountFails || 0,
-      readingFails: r.readingFails || 0,
+      passCount: passRec.passCount,
+      passRequired: passRequired,
       lastRefStrokeCount: r.lastRefStrokeCount
     });
   });
-  rows.sort(function (a, b) { return b.w - a.w; });
-  return sendResponse({ status: "success", rows: rows.slice(0, 300) });
+  candidateRows.sort(function (a, b) { return b.w - a.w; });
+  const picked = dedupeWeakRowsByKanji_(candidateRows).slice(0, limit);
+  if (!picked.length) {
+    return sendResponse({
+      status: "success",
+      questions: [],
+      rows: [],
+      message: "この条件ではもんだいがありません。通常学習でまちがえた漢字がここにのこります。"
+    });
+  }
+  let groups = [];
+  try {
+    const got = getKanjiQuizParsedFromSpreadsheet_(modeId, unitName);
+    if (got.sheetMissing) return sendResponse({ status: "error", message: "指定シートが見つかりません。" });
+    groups = (got.parsed && got.parsed.groups) ? got.parsed.groups : [];
+  } catch (e) {
+    return sendResponse({ status: "error", message: "教材の読み込みに失敗しました: " + e.message });
+  }
+  const allItems = [];
+  groups.forEach(function (g) {
+    if (g && g.items) allItems.push.apply(allItems, g.items);
+  });
+  const dummyPoolByKanji = collectOkuriganaDummyPoolByKanjiKanjiQuiz_(allItems);
+  const questions = [];
+  const rows = [];
+  picked.forEach(function (weakRow) {
+    const found = findKanjiItemInGroups_(groups, weakRow.kanji, weakRow.setId);
+    if (!found) return;
+    const q = buildNigateQuestionForWeakRow_(trainMode, found.item, weakRow, dummyPoolByKanji);
+    if (!q) return;
+    q.questionId = "NIGATE_" + weakRow.kanji + "_" + trainMode + "_" + found.setId;
+    q.nigateSourceSetId = found.setId;
+    q.nigatePassCount = weakRow.passCount;
+    q.nigatePassRequired = passRequired;
+    q.nigateTrainMode = trainMode;
+    questions.push(q);
+    rows.push(weakRow);
+  });
+  if (!questions.length) {
+    return sendResponse({
+      status: "success",
+      questions: [],
+      rows: rows,
+      message: "よわみデータはありますが、教材シートから問題を組み立てられませんでした。"
+    });
+  }
+  return sendResponse({
+    status: "success",
+    questions: questions,
+    rows: rows,
+    passRequired: passRequired,
+    trainMode: trainMode
+  });
 }
 
 // ==========================================
