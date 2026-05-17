@@ -382,6 +382,10 @@
       color: #555;
       font-size: clamp(13px, 3vw, 16px);
     }
+    /* クイズ中は画面下の著作権フッターが操作バーに重ならないよう非表示 */
+    body.kanji-study-mode .footer {
+      display: none;
+    }
     #section-materials .kanji-study-materials-wrap .kanji-page-title-stack {
       display: flex;
       flex-direction: column;
@@ -744,8 +748,8 @@
       flex-wrap: wrap;
       gap: 12px;
       justify-content: flex-end;
-      width: 100%;
-      max-width: 720px;
+      width: 360px;
+      max-width: 360px;
       margin-left: auto;
       margin-right: 0;
       writing-mode: horizontal-tb;
@@ -884,16 +888,30 @@
     body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-drill-section .kanji-quiz-play-footer-bar {
       flex: 0 0 auto;
       position: relative;
+      left: auto;
+      top: auto;
       z-index: 400;
       writing-mode: horizontal-tb;
       text-orientation: mixed;
       direction: ltr;
-      width: 100%;
+      width: 360px;
+      max-width: min(360px, calc(100vw - 24px));
+      margin-left: auto;
+      margin-right: max(12px, env(safe-area-inset-right, 0px));
+      align-self: flex-end;
       box-sizing: border-box;
       background: #fdfbf7;
       border-top: 2px solid #c9c2b8;
       padding: 8px 10px calc(10px + env(safe-area-inset-bottom, 0px));
       box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.08);
+    }
+    /* 不正解パネル表示時：グローバルヘッダー・バッジ下に収まるよう上余白 */
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-drill-section.kanji-quiz-wrong-visible .kanji-quiz-drill-wrap {
+      scroll-padding-top: 56px;
+      padding-top: max(48px, calc(12px + env(safe-area-inset-top, 0px)));
+    }
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-drill-section.kanji-quiz-wrong-visible #kanji-quiz-hw-wrong-panel {
+      scroll-margin-top: 56px;
     }
     body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-drill-section .kanji-quiz-play-footer-inner {
       display: flex;
@@ -1149,6 +1167,12 @@
       box-sizing: border-box;
       text-align: center;
       width: min(560px, 100%);
+      height: auto;
+      min-height: 0;
+      max-height: min(780px, calc(100dvh - 220px));
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
     }
     .kanji-quiz-hw-wrong-heading {
       margin: 0 0 10px;
@@ -1196,7 +1220,9 @@
       max-width: min(480px, 100%);
       margin: 0 auto;
       min-height: 160px;
-      max-height: min(34dvh, 340px);
+      flex: 1 1 auto;
+      height: auto;
+      max-height: min(780px, calc(100dvh - 300px));
       border: 2px solid #e57373;
       border-radius: 10px;
       overflow: auto;
@@ -1227,7 +1253,7 @@
       z-index: 4;
       overflow: visible;
     }
-    body.kanji-study-mode .kanji-quiz-drill-wrap #kanji-quiz-hw-wrong-panel button.kanji-drill-vbtn-small.submit-btn-small {
+    body.kanji-study-mode .kanji-quiz-drill-wrap .kanji-drill-hw-panel-aside #kanji-quiz-skip-hw-btn {
       position: static;
       margin: 8px auto 0;
       display: inline-block;
@@ -2045,6 +2071,7 @@
             <canvas id="kanji-quiz-write-canvas" width="300" height="300"></canvas>
             <div class="kanji-drill-hw-panel-aside">
               <div id="kanji-play-char-handwriting" class="kanji-drill-reading-aside kanji-drill-hw-ruby-box"></div>
+              <button type="button" class="kanji-drill-vbtn-small submit-btn-small" id="kanji-quiz-skip-hw-btn" onclick="kanjiQuizSkipHandwritingQuestion(this)">⏭️ 次へ（このもんだいは ふせいかい）</button>
             </div>
           </div>
           <div class="kanji-drill-hw-suffix-col" id="kanji-drill-hw-suffix-col" aria-hidden="false">
@@ -2059,9 +2086,6 @@
         <div id="kanji-quiz-wrong-red-chars" class="kanji-quiz-wrong-red-chars"></div>
         <p class="kanji-quiz-hw-wrong-stroke-label">かきじゅん（みょうじ）</p>
         <div id="kanji-quiz-wrong-model-wrap" class="kanji-quiz-wrong-model-wrap"></div>
-        <div style="margin-top:12px;">
-          <button type="button" class="kanji-drill-vbtn-small submit-btn-small" id="kanji-quiz-skip-hw-btn" onclick="kanjiQuizSkipHandwritingQuestion(this)">⏭️ 次へ（このもんだいは ふせいかい）</button>
-        </div>
       </div>
     </div>
     </div>
@@ -6873,6 +6897,8 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
     }
     function kanjiQuizHideWrongFeedback() {
       const panel = document.getElementById("kanji-quiz-hw-wrong-panel");
+      const sec = document.getElementById("section-kanji-quiz-play");
+      if (sec) sec.classList.remove("kanji-quiz-wrong-visible");
       if (panel) panel.style.display = "none";
       try {
         if (kanjiQuizSession) delete kanjiQuizSession.wrongModelKanjiChar;
@@ -6998,9 +7024,13 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       }
       redWrap.innerHTML = html || "<span class=\"kanji-quiz-wrong-char-main\">（データなし）</span>";
       panel.style.display = "block";
+      const sec = document.getElementById("section-kanji-quiz-play");
+      if (sec) sec.classList.add("kanji-quiz-wrong-visible");
       if (ch) kanjiQuizMountWrongModelFrameForChar(ch);
       try {
-        if (panel) panel.scrollIntoView({ block: "nearest", behavior: "smooth" });
+        requestAnimationFrame(function () {
+          panel.scrollIntoView({ block: "start", behavior: "smooth" });
+        });
       } catch (e) {}
     }
     function normalizeKanjiQuizInput(str) {
