@@ -810,7 +810,7 @@
     body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-drill-section .kanji-drill-hw-row {
       display: flex;
       flex-direction: column;
-      align-items: flex-start;
+      align-items: center;
       justify-content: center;
       width: 650px;
       flex-wrap: nowrap;
@@ -1171,7 +1171,7 @@
     .kanji-drill-hw-row {
       display: flex;
       flex-direction: column;
-      align-items: flex-start;
+      align-items: center;
       justify-content: center;
       flex-wrap: nowrap;
       gap: 12px;
@@ -1313,6 +1313,9 @@
       align-self: center;
       max-width: 100%;
     }
+    #kanji-drill-hw-prefix-col {
+      text-align: center;
+    }
     .kanji-drill-hw-prefix-col {
       justify-content: flex-end;
     }
@@ -1386,6 +1389,10 @@
       flex-shrink: 0;
     }
     #kanji-quiz-drill-handwriting {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      vertical-align: top;
       margin-top: 0;
       writing-mode: horizontal-tb;
       text-orientation: mixed;
@@ -7388,7 +7395,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         try {
           kanjiQuizHideWrongFeedback();
         } catch (e) {}
-        if (drillHand) drillHand.style.display = "block";
+        if (drillHand) drillHand.style.display = "flex";
         setKanjiQuizPlayHwFooterActive(true);
         const cvsActions = document.getElementById("kanji-hw-canvas-actions");
         if (cvsActions) cvsActions.style.display = "flex";
