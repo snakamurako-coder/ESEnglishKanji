@@ -804,13 +804,15 @@
     body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-drill-section #kanji-quiz-drill-handwriting {
       writing-mode: horizontal-tb !important;
       text-orientation: mixed !important;
-      width: 100%;
-      max-width: 100%;
+      width: 655px;
+      max-width: 655px;
     }
     body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-drill-section .kanji-drill-hw-row {
       display: flex;
       flex-direction: column;
-      align-items: center;
+      align-items: flex-start;
+      justify-content: center;
+      width: 650px;
       flex-wrap: nowrap;
       gap: 12px;
       writing-mode: horizontal-tb;
@@ -872,7 +874,8 @@
       writing-mode: vertical-rl;
       text-orientation: upright;
       display: flex;
-      flex-direction: column;
+      flex-direction: row;
+      flex-wrap: wrap;
       align-items: flex-start;
       justify-content: flex-start;
       padding: 12px 56px 12px 12px;
@@ -1168,15 +1171,15 @@
     .kanji-drill-hw-row {
       display: flex;
       flex-direction: column;
-      align-items: center;
-      justify-content: flex-start;
+      align-items: flex-start;
+      justify-content: center;
       flex-wrap: nowrap;
       gap: 12px;
       writing-mode: horizontal-tb;
       text-orientation: mixed;
       direction: ltr;
       margin-top: 12px;
-      width: 100%;
+      width: 650px;
       box-sizing: border-box;
       border-style: solid;
       border-width: 1px;
@@ -1195,7 +1198,7 @@
       text-align: center;
       width: min(560px, 100%);
       height: auto;
-      min-height: 0;
+      min-height: 1040px;
       max-height: min(780px, calc(100dvh - 220px));
       display: flex;
       flex-direction: column;
@@ -1246,9 +1249,9 @@
       width: 100%;
       max-width: min(480px, 100%);
       margin: 0 auto;
-      min-height: 160px;
+      min-height: 820px;
       flex: 1 1 auto;
-      height: auto;
+      height: 840px;
       max-height: min(780px, calc(100dvh - 300px));
       border: 2px solid #e57373;
       border-radius: 10px;
@@ -1386,8 +1389,8 @@
       margin-top: 0;
       writing-mode: horizontal-tb;
       text-orientation: mixed;
-      width: 100%;
-      max-width: 100%;
+      width: 655px;
+      max-width: 655px;
     }
     /* 手書き：操作ボタン列（左）・キャンバス・ルビを同一パネル内に配置。縦はルビ・キャンバスに合わせて伸縮 */
     .kanji-drill-hw-canvas-panel {
@@ -2053,8 +2056,35 @@
   <div id="section-kanji-quiz-play" class="section kanji-quiz-drill-section">
     <span id="kanji-play-type-badge" style="display:block;margin-top:4px;color:#6d4c41;font-size:14px;min-height:1.2em;position:absolute;left:8px;top:4px;z-index:50;"></span>
     <div class="kanji-quiz-drill-main">
+    <span id="kanji-play-progress">1 / 1</span>
     <div class="kanji-quiz-drill-wrap">
-      <span id="kanji-play-progress">1 / 1</span>
+      <div id="kanji-quiz-hw-wrong-panel" class="kanji-quiz-hw-wrong-panel" style="display:none;" role="status" aria-live="polite">
+        <p id="kanji-quiz-hw-wrong-heading" class="kanji-quiz-hw-wrong-heading">ざんねん（60点みまん）</p>
+        <p class="kanji-quiz-hw-wrong-label-plain">せいかいのかんじ</p>
+        <div id="kanji-quiz-wrong-red-chars" class="kanji-quiz-wrong-red-chars"></div>
+        <p class="kanji-quiz-hw-wrong-stroke-label">かきじゅん（みょうじ）</p>
+        <div id="kanji-quiz-wrong-model-wrap" class="kanji-quiz-wrong-model-wrap"></div>
+      </div>
+      <div id="kanji-quiz-drill-handwriting" class="kanji-drill-hw-row" style="display:none;">
+          <div class="kanji-drill-hw-prefix-col" id="kanji-drill-hw-prefix-col" aria-hidden="false">
+            <span class="kanji-drill-q-marker" id="kanji-drill-q-marker"></span><span id="kanji-drill-ctx-prefix" class="kanji-drill-context-inline"></span>
+          </div>
+          <div class="kanji-drill-hw-canvas-panel">
+            <div id="kanji-hw-canvas-actions" class="kanji-drill-hw-panel-btns" style="display:none;">
+              <button type="button" id="kanji-hw-submit-btn" class="kanji-drill-vbtn-small submit-btn-small kanji-hw-submit-btn" onclick="kanjiQuizRunHandwritingAnswer()">これでかいとう</button>
+              <button type="button" class="kanji-drill-vbtn-small" onclick="kanjiQuizRemoveLastStrokeDecoration()">かざりをけす</button>
+              <button type="button" class="kanji-drill-vbtn-small" onclick="kanjiQuizClearWritePad(true)">この字を書き直す</button>
+            </div>
+            <canvas id="kanji-quiz-write-canvas" width="300" height="300"></canvas>
+            <div class="kanji-drill-hw-panel-aside">
+              <div id="kanji-play-char-handwriting" class="kanji-drill-reading-aside kanji-drill-hw-ruby-box"></div>
+              <button type="button" class="kanji-drill-vbtn-small submit-btn-small" id="kanji-quiz-skip-hw-btn" onclick="kanjiQuizSkipHandwritingQuestion(this)">⏭️ 次へ（このもんだいは ふせいかい）</button>
+            </div>
+          </div>
+          <div class="kanji-drill-hw-suffix-col" id="kanji-drill-hw-suffix-col" aria-hidden="false">
+            <span id="kanji-drill-ctx-suffix" class="kanji-drill-context-inline"></span>
+          </div>
+      </div>
       <div class="kanji-quiz-title-rail-wrap">
         <h1 id="kanji-play-title">漢字ドリル</h1>
       </div>
@@ -2084,36 +2114,7 @@
         </div>
         <input type="hidden" id="kanji-play-input" value="">
       </div>
-      <div id="kanji-quiz-drill-handwriting" style="display:none;">
-        <div class="kanji-drill-hw-row">
-          <div class="kanji-drill-hw-prefix-col" id="kanji-drill-hw-prefix-col" aria-hidden="false">
-            <span class="kanji-drill-q-marker" id="kanji-drill-q-marker"></span><span id="kanji-drill-ctx-prefix" class="kanji-drill-context-inline"></span>
-          </div>
-          <div class="kanji-drill-hw-canvas-panel">
-            <div id="kanji-hw-canvas-actions" class="kanji-drill-hw-panel-btns" style="display:none;">
-              <button type="button" id="kanji-hw-submit-btn" class="kanji-drill-vbtn-small submit-btn-small kanji-hw-submit-btn" onclick="kanjiQuizRunHandwritingAnswer()">これでかいとう</button>
-              <button type="button" class="kanji-drill-vbtn-small" onclick="kanjiQuizRemoveLastStrokeDecoration()">かざりをけす</button>
-              <button type="button" class="kanji-drill-vbtn-small" onclick="kanjiQuizClearWritePad(true)">この字を書き直す</button>
-            </div>
-            <canvas id="kanji-quiz-write-canvas" width="300" height="300"></canvas>
-            <div class="kanji-drill-hw-panel-aside">
-              <div id="kanji-play-char-handwriting" class="kanji-drill-reading-aside kanji-drill-hw-ruby-box"></div>
-              <button type="button" class="kanji-drill-vbtn-small submit-btn-small" id="kanji-quiz-skip-hw-btn" onclick="kanjiQuizSkipHandwritingQuestion(this)">⏭️ 次へ（このもんだいは ふせいかい）</button>
-            </div>
-          </div>
-          <div class="kanji-drill-hw-suffix-col" id="kanji-drill-hw-suffix-col" aria-hidden="false">
-            <span id="kanji-drill-ctx-suffix" class="kanji-drill-context-inline"></span>
-          </div>
-        </div>
-      </div>
       <div id="kanji-play-summary"></div>
-      <div id="kanji-quiz-hw-wrong-panel" class="kanji-quiz-hw-wrong-panel" style="display:none;" role="status" aria-live="polite">
-        <p id="kanji-quiz-hw-wrong-heading" class="kanji-quiz-hw-wrong-heading">ざんねん（60点みまん）</p>
-        <p class="kanji-quiz-hw-wrong-label-plain">せいかいのかんじ</p>
-        <div id="kanji-quiz-wrong-red-chars" class="kanji-quiz-wrong-red-chars"></div>
-        <p class="kanji-quiz-hw-wrong-stroke-label">かきじゅん（みょうじ）</p>
-        <div id="kanji-quiz-wrong-model-wrap" class="kanji-quiz-wrong-model-wrap"></div>
-      </div>
     </div>
     </div>
     <div class="kanji-quiz-play-footer-bar kanji-quiz-play-footer-btns">
