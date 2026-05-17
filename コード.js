@@ -156,7 +156,12 @@ function setupSystem() {
       ["漢字基本Pt_画数_80以上", 5],
       ["漢字基本Pt_画数_70以上", 4],
       ["漢字基本Pt_画数_60以上", 3],
-      ["漢字基本Pt_画数_50以上", 1]
+      ["漢字基本Pt_画数_50以上", 1],
+      /* 手書き採点の加重（%）。空欄なら下記デフォルト。設定名は1行目見出しと同じキー */
+      ["trajectory", 40],
+      ["startEnd", 15],
+      ["structure", 20],
+      ["size", 25]
     ];
     defaultPointRows.forEach(row => {
       if (!existingKeys.has(row[0])) {
