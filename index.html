@@ -745,12 +745,12 @@
     /* Removed duplicate kanji-quiz-drill-wrap styles */
     body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-drill-section .kanji-quiz-play-footer-btns {
       display: flex;
-      flex-wrap: wrap;
-      gap: 12px;
-      justify-content: flex-end;
-      width: 360px;
-      max-width: 360px;
-      margin-left: auto;
+      flex-wrap: nowrap;
+      gap: 0;
+      justify-content: stretch;
+      width: 100%;
+      max-width: 100%;
+      margin-left: 0;
       margin-right: 0;
       writing-mode: horizontal-tb;
       text-orientation: mixed;
@@ -894,15 +894,15 @@
       writing-mode: horizontal-tb;
       text-orientation: mixed;
       direction: ltr;
-      width: 360px;
-      max-width: min(360px, calc(100vw - 24px));
-      margin-left: auto;
-      margin-right: max(12px, env(safe-area-inset-right, 0px));
-      align-self: flex-end;
+      width: 100%;
+      max-width: 100%;
+      margin-left: 0;
+      margin-right: 0;
+      align-self: stretch;
       box-sizing: border-box;
       background: #fdfbf7;
       border-top: 2px solid #c9c2b8;
-      padding: 8px 10px calc(10px + env(safe-area-inset-bottom, 0px));
+      padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px));
       box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.08);
     }
     /* 不正解パネル表示時：グローバルヘッダー・バッジ下に収まるよう上余白 */
@@ -916,19 +916,46 @@
     body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-drill-section .kanji-quiz-play-footer-inner {
       display: flex;
       flex-direction: row;
-      flex-wrap: wrap;
-      gap: 8px 10px;
+      flex-wrap: nowrap;
+      gap: 6px;
       align-items: center;
       justify-content: flex-start;
       max-width: 100%;
+      width: 100%;
+      overflow-x: auto;
+      overflow-y: hidden;
+      -webkit-overflow-scrolling: touch;
+      writing-mode: horizontal-tb;
+      text-orientation: mixed;
+    }
+    /* フッター内ボタン：横書き・1行・低い高さ（.kanji-drill-vbtn-small の縦書きを上書き） */
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-drill-section .kanji-quiz-play-footer-bar .kanji-drill-vbtn-small {
+      writing-mode: horizontal-tb;
+      text-orientation: mixed;
+      width: auto;
+      min-width: 0;
+      min-height: 0;
+      height: auto;
+      padding: 6px 10px;
+      font-size: clamp(12px, 2.8vw, 14px);
+      line-height: 1.25;
+      white-space: nowrap;
+      flex: 0 0 auto;
+    }
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-drill-section .kanji-quiz-play-footer-bar #kanji-quiz-layout-refresh-btn {
+      max-width: none;
+      text-align: center;
     }
     /* 手書き専用フッターUI：非手書き時は常に非表示（kanji-quiz-hw-active のみ表示） */
     #section-kanji-quiz-play.kanji-quiz-drill-section .kanji-quiz-play-footer-inner #kanji-drill-pen-controls {
       display: none;
       flex-direction: row;
-      flex-wrap: wrap;
+      flex-wrap: nowrap;
       gap: 6px;
       align-items: center;
+      flex: 0 0 auto;
+      writing-mode: horizontal-tb;
+      text-orientation: mixed;
     }
     #section-kanji-quiz-play.kanji-quiz-drill-section.kanji-quiz-hw-active .kanji-quiz-play-footer-inner #kanji-drill-pen-controls {
       display: flex;
@@ -2096,7 +2123,7 @@
           <button type="button" class="kanji-drill-vbtn-small is-active-prior" id="kanji-pen-mid" onclick="kanjiQuizSetPenWidth(8)">ふつう</button>
           <button type="button" class="kanji-drill-vbtn-small" id="kanji-pen-fine" onclick="kanjiQuizSetPenWidth(4)">ほそめ</button>
         </div>
-        <button type="button" id="kanji-quiz-layout-refresh-btn" class="kanji-drill-vbtn-small" style="max-width:132px;white-space:normal;line-height:1.25;text-align:center;padding:10px 8px;" onclick="kanjiQuizRefreshHandwritingLayout()" title="表示がずれたとき、レイアウトを取り直します">🔄 画面をなおす</button>
+        <button type="button" id="kanji-quiz-layout-refresh-btn" class="kanji-drill-vbtn-small" onclick="kanjiQuizRefreshHandwritingLayout()" title="表示がずれたとき、レイアウトを取り直します">🔄 画面をなおす</button>
         <button type="button" class="kanji-drill-vbtn-small" style="background:#f44336;color:#fff;border-color:#d32f2f;" onclick="cancelKanjiQuizPlay()">ちゅうだん</button>
         <button type="button" class="kanji-drill-vbtn-small submit-btn-small" id="kanji-play-submit-btn" style="display:none;" onclick="submitKanjiQuizScore()">こたえを決定</button>
         <button type="button" class="kanji-drill-vbtn-small" style="background:#5c6bc0;color:#fff;border-color:#3949ab;" onclick="kanjiQuizPlayGoHome()">🏠 ホームにもどる</button>
