@@ -5287,7 +5287,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
     function injectKanjiVgUrlIntoKpHtml(html) {
       if (!html) return html;
       try {
-        const tag = "<script>window.KANJI_VG_TXT_URL=" + JSON.stringify(getKanjiVgTxtUrl()) + ";</script>";
+        const tag = "<scr" + "ipt>window.KANJI_VG_TXT_URL=" + JSON.stringify(getKanjiVgTxtUrl()) + ";</scr" + "ipt>";
         if (html.indexOf("<head>") >= 0) {
           return html.replace("<head>", "<head>" + tag);
         }
