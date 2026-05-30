@@ -331,8 +331,10 @@ const sendResponse = (responseObject) => {
   return ContentService.createTextOutput(JSON.stringify(responseObject)).setMimeType(ContentService.MimeType.JSON);
 };
 
-/** ブラウザから呼ぶ Web アプリは ANYONE 必須。認可は PIN 後のセッショントークンで行う。 */
+/** ブラウザから呼ぶ Web アプリは ANYONE 必須（GitHub Pages から fetch するため）。機密 API は PIN 後の sessionToken で保護。 */
 var KID_SESSION_TTL_SEC_ = 43200;
+var KID_PIN_FAIL_WINDOW_SEC_ = 900;
+var KID_PIN_FAIL_MAX_ = 8;
 var KID_API_PUBLIC_ACTIONS_ = { get_child_users: true, verify_kid_pin: true };
 var KID_API_ADMIN_ACTIONS_ = {
   get_pending_external_requests: true,
@@ -361,14 +363,64 @@ function createKidSessionToken_(userId) {
   return token;
 }
 
+function resolveUserIdFromSessionToken_(sessionToken) {
+  const tok = String(sessionToken || "").trim();
+  if (!tok) return "";
+  return String(CacheService.getScriptCache().get(kidSessionCacheKey_(tok)) || "").trim();
+}
+
 function validateKidSession_(userId, sessionToken) {
+  const tok = String(sessionToken || "").trim();
+  if (!tok) return { ok: false };
+  const bound = resolveUserIdFromSessionToken_(tok);
+  const uid = String(userId || "").trim() || bound;
+  if (!uid || !bound || bound !== uid) return { ok: false, userId: "" };
+  return { ok: true, userId: uid };
+}
+
+function invalidateKidSession_(userId, sessionToken) {
   const uid = String(userId || "").trim();
   const tok = String(sessionToken || "").trim();
-  if (!uid || !tok) return { ok: false };
+  if (!tok) return;
   const cache = CacheService.getScriptCache();
-  const bound = cache.get(kidSessionCacheKey_(tok));
-  if (!bound || String(bound) !== uid) return { ok: false };
+  cache.remove(kidSessionCacheKey_(tok));
+  if (uid) {
+    const activeKey = kidActiveSessionKey_(uid);
+    if (cache.get(activeKey) === tok) cache.remove(activeKey);
+  }
+}
+
+function kidPinFailCacheKey_(userId) {
+  return "pin_fail_" + String(userId || "").slice(0, 80);
+}
+
+function checkPinAttemptLimit_(userId) {
+  const uid = String(userId || "").trim();
+  if (!uid) return { ok: true };
+  const cache = CacheService.getScriptCache();
+  const n = Number(cache.get(kidPinFailCacheKey_(uid)) || 0);
+  if (n >= KID_PIN_FAIL_MAX_) {
+    return {
+      ok: false,
+      message: "PINの入力回数が多すぎます。15分ほど待ってからもう一度お試しください。"
+    };
+  }
   return { ok: true };
+}
+
+function recordPinFailure_(userId) {
+  const uid = String(userId || "").trim();
+  if (!uid) return;
+  const cache = CacheService.getScriptCache();
+  const key = kidPinFailCacheKey_(uid);
+  const n = Number(cache.get(key) || 0) + 1;
+  cache.put(key, String(n), KID_PIN_FAIL_WINDOW_SEC_);
+}
+
+function clearPinFailures_(userId) {
+  const uid = String(userId || "").trim();
+  if (!uid) return;
+  CacheService.getScriptCache().remove(kidPinFailCacheKey_(uid));
 }
 
 function authorizeKidApiRequest_(action, req) {
@@ -383,6 +435,7 @@ function authorizeKidApiRequest_(action, req) {
       message: "ログインの有効期限が切れました。もう一度PINを入力してください。"
     });
   }
+  req.userId = v.userId;
   return null;
 }
 
@@ -425,6 +478,7 @@ function doPost(e) {
     else if (action === "append_kanji_weak_signals") return handleAppendKanjiWeakSignals(requestData);
     else if (action === "get_kanji_weak_review_plan") return handleGetKanjiWeakReviewPlan(requestData);
     else if (action === "record_kanji_nigate_pass") return handleRecordKanjiNigatePass(requestData);
+    else if (action === "invalidate_kid_session") return handleInvalidateKidSession(requestData);
     
     // ★ 特訓ルート用のAPI
     else if (action === "get_training_route") return handleGetTrainingRoute(requestData);
@@ -1600,11 +1654,22 @@ function handleGetMyExternalLearningRequests(req) {
 }
 function handleGetPointsMultiplier(req) { const data = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('ADMIN_SS_ID')).getSheetByName("users").getDataRange().getValues(); let multiplier = 1.0; for (let i = 1; i < data.length; i++) { if (data[i][0] === req.userId) { const lastStudyTimeStr = JSON.parse(data[i][4] || "{}")[req.unitId]; if (lastStudyTimeStr) { const diffHours = (new Date() - new Date(lastStudyTimeStr)) / (1000 * 60 * 60); let basePercent = 10 + Math.floor(diffHours / 2) * 10; if (basePercent > 100) basePercent = 100; multiplier = basePercent / 100; } break; } } return sendResponse({ status: "success", multiplier: multiplier }); }
 function handleGetChildUsers(req) { const data = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('ADMIN_SS_ID')).getSheetByName("users").getDataRange().getValues(); const users = []; for (let i = 1; i < data.length; i++) { if (data[i][0] && i > 0) users.push({ id: data[i][0], name: data[i][1] }); } return sendResponse({ status: "success", users: users }); }
+function handleInvalidateKidSession(req) {
+  invalidateKidSession_(req.userId, req.sessionToken);
+  return sendResponse({ status: "success", message: "ログアウトしました" });
+}
+
 function handleVerifyKidPin(req) {
+  const userId = String(req.userId || "").trim();
+  const pinLimit = checkPinAttemptLimit_(userId);
+  if (!pinLimit.ok) {
+    return sendResponse({ status: "error", message: pinLimit.message });
+  }
   const data = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty("ADMIN_SS_ID")).getSheetByName("users").getDataRange().getValues();
   for (let i = 1; i < data.length; i++) {
     if (data[i][0] === req.userId) {
       if (String(data[i][2]) === String(req.pin)) {
+        clearPinFailures_(userId);
         const sessionToken = createKidSessionToken_(String(data[i][0]));
         return sendResponse({
           status: "success",
@@ -1621,6 +1686,7 @@ function handleVerifyKidPin(req) {
           message: "ログイン成功"
         });
       }
+      recordPinFailure_(userId);
       return sendResponse({ status: "error", message: "PINがちがいます" });
     }
   }

@@ -3978,7 +3978,18 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
     function verifyPin() { document.getElementById('message').innerText = "かくにん中..."; fetch(GAS_API_URL, { method: 'POST', body: gasPostBody({ action: "verify_kid_pin", userId: selectedUserId, pin: currentPin }) }).then(r=>r.json()).then(d=>{ if(d.status==="success"){ localStorage.setItem('app_kid_user', JSON.stringify(d.user)); showHome(d.user); } else { document.getElementById('message').innerText = d.message; currentPin=""; updatePinDisplay(); } }); }
     function preparePinReset() { const user = JSON.parse(localStorage.getItem('app_kid_user')); showPinScreen(user.id, user.name, true); }
     function executePinReset() { document.getElementById('message').innerText = "へんこう中..."; fetch(GAS_API_URL, { method: 'POST', body: gasPostBody({ action: "change_pin", userId: selectedUserId, newPin: currentPin }) }).then(r=>r.json()).then(d=>{ if(d.status==="success") { alert(d.message); showHome(JSON.parse(localStorage.getItem('app_kid_user'))); } else { document.getElementById('message').innerText = d.message; currentPin=""; updatePinDisplay(); } }); }
-    function logout() { localStorage.removeItem('app_kid_user'); document.body.classList.remove('kanji-study-mode'); document.getElementById('global-header').style.display = 'none'; switchSection('section-users'); }
+    function logout() {
+      try {
+        const user = JSON.parse(localStorage.getItem('app_kid_user') || 'null');
+        if (user && user.sessionToken) {
+          fetch(GAS_API_URL, { method: 'POST', body: gasPostBody({ action: "invalidate_kid_session" }) }).catch(function () {});
+        }
+      } catch (_) {}
+      localStorage.removeItem('app_kid_user');
+      document.body.classList.remove('kanji-study-mode');
+      document.getElementById('global-header').style.display = 'none';
+      switchSection('section-users');
+    }
 
     // ★ 特訓ルートの読み込み処理を追加
     function showHome(user) {
