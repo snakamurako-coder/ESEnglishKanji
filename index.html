@@ -2273,7 +2273,163 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
   <script>
     // ▼ GASのURLを貼り付けてください（※前回と同じURLならそのままで大丈夫） ▼
     const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzehr3gxBeckKKpXAX_sUF5H6SJFgCgRsnEclMKgHWdsdWnDiSsikKKGsyNNIEeEyMIiQ/exec";
-    
+    const LS_PENDING_FINISH_SAVE = "app_pending_finish_quiz_v1";
+
+    /** GAS 向け POST（Content-Type 未指定＝text/plain。application/json は CORS プリフライトを誘発） */
+    function gasApiBuildBody(bodyObj) {
+      return JSON.stringify(bodyObj == null ? {} : bodyObj);
+    }
+
+    function gasApiIsRetryableError(msg) {
+      return /Load failed|Failed to fetch|NetworkError|network|fetch|aborted|timeout|timed out|XHR/i.test(String(msg || ""));
+    }
+
+    function gasApiFetchOnce(bodyStr, timeoutMs, useXhr) {
+      if (useXhr && typeof XMLHttpRequest !== "undefined") {
+        return new Promise(function (resolve, reject) {
+          const xhr = new XMLHttpRequest();
+          xhr.open("POST", GAS_API_URL, true);
+          xhr.timeout = timeoutMs;
+          xhr.onload = function () {
+            resolve({ status: xhr.status, text: String(xhr.responseText || "") });
+          };
+          xhr.onerror = function () { reject(new Error("XHR network error")); };
+          xhr.ontimeout = function () { reject(new Error("XHR timeout")); };
+          xhr.send(bodyStr);
+        });
+      }
+      const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+      let timer = null;
+      if (controller && timeoutMs > 0) {
+        timer = setTimeout(function () {
+          try { controller.abort(); } catch (_) {}
+        }, timeoutMs);
+      }
+      const init = {
+        method: "POST",
+        body: bodyStr,
+        cache: "no-store",
+        credentials: "omit",
+        redirect: "follow"
+      };
+      if (controller) init.signal = controller.signal;
+      return fetch(GAS_API_URL, init)
+        .then(function (r) {
+          return r.text().then(function (text) {
+            return { status: r.status, text: String(text || "") };
+          });
+        })
+        .finally(function () {
+          if (timer) clearTimeout(timer);
+        });
+    }
+
+    function gasApiFetchText(bodyObj, opts) {
+      const o = opts || {};
+      const retries = typeof o.retries === "number" ? o.retries : 2;
+      const timeoutMs = typeof o.timeoutMs === "number" ? o.timeoutMs : 45000;
+      const bodyStr = typeof bodyObj === "string" ? bodyObj : gasApiBuildBody(bodyObj);
+      const delays = Array.isArray(o.retryDelaysMs) ? o.retryDelaysMs : [600, 1400, 2800];
+
+      function attempt(left, attemptIndex) {
+        const useXhr = o.xhrFallback === true && left === 0;
+        return gasApiFetchOnce(bodyStr, timeoutMs, useXhr).catch(function (e) {
+          const msg = String((e && (e.message || e)) || "");
+          if (left <= 0 || !gasApiIsRetryableError(msg)) throw e;
+          const delay = delays[Math.min(attemptIndex, delays.length - 1)] || 1000;
+          return new Promise(function (resolve) {
+            setTimeout(resolve, delay);
+          }).then(function () {
+            return attempt(left - 1, attemptIndex + 1);
+          });
+        });
+      }
+      return attempt(retries, 0);
+    }
+
+    function gasApiParseJsonResponse(res) {
+      const raw = String((res && res.text) || "");
+      if (!raw) return null;
+      try { return JSON.parse(raw); } catch (_) {}
+      if (/<!DOCTYPE|<html/i.test(raw)) {
+        return { status: "error", message: "サーバーが HTML を返しました（Webアプリの公開設定を確認してください）" };
+      }
+      return null;
+    }
+
+    function gasApiFetchJson(bodyObj, opts) {
+      return gasApiFetchText(bodyObj, opts).then(function (res) {
+        const data = gasApiParseJsonResponse(res);
+        if (!data) {
+          const err = new Error("GAS non-JSON response HTTP " + (res && res.status));
+          err.httpStatus = res && res.status;
+          err.rawText = res && res.text;
+          throw err;
+        }
+        return data;
+      });
+    }
+
+    function savePendingFinishQuizPayload(payload) {
+      try {
+        localStorage.setItem(LS_PENDING_FINISH_SAVE, JSON.stringify({
+          payload: payload,
+          savedAt: Date.now()
+        }));
+      } catch (_) {}
+    }
+
+    function clearPendingFinishQuizPayload() {
+      try { localStorage.removeItem(LS_PENDING_FINISH_SAVE); } catch (_) {}
+    }
+
+    function applyPendingFinishQuizSuccess(d) {
+      if (!d || d.status !== "success") return;
+      try {
+        const user = JSON.parse(localStorage.getItem("app_kid_user") || "null");
+        if (user && d.newTotal != null) {
+          user.points = d.newTotal;
+          if (d.historyJson) user.historyJson = d.historyJson;
+          if (d.dailyPointsJson) user.dailyPointsJson = d.dailyPointsJson;
+          if (d.trainingProgressJson) user.trainingProgressJson = d.trainingProgressJson;
+          localStorage.setItem("app_kid_user", JSON.stringify(user));
+          const ptsEl = document.getElementById("user-points");
+          if (ptsEl) ptsEl.innerText = String(d.newTotal);
+        }
+      } catch (_) {}
+    }
+
+    function flushPendingFinishQuizSave() {
+      let raw = null;
+      try { raw = localStorage.getItem(LS_PENDING_FINISH_SAVE); } catch (_) {}
+      if (!raw) return Promise.resolve(false);
+      let rec = null;
+      try { rec = JSON.parse(raw); } catch (_) {
+        clearPendingFinishQuizPayload();
+        return Promise.resolve(false);
+      }
+      if (!rec || !rec.payload) {
+        clearPendingFinishQuizPayload();
+        return Promise.resolve(false);
+      }
+      const age = Date.now() - Number(rec.savedAt || 0);
+      if (age > 7 * 24 * 60 * 60 * 1000) {
+        clearPendingFinishQuizPayload();
+        return Promise.resolve(false);
+      }
+      return gasApiFetchText(rec.payload, { retries: 2, timeoutMs: 60000, xhrFallback: true })
+        .then(function (res) {
+          const d = gasApiParseJsonResponse(res);
+          if (d && d.status === "success") {
+            clearPendingFinishQuizPayload();
+            applyPendingFinishQuizSuccess(d);
+            return true;
+          }
+          return false;
+        })
+        .catch(function () { return false; });
+    }
+
     let selectedUserId = null; let currentPin = ""; let isPinResetMode = false;
     let currentModeId = ""; let currentModeName = ""; let currentUnitName = "";
     let currentQuestions = []; let filteredQuestions = []; let currentQuestionIndex = 0; 
@@ -3803,6 +3959,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       applyKanjiHwDominantHandToBody();
       syncKanjiHwHandSwitchUI();
       syncMaterialsListFromServerIfChanged();
+      flushPendingFinishQuizSave();
     }
 
     function toggleBtnLoading(btn, isLoading, originalText = "") { if(!btn) return ""; if(isLoading) { const text = btn.innerHTML; btn.innerHTML = "⏳ よみこみ中..."; btn.classList.add("btn-loading"); return text; } else { btn.innerHTML = originalText; btn.classList.remove("btn-loading"); } }
@@ -4807,7 +4964,6 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       if (!setId || setId === "ALL") return;
       fetch(GAS_API_URL, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "append_kanji_weak_signals",
           userId: kid.id,
@@ -4861,7 +5017,6 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       }
       fetch(GAS_API_URL, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "record_kanji_nigate_pass",
           userId: kid.id,
@@ -8025,21 +8180,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
             '<span style="color:#FF8A80;">ざんねん… 次はがんばろう</span>';
         }
       }
-      function postKanjiScoreWithRetry(retryCount) {
-        return fetch(GAS_API_URL, { method: 'POST', body: JSON.stringify(payload) })
-          .then(function (r) { return r.json(); })
-          .catch(function (e) {
-            const msg = String((e && (e.message || e)) || "");
-            const canRetry = retryCount > 0 && /Load failed|Failed to fetch|NetworkError|fetch/i.test(msg);
-            if (!canRetry) throw e;
-            return new Promise(function (resolve) {
-              setTimeout(resolve, 450);
-            }).then(function () {
-              return postKanjiScoreWithRetry(retryCount - 1);
-            });
-          });
-      }
-      postKanjiScoreWithRetry(1).then(d => {
+      gasApiFetchJson(payload, { retries: 3, timeoutMs: 60000, xhrFallback: true }).then(function (d) {
         if (d.status !== "success") throw new Error(d.message || "保存に失敗");
         try {
           showKanjiEarnedPointsToast(d.earnedPoints);
@@ -10209,44 +10350,23 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         if (submitInFlight) return;
         submitInFlight = true;
 
-        let httpStatus = 0;
-        let rawText = "";
-        function postFinishQuizWithRetry(retryCount) {
-          // Content-Type: application/json は CORS プリフライトを誘発し、GAS へ POST できない環境があるため付けない（他 API と同じ）
-          return fetch(GAS_API_URL, {
-            method: 'POST',
-            body: JSON.stringify(payload)
-          })
-            .then(function (r) {
-              httpStatus = r.status;
-              return r.text();
-            })
-            .catch(function (e) {
-              const msg = String((e && (e.message || e)) || "");
-              const canRetry = retryCount > 0 && /Load failed|Failed to fetch|NetworkError|fetch|aborted|timeout/i.test(msg);
-              if (!canRetry) throw e;
-              return new Promise(function (resolve) {
-                setTimeout(resolve, 500 + (2 - retryCount) * 400);
-              }).then(function () {
-                return postFinishQuizWithRetry(retryCount - 1);
-              });
-            });
-        }
-        postFinishQuizWithRetry(2)
-          .then(function (txt) {
-            rawText = String(txt || "");
-            let d = null;
-            try { d = JSON.parse(rawText); } catch (e) { d = null; }
+        gasApiFetchText(payload, { retries: 4, timeoutMs: 90000, xhrFallback: true })
+          .then(function (res) {
+            const httpStatus = res.status;
+            const rawText = String(res.text || "");
+            const d = gasApiParseJsonResponse(res);
             if (!d) {
               console.error("save_learning_session: 非JSON応答 status=" + httpStatus, rawText.slice(0, 500));
+              savePendingFinishQuizPayload(payload);
               showSubmitError(
                 "サーバー応答が読めませんでした",
-                `<p style="font-size:13px;color:#666;">HTTP ${httpStatus}。<br>ポイントが付いているかはホームで確認できます。<br>もう一度送る場合、同じ内容なら二重付与されません。</p>`,
+                `<p style="font-size:13px;color:#666;">HTTP ${httpStatus}。<br>結果は端末に一時保存しました。ホームを開くと自動で再送します。<br>もう一度送る場合、同じ内容なら二重付与されません。</p>`,
                 true
               );
               return;
             }
             if (d.status === "success") {
+              clearPendingFinishQuizPayload();
               try {
                 applySuccessResult(d);
               } catch (eApply) {
@@ -10272,18 +10392,25 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
               return;
             }
             console.error("save_learning_session error:", d);
-            const detail = `<p style="font-size:13px;color:#666;">${escapeHtml(String(d.message || "サーバーが error を返しました。"))}</p>`;
+            savePendingFinishQuizPayload(payload);
+            const detail = `<p style="font-size:13px;color:#666;">${escapeHtml(String(d.message || "サーバーが error を返しました。"))}<br>結果は端末に一時保存しました。ホームを開くと自動で再送します。</p>`;
             showSubmitError("結果の保存に失敗しました", detail, true);
           })
           .catch(function (e) {
             console.error("save_learning_session network/parse error:", e);
+            savePendingFinishQuizPayload(payload);
             const netMsg = String((e && (e.message || e)) || "");
-            const netHint = /Load failed|Failed to fetch|NetworkError|fetch/i.test(netMsg)
-              ? "ブラウザがサーバーへ接続できませんでした（Wi‑Fi 接続中でも、学校のネットワークやブラウザの制限でブロックされることがあります）。"
-              : "結果の送信が完了しなかった可能性があります。";
+            let netHint;
+            if (/timeout|aborted/i.test(netMsg)) {
+              netHint = "サーバーへの応答が時間切れになりました。回線が遅いときや、サーバーが混み合っているときに起きます。";
+            } else if (/Load failed|Failed to fetch|NetworkError/i.test(netMsg)) {
+              netHint = "ブラウザがサーバーへ接続できませんでした。ページを再読み込み（スーパーリロード）してから、もう一度お試しください。";
+            } else {
+              netHint = "結果の送信が完了しなかった可能性があります。";
+            }
             showSubmitError(
               "通信エラー",
-              `<p>${escapeHtml(netHint)}<br>ホームでポイントを確認してから、必要なら「もういちど結果を送る」をおしてください。</p>`,
+              `<p>${escapeHtml(netHint)}<br>結果は端末に一時保存しました。ホームを開くと自動で再送します（同じ内容なら二重付与されません）。<br>必要なら「もういちど結果を送る」もお試しください。</p>`,
               true
             );
           })
