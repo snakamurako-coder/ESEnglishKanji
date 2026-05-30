@@ -360,7 +360,7 @@ function doPost(e) {
     else if (action === "approve_external_request") return handleApproveExternalRequest(requestData);
     else if (action === "reject_external_request") return handleRejectExternalRequest(requestData);
     else if (action === "get_my_external_learning_requests") return handleGetMyExternalLearningRequests(requestData);
-    else if (action === "recognize_handwriting") return recognizeSentence(requestData.ink || []);
+    else if (action === "recognize_handwriting") return recognizeHandwriting_(requestData);
     else if (action === "get_kanji_init_data") return handleGetKanjiInitData(requestData);
     else if (action === "get_kanji_data_from_sheet") return handleGetKanjiDataFromSheet(requestData);
     else if (action === "get_kanji_quiz_sets") return handleGetKanjiQuizSets(requestData);
@@ -382,13 +382,25 @@ function doOptions(e) {
   return ContentService.createTextOutput("OK").setMimeType(ContentService.MimeType.TEXT);
 }
 
-function recognizeSentence(allStrokes) {
+function recognizeHandwriting_(requestData) {
+  const req = requestData || {};
+  const ink = req.ink || req.strokes || [];
+  const guide = req.writingGuide || req.writing_guide || null;
+  return recognizeSentence(ink, guide);
+}
+
+function recognizeSentence(allStrokes, writingGuide) {
   if (!Array.isArray(allStrokes) || allStrokes.length === 0) {
     return sendResponse({ status: "error", message: "ストロークが空です。" });
   }
 
+  const guide = writingGuide || {};
+  const areaW = Math.max(200, Math.min(2400, Number(guide.width) || 1000));
+  const areaH = Math.max(200, Math.min(2400, Number(guide.height) || 400));
+
   const endpoints = [
     "https://inputtools.google.com/request?ime=handwriting&app=mobilesearch&cs=1&oe=UTF-8",
+    "https://inputtools.google.com/request?ime=handwriting&app=translate&cs=1&oe=UTF-8",
     "https://www.google.com.hk/inputtools/request?ime=handwriting&app=mobilesearch&cs=1&oe=UTF-8"
   ];
   const languages = ["en", "en-US"];
@@ -399,7 +411,7 @@ function recognizeSentence(allStrokes) {
     const payload = {
       options: "enable_pre_space",
       requests: [{
-        writing_guide: { writing_area_width: 1000, writing_area_height: 400 },
+        writing_guide: { writing_area_width: areaW, writing_area_height: areaH },
         ink: allStrokes,
         language: lang
       }]
@@ -412,7 +424,8 @@ function recognizeSentence(allStrokes) {
           method: "post",
           contentType: "application/json",
           payload: JSON.stringify(payload),
-          muteHttpExceptions: true
+          muteHttpExceptions: true,
+          followRedirects: true
         });
         const code = response.getResponseCode();
         const body = response.getContentText();
@@ -420,12 +433,21 @@ function recognizeSentence(allStrokes) {
           lastError = "HTTP " + code + " @ " + url;
           continue;
         }
-        const result = JSON.parse(body);
-        if (result[0] === "SUCCESS" && result[1] && result[1][0] && result[1][0][1] && result[1][0][1][0]) {
-          const candidates = result[1][0][1]
-            .filter(v => typeof v === "string" && v.trim() !== "")
+        let result = null;
+        try {
+          result = JSON.parse(body);
+        } catch (parseErr) {
+          lastError = "JSON解析失敗 @ " + url + ": " + String(body || "").slice(0, 120);
+          continue;
+        }
+        if (result[0] === "SUCCESS" && result[1] && result[1][0] && result[1][0][1]) {
+          const rawList = result[1][0][1];
+          const candidates = rawList
+            .filter(function (v) { return typeof v === "string" && String(v).trim() !== ""; })
             .slice(0, 10);
-          return sendResponse({ status: "success", text: result[1][0][1][0], candidates: candidates });
+          if (candidates.length > 0) {
+            return sendResponse({ status: "success", text: candidates[0], candidates: candidates });
+          }
         }
         lastError = "認識候補なし (" + lang + " @ " + url + ")";
       } catch (e) {
