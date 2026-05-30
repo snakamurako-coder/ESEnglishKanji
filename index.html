@@ -2855,6 +2855,23 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       el.innerHTML = parts.join('<br>');
     }
 
+    /** サーバー保存前・失敗時も表示する、このセッションの得点集計（クライアント計算） */
+    function buildLocalFinishQuizSummaryHtml(saveStatusHtml) {
+      const totalQ = Array.isArray(filteredQuestions) ? filteredQuestions.length : 0;
+      const correctCount = (quizResults || []).filter(function (r) { return r && r.isCorrect; }).length;
+      const mult = computePointsMultiplierClient();
+      const sheetPct = parseUnitSheetPointPercentClient(currentUnitName);
+      const maxRaw = sumMaxPossibleRawForSession();
+      const maxEarned = applySessionEarnedFromRaw(maxRaw, mult, sheetPct);
+      const curRaw = rawPointsFromQuizResults(quizResults);
+      const curEarned = applySessionEarnedFromRaw(curRaw, mult, sheetPct);
+      const statusLine = saveStatusHtml != null ? String(saveStatusHtml) : "";
+      return `<h2 style="color:#4CAF50;">✨ おつかれさま！ ✨</h2>` +
+        `<p>正解: <strong>${correctCount}</strong> / ${totalQ} 問</p>` +
+        `<p>このセッションの得点: <span style="color:gold;font-size:30px;">${formatPointDisplayNum(curEarned)}</span> / ${formatPointDisplayNum(maxEarned)} 点</p>` +
+        (statusLine ? `<p id="result-save-status" style="font-size:14px;color:#aaa;margin-top:10px;">${statusLine}</p>` : "");
+    }
+
     let recognition = null;
     let recognitionJa = null;
     if ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window) {
@@ -10028,8 +10045,8 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
     function finishQuiz() {
       document.getElementById('section-quiz')?.classList.remove('pen-mode-active');
       document.getElementById('quiz-answer-area')?.classList.remove('pen-mode-active');
-      switchSection('section-result'); 
-      document.getElementById('result-content').innerHTML = "<p>おくっています...</p>"; 
+      switchSection('section-result');
+      document.getElementById('result-content').innerHTML = buildLocalFinishQuizSummaryHtml("結果を保存しています…");
       document.getElementById('result-retry-btn').style.display = "none"; document.getElementById('result-settings-btn').style.display = "none"; document.getElementById('result-home-btn').style.display = "none";
       (function () {
         var __kb = document.getElementById('result-kanji-same-book-btn');
@@ -10074,7 +10091,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
           return;
         }
         if (submitInFlight) return;
-        document.getElementById('result-content').innerHTML = "<p>おくっています...（さいど）</p>";
+        document.getElementById('result-content').innerHTML = buildLocalFinishQuizSummaryHtml("結果を保存しています…（再送）");
         document.getElementById('result-retry-btn').style.display = "none";
         document.getElementById('result-settings-btn').style.display = "none";
         document.getElementById('result-home-btn').style.display = "none";
@@ -10090,9 +10107,11 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       function showSubmitError(title, detailHtml, allowRetry) {
         const safeTitle = escapeHtml(String(title || "エラー"));
         document.getElementById('result-content').innerHTML =
-          `<h2 style="color:#F44336;">⚠️ ${safeTitle}</h2>` +
+          buildLocalFinishQuizSummaryHtml("") +
+          `<h2 style="color:#F44336;margin-top:14px;">⚠️ ${safeTitle}</h2>` +
           (detailHtml || "") +
-          `<p style="margin-top:8px;">回答ログは <strong>「ホームにもどる」</strong> 後の復帰データに保存されています。</p>`;
+          `<p style="margin-top:8px;">上の得点はこの端末での計算です。サーバー保存が完了していない場合は「もういちど結果を送る」をお試しください（同じ内容なら二重付与されません）。</p>` +
+          `<p style="margin-top:8px;font-size:13px;color:#888;">回答ログは <strong>「ホームにもどる」</strong> 後の復帰データに保存されています。</p>`;
         document.getElementById('result-home-btn').style.display = "block";
         if (allowRetry) {
           const retryBtn = document.getElementById('result-retry-btn');
@@ -10193,9 +10212,9 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         let httpStatus = 0;
         let rawText = "";
         function postFinishQuizWithRetry(retryCount) {
+          // Content-Type: application/json は CORS プリフライトを誘発し、GAS へ POST できない環境があるため付けない（他 API と同じ）
           return fetch(GAS_API_URL, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
           })
             .then(function (r) {
@@ -10258,9 +10277,13 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
           })
           .catch(function (e) {
             console.error("save_learning_session network/parse error:", e);
+            const netMsg = String((e && (e.message || e)) || "");
+            const netHint = /Load failed|Failed to fetch|NetworkError|fetch/i.test(netMsg)
+              ? "ブラウザがサーバーへ接続できませんでした（Wi‑Fi 接続中でも、学校のネットワークやブラウザの制限でブロックされることがあります）。"
+              : "結果の送信が完了しなかった可能性があります。";
             showSubmitError(
               "通信エラー",
-              `<p>結果の送信が完了しなかった可能性があります。<br>ホームでポイントを確認してから、必要なら「もういちど結果を送る」をおしてください（同じ内容なら二重付与されません）。</p>`,
+              `<p>${escapeHtml(netHint)}<br>ホームでポイントを確認してから、必要なら「もういちど結果を送る」をおしてください。</p>`,
               true
             );
           })
