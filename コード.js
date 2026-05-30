@@ -331,6 +331,61 @@ const sendResponse = (responseObject) => {
   return ContentService.createTextOutput(JSON.stringify(responseObject)).setMimeType(ContentService.MimeType.JSON);
 };
 
+/** ブラウザから呼ぶ Web アプリは ANYONE 必須。認可は PIN 後のセッショントークンで行う。 */
+var KID_SESSION_TTL_SEC_ = 43200;
+var KID_API_PUBLIC_ACTIONS_ = { get_child_users: true, verify_kid_pin: true };
+var KID_API_ADMIN_ACTIONS_ = {
+  get_pending_external_requests: true,
+  approve_external_request: true,
+  reject_external_request: true
+};
+
+function kidSessionCacheKey_(token) {
+  return "kid_sess_" + String(token || "").slice(0, 120);
+}
+
+function kidActiveSessionKey_(userId) {
+  return "kid_active_" + String(userId || "").slice(0, 80);
+}
+
+function createKidSessionToken_(userId) {
+  const uid = String(userId || "").trim();
+  if (!uid) return "";
+  const cache = CacheService.getScriptCache();
+  const activeKey = kidActiveSessionKey_(uid);
+  const prev = cache.get(activeKey);
+  if (prev) cache.remove(kidSessionCacheKey_(prev));
+  const token = Utilities.getUuid().replace(/-/g, "") + Utilities.getUuid().replace(/-/g, "");
+  cache.put(kidSessionCacheKey_(token), uid, KID_SESSION_TTL_SEC_);
+  cache.put(activeKey, token, KID_SESSION_TTL_SEC_);
+  return token;
+}
+
+function validateKidSession_(userId, sessionToken) {
+  const uid = String(userId || "").trim();
+  const tok = String(sessionToken || "").trim();
+  if (!uid || !tok) return { ok: false };
+  const cache = CacheService.getScriptCache();
+  const bound = cache.get(kidSessionCacheKey_(tok));
+  if (!bound || String(bound) !== uid) return { ok: false };
+  return { ok: true };
+}
+
+function authorizeKidApiRequest_(action, req) {
+  const a = String(action || "");
+  if (KID_API_PUBLIC_ACTIONS_[a]) return null;
+  if (KID_API_ADMIN_ACTIONS_[a]) return null;
+  const v = validateKidSession_(req.userId, req.sessionToken);
+  if (!v.ok) {
+    return sendResponse({
+      status: "error",
+      code: "SESSION_REQUIRED",
+      message: "ログインの有効期限が切れました。もう一度PINを入力してください。"
+    });
+  }
+  return null;
+}
+
 function doGet() {
   return ContentService
     .createTextOutput("OK: GAS endpoint is running")
@@ -341,6 +396,8 @@ function doPost(e) {
   try {
     const requestData = JSON.parse(e.postData.contents);
     const action = requestData.action;
+    const authBlock = authorizeKidApiRequest_(action, requestData);
+    if (authBlock) return authBlock;
 
     if (action === "save_learning_session") return handleSaveLearningSession(requestData);
     else if (action === "get_child_users") return handleGetChildUsers(requestData);
@@ -1543,7 +1600,32 @@ function handleGetMyExternalLearningRequests(req) {
 }
 function handleGetPointsMultiplier(req) { const data = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('ADMIN_SS_ID')).getSheetByName("users").getDataRange().getValues(); let multiplier = 1.0; for (let i = 1; i < data.length; i++) { if (data[i][0] === req.userId) { const lastStudyTimeStr = JSON.parse(data[i][4] || "{}")[req.unitId]; if (lastStudyTimeStr) { const diffHours = (new Date() - new Date(lastStudyTimeStr)) / (1000 * 60 * 60); let basePercent = 10 + Math.floor(diffHours / 2) * 10; if (basePercent > 100) basePercent = 100; multiplier = basePercent / 100; } break; } } return sendResponse({ status: "success", multiplier: multiplier }); }
 function handleGetChildUsers(req) { const data = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('ADMIN_SS_ID')).getSheetByName("users").getDataRange().getValues(); const users = []; for (let i = 1; i < data.length; i++) { if (data[i][0] && i > 0) users.push({ id: data[i][0], name: data[i][1] }); } return sendResponse({ status: "success", users: users }); }
-function handleVerifyKidPin(req) { const data = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('ADMIN_SS_ID')).getSheetByName("users").getDataRange().getValues(); for (let i = 1; i < data.length; i++) { if (data[i][0] === req.userId) { if (String(data[i][2]) === String(req.pin)) { return sendResponse({ status: "success", user: { id: data[i][0], name: data[i][1], points: data[i][3], lastStudyJson: JSON.parse(data[i][4] || "{}"), historyJson: JSON.parse(data[i][5] || "{}"), dailyPointsJson: JSON.parse(data[i][6] || "{}") }, message: "ログイン成功" }); } else return sendResponse({ status: "error", message: "PINがちがいます" }); } } return sendResponse({ status: "error", message: "ユーザーが見つかりません" }); }
+function handleVerifyKidPin(req) {
+  const data = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty("ADMIN_SS_ID")).getSheetByName("users").getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] === req.userId) {
+      if (String(data[i][2]) === String(req.pin)) {
+        const sessionToken = createKidSessionToken_(String(data[i][0]));
+        return sendResponse({
+          status: "success",
+          user: {
+            id: data[i][0],
+            name: data[i][1],
+            points: data[i][3],
+            lastStudyJson: JSON.parse(data[i][4] || "{}"),
+            historyJson: JSON.parse(data[i][5] || "{}"),
+            dailyPointsJson: JSON.parse(data[i][6] || "{}"),
+            trainingProgressJson: JSON.parse(data[i][7] || "{}"),
+            sessionToken: sessionToken
+          },
+          message: "ログイン成功"
+        });
+      }
+      return sendResponse({ status: "error", message: "PINがちがいます" });
+    }
+  }
+  return sendResponse({ status: "error", message: "ユーザーが見つかりません" });
+}
 function handleChangePin(req) { const usersSheet = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('ADMIN_SS_ID')).getSheetByName("users"); const data = usersSheet.getDataRange().getValues(); for (let i = 1; i < data.length; i++) { if (data[i][0] === req.userId) { usersSheet.getRange(i + 1, 3).setValue(req.newPin); return sendResponse({ status: "success", message: "新しいPINをセットしました！" }); } } return sendResponse({ status: "error", message: "ユーザーが見つかりません" }); }
 function handleGetMaterialsList(req) {
   const props = PropertiesService.getScriptProperties();
@@ -1571,7 +1653,20 @@ function handleGetQuestions(req) { const data = SpreadsheetApp.openById(req.mode
 function handleGetRewards(req) { const data = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('ADMIN_SS_ID')).getSheetByName("rewards").getDataRange().getValues(); const rewards = []; for (let i = 1; i < data.length; i++) { if (data[i][0] && i > 0) rewards.push({ id: data[i][0], name: data[i][1], points: Number(data[i][2]), desc: data[i][3] }); } return sendResponse({ status: "success", rewards: rewards }); }
 function handleExchangeReward(req) { const adminSs = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('ADMIN_SS_ID')); const usersSheet = adminSs.getSheetByName("users"); const usersData = usersSheet.getDataRange().getValues(); let userRow = -1; let currentPoints = 0; for (let i = 1; i < usersData.length; i++) { if (usersData[i][0] === req.userId) { userRow = i + 1; currentPoints = Number(usersData[i][3]) || 0; break; } } if (userRow === -1) return sendResponse({ status: "error", message: "ユーザーが見つかりません" }); const rewardsData = adminSs.getSheetByName("rewards").getDataRange().getValues(); let rewardData = null; for (let i = 1; i < rewardsData.length; i++) { if (rewardsData[i][0] === req.rewardId) { rewardData = { name: rewardsData[i][1], points: Number(rewardsData[i][2]) }; break; } } if (currentPoints < rewardData.points) return sendResponse({ status: "error", message: "ポイントが足りません" }); const newPoints = Math.round((currentPoints - rewardData.points) * 100) / 100; usersSheet.getRange(userRow, 4).setValue(newPoints); adminSs.getSheetByName("inventory").appendRow([new Date().toLocaleString(), req.userId, req.rewardId, rewardData.name, "未消化"]); return sendResponse({ status: "success", newPoints: newPoints, message: `${rewardData.name} をゲットしました！` }); }
 function handleGetInventory(req) { const data = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('ADMIN_SS_ID')).getSheetByName("inventory").getDataRange().getValues(); const inventory = []; for (let i = 1; i < data.length; i++) { if (data[i][1] === req.userId) { inventory.push({ rowIdx: i + 1, date: data[i][0], rewardName: data[i][3], status: data[i][4] }); } } inventory.sort((a, b) => b.rowIdx - a.rowIdx); return sendResponse({ status: "success", inventory: inventory }); }
-function handleConsumeReward(req) { SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('ADMIN_SS_ID')).getSheetByName("inventory").getRange(req.rowIdx, 5).setValue("使用済み"); return sendResponse({ status: "success", message: "景品をつかいました！" }); }
+function handleConsumeReward(req) {
+  const invSheet = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty("ADMIN_SS_ID")).getSheetByName("inventory");
+  const data = invSheet.getDataRange().getValues();
+  const rowIdx = Number(req.rowIdx);
+  if (isNaN(rowIdx) || rowIdx < 2 || rowIdx > data.length) {
+    return sendResponse({ status: "error", message: "行が無効です" });
+  }
+  const ownerId = String(data[rowIdx - 1][1] || "");
+  if (ownerId !== String(req.userId || "")) {
+    return sendResponse({ status: "error", message: "操作が許可されていません" });
+  }
+  invSheet.getRange(rowIdx, 5).setValue("使用済み");
+  return sendResponse({ status: "success", message: "景品をつかいました！" });
+}
 
 // ★設定を消去する緊急用関数（不要なら後で消してもOK）
 function resetProperties() {
