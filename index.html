@@ -2279,7 +2279,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
     function gasApiPayload(bodyObj) {
       const p = Object.assign({}, bodyObj == null ? {} : bodyObj);
       const action = String(p.action || "");
-      if (action === "get_child_users" || action === "verify_kid_pin") return p;
+      if (action === "get_child_users" || action === "verify_kid_pin" || action === "invalidate_kid_session") return p;
       try {
         const user = JSON.parse(localStorage.getItem("app_kid_user") || "null");
         if (user && user.sessionToken) {
@@ -3152,9 +3152,20 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         applyKanjiHwDominantHandToBody();
         syncKanjiHwHandSwitchUI();
         if (saved) {
-          showHome(JSON.parse(saved));
-          loadKanjiHandScoreWeightsFromLocalCache();
-          fetchAppSettings();
+          try {
+            const u = JSON.parse(saved);
+            if (u && u.id && u.sessionToken) {
+              showHome(u);
+              loadKanjiHandScoreWeightsFromLocalCache();
+              fetchAppSettings();
+            } else {
+              localStorage.removeItem('app_kid_user');
+              fetchUsers();
+            }
+          } catch (_) {
+            localStorage.removeItem('app_kid_user');
+            fetchUsers();
+          }
         }
         else fetchUsers(); 
     };
@@ -3967,7 +3978,24 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       }
     }
 
-    function fetchUsers() { fetch(GAS_API_URL, { method: 'POST', body: gasPostBody({ action: "get_child_users" }) }).then(r=>r.json()).then(d=>{ if(d.status==="success") renderUsers(d.users); }); }
+    function fetchUsers() {
+      const c = document.getElementById('user-container');
+      if (c) c.innerHTML = "<p style='text-align:center;color:#666;'>ユーザーを読み込み中...</p>";
+      fetch(GAS_API_URL, { method: 'POST', body: gasPostBody({ action: "get_child_users" }) })
+        .then(function (r) { return r.text().then(function (text) { return { status: r.status, text: text }; }); })
+        .then(function (res) {
+          const d = gasApiParseJsonResponse(res);
+          if (!d) {
+            if (c) c.innerHTML = "<p style='text-align:center;color:#c62828;'>サーバーに接続できませんでした。<br>Webアプリが「全員」公開か確認してください。</p>";
+            return;
+          }
+          if (d.status === "success") renderUsers(d.users);
+          else if (c) c.innerHTML = "<p style='text-align:center;color:#c62828;'>" + (d.message || "ユーザー一覧の取得に失敗しました") + "</p>";
+        })
+        .catch(function () {
+          if (c) c.innerHTML = "<p style='text-align:center;color:#c62828;'>通信エラーです。ネットワークを確認してください。</p>";
+        });
+    }
     function renderUsers(users) { const c = document.getElementById('user-container'); c.innerHTML = ""; users.forEach(u => { const div = document.createElement('div'); div.className = 'user-card'; div.onclick = () => showPinScreen(u.id, u.name, false); div.innerHTML = `<div class="user-icon">${u.name.charAt(0)}</div><div>${u.name}</div>`; c.appendChild(div); }); }
     function showPinScreen(id, name, isReset) { selectedUserId = id; isPinResetMode = isReset; currentPin = ""; updatePinDisplay(); document.getElementById('selected-user-name').innerText = name; document.getElementById('pin-instruction').innerText = isReset ? "あたらしい暗証番号（4ケタ）" : "あんしょうばんごう（4ケタ）"; switchSection('section-pin'); }
     function addPin(num) { if(currentPin.length<4){ currentPin+=num; updatePinDisplay(); if(currentPin.length===4) { if(isPinResetMode) executePinReset(); else verifyPin(); } } }
@@ -3975,20 +4003,73 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
     function clearPin() { currentPin = ""; updatePinDisplay(); }
     function updatePinDisplay() { let d=""; for(let i=0;i<4;i++) d+=(i<currentPin.length)?"● ":"_ "; document.getElementById('pin-dots').innerText=d.trim(); }
     function cancelPin() { if(isPinResetMode) showHome(JSON.parse(localStorage.getItem('app_kid_user'))); else switchSection('section-users'); }
-    function verifyPin() { document.getElementById('message').innerText = "かくにん中..."; fetch(GAS_API_URL, { method: 'POST', body: gasPostBody({ action: "verify_kid_pin", userId: selectedUserId, pin: currentPin }) }).then(r=>r.json()).then(d=>{ if(d.status==="success"){ localStorage.setItem('app_kid_user', JSON.stringify(d.user)); showHome(d.user); } else { document.getElementById('message').innerText = d.message; currentPin=""; updatePinDisplay(); } }); }
+    function verifyPin() {
+      const msgEl = document.getElementById('message');
+      if (!selectedUserId) {
+        if (msgEl) msgEl.innerText = "先に名前を選び直してください";
+        switchSection('section-users');
+        fetchUsers();
+        return;
+      }
+      if (msgEl) msgEl.innerText = "かくにん中...";
+      fetch(GAS_API_URL, {
+        method: 'POST',
+        body: gasPostBody({ action: "verify_kid_pin", userId: selectedUserId, pin: currentPin })
+      })
+        .then(function (r) { return r.text().then(function (text) { return { status: r.status, text: text }; }); })
+        .then(function (res) {
+          const d = gasApiParseJsonResponse(res);
+          if (!d) {
+            if (msgEl) msgEl.innerText = "サーバー応答が読めませんでした（公開設定・URLを確認）";
+            currentPin = "";
+            updatePinDisplay();
+            return;
+          }
+          if (d.status === "success") {
+            if (!d.user || !d.user.sessionToken) {
+              if (msgEl) msgEl.innerText = "ログイン応答が不完全です。GASを再デプロイしてから再試行してください。";
+              currentPin = "";
+              updatePinDisplay();
+              return;
+            }
+            localStorage.setItem('app_kid_user', JSON.stringify(d.user));
+            showHome(d.user);
+            return;
+          }
+          if (msgEl) msgEl.innerText = d.message || "ログインに失敗しました";
+          currentPin = "";
+          updatePinDisplay();
+        })
+        .catch(function () {
+          if (msgEl) msgEl.innerText = "通信エラーです。もう一度お試しください。";
+          currentPin = "";
+          updatePinDisplay();
+        });
+    }
     function preparePinReset() { const user = JSON.parse(localStorage.getItem('app_kid_user')); showPinScreen(user.id, user.name, true); }
     function executePinReset() { document.getElementById('message').innerText = "へんこう中..."; fetch(GAS_API_URL, { method: 'POST', body: gasPostBody({ action: "change_pin", userId: selectedUserId, newPin: currentPin }) }).then(r=>r.json()).then(d=>{ if(d.status==="success") { alert(d.message); showHome(JSON.parse(localStorage.getItem('app_kid_user'))); } else { document.getElementById('message').innerText = d.message; currentPin=""; updatePinDisplay(); } }); }
     function logout() {
       try {
         const user = JSON.parse(localStorage.getItem('app_kid_user') || 'null');
         if (user && user.sessionToken) {
-          fetch(GAS_API_URL, { method: 'POST', body: gasPostBody({ action: "invalidate_kid_session" }) }).catch(function () {});
+          fetch(GAS_API_URL, {
+            method: 'POST',
+            body: JSON.stringify({
+              action: "invalidate_kid_session",
+              userId: user.id,
+              sessionToken: user.sessionToken
+            })
+          }).catch(function () {});
         }
       } catch (_) {}
       localStorage.removeItem('app_kid_user');
+      selectedUserId = null;
+      currentPin = "";
+      isPinResetMode = false;
       document.body.classList.remove('kanji-study-mode');
       document.getElementById('global-header').style.display = 'none';
       switchSection('section-users');
+      fetchUsers();
     }
 
     // ★ 特訓ルートの読み込み処理を追加

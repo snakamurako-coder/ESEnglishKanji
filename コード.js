@@ -335,7 +335,15 @@ const sendResponse = (responseObject) => {
 var KID_SESSION_TTL_SEC_ = 43200;
 var KID_PIN_FAIL_WINDOW_SEC_ = 900;
 var KID_PIN_FAIL_MAX_ = 8;
-var KID_API_PUBLIC_ACTIONS_ = { get_child_users: true, verify_kid_pin: true };
+var KID_API_PUBLIC_ACTIONS_ = {
+  get_child_users: true,
+  verify_kid_pin: true,
+  invalidate_kid_session: true
+};
+
+function kidUserIdEquals_(a, b) {
+  return String(a == null ? "" : a).trim() === String(b == null ? "" : b).trim();
+}
 var KID_API_ADMIN_ACTIONS_ = {
   get_pending_external_requests: true,
   approve_external_request: true,
@@ -1653,46 +1661,73 @@ function handleGetMyExternalLearningRequests(req) {
   return sendResponse({ status: "success", list: list });
 }
 function handleGetPointsMultiplier(req) { const data = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('ADMIN_SS_ID')).getSheetByName("users").getDataRange().getValues(); let multiplier = 1.0; for (let i = 1; i < data.length; i++) { if (data[i][0] === req.userId) { const lastStudyTimeStr = JSON.parse(data[i][4] || "{}")[req.unitId]; if (lastStudyTimeStr) { const diffHours = (new Date() - new Date(lastStudyTimeStr)) / (1000 * 60 * 60); let basePercent = 10 + Math.floor(diffHours / 2) * 10; if (basePercent > 100) basePercent = 100; multiplier = basePercent / 100; } break; } } return sendResponse({ status: "success", multiplier: multiplier }); }
-function handleGetChildUsers(req) { const data = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('ADMIN_SS_ID')).getSheetByName("users").getDataRange().getValues(); const users = []; for (let i = 1; i < data.length; i++) { if (data[i][0] && i > 0) users.push({ id: data[i][0], name: data[i][1] }); } return sendResponse({ status: "success", users: users }); }
+function handleGetChildUsers(req) {
+  const data = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty("ADMIN_SS_ID")).getSheetByName("users").getDataRange().getValues();
+  const users = [];
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] && i > 0) users.push({ id: String(data[i][0]).trim(), name: data[i][1] });
+  }
+  return sendResponse({ status: "success", users: users });
+}
 function handleInvalidateKidSession(req) {
-  invalidateKidSession_(req.userId, req.sessionToken);
+  const tok = String(req.sessionToken || "").trim();
+  const uid = resolveUserIdFromSessionToken_(tok) || String(req.userId || "").trim();
+  if (tok) invalidateKidSession_(uid, tok);
   return sendResponse({ status: "success", message: "ログアウトしました" });
 }
 
 function handleVerifyKidPin(req) {
   const userId = String(req.userId || "").trim();
+  if (!userId) {
+    return sendResponse({ status: "error", message: "ユーザーを選び直してください" });
+  }
   const pinLimit = checkPinAttemptLimit_(userId);
   if (!pinLimit.ok) {
     return sendResponse({ status: "error", message: pinLimit.message });
   }
   const data = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty("ADMIN_SS_ID")).getSheetByName("users").getDataRange().getValues();
   for (let i = 1; i < data.length; i++) {
-    if (data[i][0] === req.userId) {
-      if (String(data[i][2]) === String(req.pin)) {
-        clearPinFailures_(userId);
-        const sessionToken = createKidSessionToken_(String(data[i][0]));
-        return sendResponse({
-          status: "success",
-          user: {
-            id: data[i][0],
-            name: data[i][1],
-            points: data[i][3],
-            lastStudyJson: JSON.parse(data[i][4] || "{}"),
-            historyJson: JSON.parse(data[i][5] || "{}"),
-            dailyPointsJson: JSON.parse(data[i][6] || "{}"),
-            trainingProgressJson: JSON.parse(data[i][7] || "{}"),
-            sessionToken: sessionToken
-          },
-          message: "ログイン成功"
-        });
+    if (!kidUserIdEquals_(data[i][0], userId)) continue;
+    const pinOk = String(data[i][2]) === String(req.pin);
+    if (pinOk) {
+      clearPinFailures_(userId);
+      const uid = String(data[i][0]).trim();
+      const sessionToken = createKidSessionToken_(uid);
+      if (!sessionToken) {
+        return sendResponse({ status: "error", message: "セッションの作成に失敗しました。しばらくして再試行してください。" });
       }
-      recordPinFailure_(userId);
-      return sendResponse({ status: "error", message: "PINがちがいます" });
+      return sendResponse({
+        status: "success",
+        user: {
+          id: uid,
+          name: data[i][1],
+          points: data[i][3],
+          lastStudyJson: JSON.parse(data[i][4] || "{}"),
+          historyJson: JSON.parse(data[i][5] || "{}"),
+          dailyPointsJson: JSON.parse(data[i][6] || "{}"),
+          trainingProgressJson: JSON.parse(data[i][7] || "{}"),
+          sessionToken: sessionToken
+        },
+        message: "ログイン成功"
+      });
+    }
+    recordPinFailure_(userId);
+    return sendResponse({ status: "error", message: "PINがちがいます" });
+  }
+  return sendResponse({ status: "error", message: "ユーザーが見つかりません" });
+}
+function handleChangePin(req) {
+  const usersSheet = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty("ADMIN_SS_ID")).getSheetByName("users");
+  const data = usersSheet.getDataRange().getValues();
+  const userId = String(req.userId || "").trim();
+  for (let i = 1; i < data.length; i++) {
+    if (kidUserIdEquals_(data[i][0], userId)) {
+      usersSheet.getRange(i + 1, 3).setValue(req.newPin);
+      return sendResponse({ status: "success", message: "新しいPINをセットしました！" });
     }
   }
   return sendResponse({ status: "error", message: "ユーザーが見つかりません" });
 }
-function handleChangePin(req) { const usersSheet = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('ADMIN_SS_ID')).getSheetByName("users"); const data = usersSheet.getDataRange().getValues(); for (let i = 1; i < data.length; i++) { if (data[i][0] === req.userId) { usersSheet.getRange(i + 1, 3).setValue(req.newPin); return sendResponse({ status: "success", message: "新しいPINをセットしました！" }); } } return sendResponse({ status: "error", message: "ユーザーが見つかりません" }); }
 function handleGetMaterialsList(req) {
   const props = PropertiesService.getScriptProperties();
   const materials = [];
