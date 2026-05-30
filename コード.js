@@ -334,7 +334,7 @@ const sendResponse = (responseObject) => {
 /** ブラウザから呼ぶ Web アプリは ANYONE 必須（GitHub Pages から fetch するため）。機密 API は PIN 後の sessionToken で保護。 */
 var KID_SESSION_TTL_SEC_ = 43200;
 var KID_PIN_FAIL_WINDOW_SEC_ = 900;
-var KID_PIN_FAIL_MAX_ = 8;
+var KID_PIN_FAIL_MAX_ = 5;
 var KID_API_PUBLIC_ACTIONS_ = {
   get_child_users: true,
   verify_kid_pin: true,
@@ -343,6 +343,41 @@ var KID_API_PUBLIC_ACTIONS_ = {
 
 function kidUserIdEquals_(a, b) {
   return String(a == null ? "" : a).trim() === String(b == null ? "" : b).trim();
+}
+
+/** 公開 API ではスプレッドシートの userId を返さず、HMAC 由来の不透明 loginId のみ返す */
+function getKidLoginIdSecret_() {
+  const props = PropertiesService.getScriptProperties();
+  const custom = props.getProperty("KID_LOGIN_ID_SECRET");
+  if (custom) return String(custom);
+  return "kid_login_v1_" + String(props.getProperty("ADMIN_SS_ID") || "default");
+}
+
+function computeKidLoginId_(internalUserId) {
+  const uid = String(internalUserId || "").trim();
+  if (!uid) return "";
+  const secret = getKidLoginIdSecret_();
+  const sig = Utilities.computeHmacSignature(
+    Utilities.MacAlgorithm.HMAC_SHA_256,
+    Utilities.newBlob(uid).getBytes(),
+    Utilities.newBlob(secret).getBytes()
+  );
+  return Utilities.base64EncodeWebSafe(sig).replace(/[=+/]/g, "").slice(0, 24);
+}
+
+function resolveInternalUserIdFromClientRef_(clientRef) {
+  const r = String(clientRef || "").trim();
+  if (!r) return "";
+  const data = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty("ADMIN_SS_ID"))
+    .getSheetByName("users")
+    .getDataRange()
+    .getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (!data[i][0]) continue;
+    const uid = String(data[i][0]).trim();
+    if (kidUserIdEquals_(uid, r) || computeKidLoginId_(uid) === r) return uid;
+  }
+  return "";
 }
 var KID_API_ADMIN_ACTIONS_ = {
   get_pending_external_requests: true,
@@ -402,6 +437,26 @@ function kidPinFailCacheKey_(userId) {
   return "pin_fail_" + String(userId || "").slice(0, 80);
 }
 
+function kidPinFailByClientKey_(clientKey) {
+  return "pin_fail_client_" + String(clientKey || "").slice(0, 64);
+}
+
+function checkPinAttemptLimitByClient_(clientKey) {
+  const ck = String(clientKey || "").trim();
+  if (!ck) return { ok: true };
+  const cache = CacheService.getScriptCache();
+  const key = kidPinFailByClientKey_(ck);
+  const n = Number(cache.get(key) || 0);
+  if (n >= 30) {
+    return {
+      ok: false,
+      message: "PINの入力回数が多すぎます。15分ほど待ってからもう一度お試しください。"
+    };
+  }
+  cache.put(key, String(n + 1), KID_PIN_FAIL_WINDOW_SEC_);
+  return { ok: true };
+}
+
 function checkPinAttemptLimit_(userId) {
   const uid = String(userId || "").trim();
   if (!uid) return { ok: true };
@@ -437,7 +492,7 @@ function checkPublicClientRate_(action, clientKey) {
   const cache = CacheService.getScriptCache();
   const key = "pub_ck_" + String(action || "").slice(0, 40) + "_" + ck.slice(0, 64);
   const n = Number(cache.get(key) || 0) + 1;
-  const max = action === "get_child_users" ? 48 : 36;
+  const max = action === "get_child_users" ? 24 : 20;
   if (n > max) {
     return { ok: false, message: "リクエストが多すぎます。しばらく待ってからもう一度お試しください。" };
   }
@@ -1697,7 +1752,9 @@ function handleGetChildUsers(req) {
   const data = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty("ADMIN_SS_ID")).getSheetByName("users").getDataRange().getValues();
   const users = [];
   for (let i = 1; i < data.length; i++) {
-    if (data[i][0] && i > 0) users.push({ id: String(data[i][0]).trim(), name: data[i][1] });
+    if (!data[i][0] || i <= 0) continue;
+    const uid = String(data[i][0]).trim();
+    users.push({ id: computeKidLoginId_(uid), name: data[i][1] });
   }
   return sendResponse({ status: "success", users: users });
 }
@@ -1709,20 +1766,28 @@ function handleInvalidateKidSession(req) {
 }
 
 function handleVerifyKidPin(req) {
-  const userId = String(req.userId || "").trim();
-  if (!userId) {
+  const clientRef = String(req.userId || req.loginId || "").trim();
+  if (!clientRef) {
     return sendResponse({ status: "error", message: "ユーザーを選び直してください" });
   }
-  const pinLimit = checkPinAttemptLimit_(userId);
+  const clientLimit = checkPinAttemptLimitByClient_(req.clientNonce || req.clientInstanceId);
+  if (!clientLimit.ok) {
+    return sendResponse({ status: "error", message: clientLimit.message });
+  }
+  const internalUserId = resolveInternalUserIdFromClientRef_(clientRef);
+  if (!internalUserId) {
+    return sendResponse({ status: "error", message: "ユーザーが見つかりません" });
+  }
+  const pinLimit = checkPinAttemptLimit_(internalUserId);
   if (!pinLimit.ok) {
     return sendResponse({ status: "error", message: pinLimit.message });
   }
   const data = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty("ADMIN_SS_ID")).getSheetByName("users").getDataRange().getValues();
   for (let i = 1; i < data.length; i++) {
-    if (!kidUserIdEquals_(data[i][0], userId)) continue;
+    if (!kidUserIdEquals_(data[i][0], internalUserId)) continue;
     const pinOk = String(data[i][2]) === String(req.pin);
     if (pinOk) {
-      clearPinFailures_(userId);
+      clearPinFailures_(internalUserId);
       const uid = String(data[i][0]).trim();
       const sessionToken = createKidSessionToken_(uid);
       if (!sessionToken) {
@@ -1743,7 +1808,8 @@ function handleVerifyKidPin(req) {
         message: "ログイン成功"
       });
     }
-    recordPinFailure_(userId);
+    recordPinFailure_(internalUserId);
+    Utilities.sleep(350);
     return sendResponse({ status: "error", message: "PINがちがいます" });
   }
   return sendResponse({ status: "error", message: "ユーザーが見つかりません" });
@@ -1751,7 +1817,7 @@ function handleVerifyKidPin(req) {
 function handleChangePin(req) {
   const usersSheet = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty("ADMIN_SS_ID")).getSheetByName("users");
   const data = usersSheet.getDataRange().getValues();
-  const userId = String(req.userId || "").trim();
+  const userId = resolveInternalUserIdFromClientRef_(req.userId || req.loginId) || String(req.userId || "").trim();
   for (let i = 1; i < data.length; i++) {
     if (kidUserIdEquals_(data[i][0], userId)) {
       usersSheet.getRange(i + 1, 3).setValue(req.newPin);
