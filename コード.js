@@ -378,7 +378,9 @@ function doPost(e) {
   }
 }
 
-function doOptions(e) { return ContentService.createTextOutput("OK").setMimeType(ContentService.MimeType.TEXT); }
+function doOptions(e) {
+  return ContentService.createTextOutput("OK").setMimeType(ContentService.MimeType.TEXT);
+}
 
 function recognizeSentence(allStrokes) {
   if (!Array.isArray(allStrokes) || allStrokes.length === 0) {
