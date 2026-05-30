@@ -431,10 +431,41 @@ function clearPinFailures_(userId) {
   CacheService.getScriptCache().remove(kidPinFailCacheKey_(uid));
 }
 
+function checkPublicClientRate_(action, clientKey) {
+  const ck = String(clientKey || "").trim();
+  if (!ck) return { ok: true };
+  const cache = CacheService.getScriptCache();
+  const key = "pub_ck_" + String(action || "").slice(0, 40) + "_" + ck.slice(0, 64);
+  const n = Number(cache.get(key) || 0) + 1;
+  const max = action === "get_child_users" ? 48 : 36;
+  if (n > max) {
+    return { ok: false, message: "リクエストが多すぎます。しばらく待ってからもう一度お試しください。" };
+  }
+  cache.put(key, String(n), 600);
+  return { ok: true };
+}
+
 function authorizeKidApiRequest_(action, req) {
   const a = String(action || "");
-  if (KID_API_PUBLIC_ACTIONS_[a]) return null;
-  if (KID_API_ADMIN_ACTIONS_[a]) return null;
+  if (KID_API_PUBLIC_ACTIONS_[a]) {
+    const rl = checkPublicClientRate_(a, req.clientNonce || req.clientInstanceId);
+    if (!rl.ok) {
+      return sendResponse({ status: "error", message: rl.message });
+    }
+    return null;
+  }
+  if (KID_API_ADMIN_ACTIONS_[a]) {
+    try {
+      const adminSs = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty("ADMIN_SS_ID"));
+      const adminV = verifyExternalAdminPin_(adminSs, req.adminPin);
+      if (!adminV.ok) {
+        return sendResponse({ status: "error", message: adminV.message || "管理者PINが一致しません" });
+      }
+    } catch (adminErr) {
+      return sendResponse({ status: "error", message: "管理者認証に失敗しました" });
+    }
+    return null;
+  }
   const v = validateKidSession_(req.userId, req.sessionToken);
   if (!v.ok) {
     return sendResponse({
@@ -856,8 +887,9 @@ function handleSaveLearningSession(req) {
   let targetRowIdx = -1;
   let userData = null;
 
+  const authUserId = String(req.userId || "").trim();
   for (let i = 1; i < data.length; i++) {
-    if (data[i][0] === req.userId) {
+    if (kidUserIdEquals_(data[i][0], authUserId)) {
       targetRowIdx = i + 1;
       userData = {
         points: Number(data[i][3]) || 0,
