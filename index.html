@@ -5270,6 +5270,16 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       openKanjiPracticePro();
       initKanjiPracticeScoreListener();
       initKanjiPracticeCatalog();
+      setKpStatus("漢字練習モードを準備中…");
+      ensureKanjiPracticeFrameReady().then(function (ready) {
+        if (ready) {
+          setKpStatus("漢字練習モードの準備ができました。漢字を選んで練習できます。");
+          kpResizeFrameToContent();
+        } else {
+          setKpStatus("筆順データの読み込みに失敗しました。通信を確認するか、ページを再読み込みしてください。");
+          alertKanjiVgLoadFailed();
+        }
+      });
     }
     /** 漢字練習画面用: iframe 採点メッセージの受け口は initKanjiParentKanjiQuizScoredBridge と共有 */
     function initKanjiPracticeScoreListener() {
@@ -5327,10 +5337,75 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
     function alertKanjiVgLoadFailed() {
       alert("筆順データ（KanjiVG.txt）の読み込みに失敗しました。通信環境を確認するか、ページを再読み込みしてもう一度お試しください。");
     }
+    /** iframe 内の「準備中…」オーバーレイを消す（srcdoc で onload が走らない場合の保険） */
+    function kpDismissIframeLoadingOverlay(win) {
+      try {
+        if (!win || !win.document) return;
+        const overlay = win.document.getElementById("loading-overlay");
+        if (overlay) overlay.style.display = "none";
+        if (typeof win.showLoading === "function") win.showLoading(false);
+      } catch (_e) {}
+    }
+    /**
+     * 親ページから iframe 内の KanjiVG 読み込みを起動する。
+     * srcdoc iframe では window.onload が不安定なことがあるため、load 後に明示的に kick する。
+     */
+    function bootstrapKpFrameKanjiData(frame) {
+      try {
+        if (!frame || !frame.contentWindow || !frame.contentDocument) return false;
+        const win = frame.contentWindow;
+        const doc = frame.contentDocument;
+        try {
+          win.KANJI_VG_TXT_URL = getKanjiVgTxtUrl();
+        } catch (_u) {}
+        patchKanjiFrameForQuizPostMessage(frame);
+
+        function afterKanjiDataLoaded() {
+          kpDismissIframeLoadingOverlay(win);
+          try {
+            if (typeof win.notifyParentKanjiDataReady === "function") {
+              win.notifyParentKanjiDataReady();
+            } else if (kanjiFrameHasVgData(win) && win.parent && win.parent !== win) {
+              win.parent.postMessage({ type: "kpKanjiDataReady", count: Object.keys(win.KANJI_DATA).length }, "*");
+            }
+          } catch (_n) {}
+        }
+
+        function runLoad() {
+          if (kanjiFrameHasVgData(win)) {
+            afterKanjiDataLoaded();
+            return;
+          }
+          if (typeof win.loadKanjiData === "function") {
+            try {
+              const p = win.loadKanjiData();
+              if (p && typeof p.then === "function") {
+                p.then(afterKanjiDataLoaded).catch(function () {
+                  kpDismissIframeLoadingOverlay(win);
+                });
+                return;
+              }
+            } catch (_ld) {}
+          }
+          try {
+            if (typeof win.onload === "function") win.onload();
+          } catch (_ol) {}
+        }
+
+        if (doc.readyState === "loading") {
+          doc.addEventListener("DOMContentLoaded", runLoad, { once: true });
+        } else {
+          runLoad();
+        }
+        return true;
+      } catch (e) {
+        return false;
+      }
+    }
     function openKanjiPracticePro() {
       const frame = document.getElementById('kp-pro-frame');
       if (!frame) return;
-      const KP_EMBED_VER = "7";
+      const KP_EMBED_VER = "8";
       if (frame.dataset.kpEmbedVer !== KP_EMBED_VER) {
         frame.dataset.kpLoaded = "";
         frame.dataset.kpEmbedVer = KP_EMBED_VER;
@@ -5343,10 +5418,12 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
           if (!kanjiFrameHasVgData(frame.contentWindow)) {
             frame.dataset.kpLoaded = "";
           } else {
+            bootstrapKpFrameKanjiData(frame);
+            kpDismissIframeLoadingOverlay(frame.contentWindow);
             return;
           }
         } catch (_eKp) {
-          return;
+          frame.dataset.kpLoaded = "";
         }
       }
       const kpHtml = (typeof window.KP_HTML === "string")
@@ -5363,13 +5440,22 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         frame.removeEventListener("load", onKpEmbedLoad);
         syncKanjiHandScoreWeightsToFrame(frame);
         patchKanjiFrameForQuizPostMessage(frame);
+        bootstrapKpFrameKanjiData(frame);
+        kpResizeFrameToContent();
       });
       setTimeout(function () {
         syncKanjiHandScoreWeightsToFrame(frame);
         patchKanjiFrameForQuizPostMessage(frame);
+        bootstrapKpFrameKanjiData(frame);
         kpResizeFrameToContent();
       }, 120);
-      setTimeout(kpResizeFrameToContent, 700);
+      setTimeout(function () {
+        bootstrapKpFrameKanjiData(frame);
+        kpResizeFrameToContent();
+      }, 700);
+      setTimeout(function () {
+        bootstrapKpFrameKanjiData(frame);
+      }, 2200);
     }
     function kpFrameInWrongModelWrap_(frame) {
       return frame && frame.parentElement && frame.parentElement.id === "kanji-quiz-wrong-model-wrap";
@@ -7083,6 +7169,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         window.addEventListener("message", onKpKanjiReady);
 
         function tryPoll() {
+          bootstrapKpFrameKanjiData(frame);
           patchKanjiFrameForQuizPostMessage(frame);
           const win = frame.contentWindow;
           if (!win) {
@@ -7092,7 +7179,11 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
 
           function check() {
             patchKanjiFrameForQuizPostMessage(frame);
-            return kanjiFrameHasVgData(win);
+            if (kanjiFrameHasVgData(win)) {
+              kpDismissIframeLoadingOverlay(win);
+              return true;
+            }
+            return false;
           }
 
           if (check()) {
@@ -7103,11 +7194,12 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
           let n = 0;
           pollId = setInterval(function () {
             n++;
+            if (n % 10 === 0) bootstrapKpFrameKanjiData(frame);
             if (check()) {
               finish(true);
               return;
             }
-            if (n >= 60) finish(false);
+            if (n >= 100) finish(false);
           }, 80);
         }
 
