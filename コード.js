@@ -927,6 +927,73 @@ function pruneSessionSubmitLocks_(locksRoot) {
   for (let i = 0; i < drop; i++) delete locksRoot[keys[i]];
 }
 
+function hashSessionSubmitFingerprint_(raw) {
+  const s = String(raw || "");
+  let h = 0;
+  for (let i = 0; i < s.length; i++) {
+    h = ((h << 5) - h) + s.charCodeAt(i);
+    h |= 0;
+  }
+  return (h >>> 0).toString(36);
+}
+
+/** クライアント未送信・旧版 pending でも同一内容の再送を識別する */
+function deriveSessionSubmitIdFromRequest_(req) {
+  const provided = String(req.sessionSubmitId || "").trim();
+  if (provided) return provided;
+  if (req.learningCategory === "kanji" && req.challengeType === "score") {
+    const fp = [
+      String(req.userId || ""),
+      String(req.unitId || ""),
+      String(req.kanjiChar || ""),
+      String(req.questionId || ""),
+      String(req.score != null ? req.score : ""),
+      req.questionCorrect === true ? "1" : "0"
+    ].join("\x1f");
+    return "k_" + hashSessionSubmitFingerprint_(fp);
+  }
+  const resultsList = Array.isArray(req.results) ? req.results : [];
+  const fp = resultsList.map(function (res) {
+    return String(res.questionId != null ? res.questionId : "") + ":" +
+      (res.isCorrect ? "1" : "0") + ":" + String(res.timeSec != null ? res.timeSec : 0);
+  }).join("|");
+  const raw = String(req.userId || "") + "\x1f" + String(req.unitId || "") + "\x1f" + fp;
+  return "q_" + hashSessionSubmitFingerprint_(raw);
+}
+
+function sessionSubmitInflightCacheKey_(userId, sessionSubmitId) {
+  return "kjsubmit_" + hashSessionSubmitFingerprint_(String(userId || "") + ":" + String(sessionSubmitId || ""));
+}
+
+function tryBeginSessionSubmit_(userId, sessionSubmitId) {
+  const id = String(sessionSubmitId || "").trim();
+  if (!id) return { ok: true, submitId: id, cacheKey: "" };
+  const cache = CacheService.getScriptCache();
+  const cacheKey = sessionSubmitInflightCacheKey_(userId, id);
+  const existing = cache.get(cacheKey);
+  if (existing) {
+    if (existing === "processing") {
+      return { ok: false, processing: true, submitId: id, cacheKey: cacheKey };
+    }
+    try {
+      const parsed = JSON.parse(existing);
+      if (parsed && parsed.status === "success") {
+        return { ok: false, cached: parsed, submitId: id, cacheKey: cacheKey };
+      }
+    } catch (_) {}
+  }
+  cache.put(cacheKey, "processing", 120);
+  return { ok: true, submitId: id, cacheKey: cacheKey };
+}
+
+function finishSessionSubmitInflight_(cacheKey, responseObj) {
+  const key = String(cacheKey || "").trim();
+  if (!key || !responseObj) return;
+  try {
+    CacheService.getScriptCache().put(key, JSON.stringify(responseObj), 600);
+  } catch (_) {}
+}
+
 function getSessionSubmitLock_(userData, sessionSubmitId) {
   const id = String(sessionSubmitId || "").trim();
   if (!id) return null;
@@ -975,7 +1042,10 @@ function handleSaveLearningSession(req) {
   }
   if (targetRowIdx === -1) return sendResponse({ status: "error", message: "ユーザーが見つかりません" });
 
-  const priorLock = getSessionSubmitLock_(userData, req.sessionSubmitId);
+  const sessionSubmitId = deriveSessionSubmitIdFromRequest_(req);
+  req.sessionSubmitId = sessionSubmitId;
+
+  const priorLock = getSessionSubmitLock_(userData, sessionSubmitId);
   if (priorLock) {
     const sheetPointPercent = parseUnitSheetPointPercent_(req.unitSheetName);
     const resp = {
@@ -992,8 +1062,25 @@ function handleSaveLearningSession(req) {
     if (req.trainingStepIndex) {
       resp.trainingProgressJson = userData.trainingProgressJson;
     }
+    finishSessionSubmitInflight_(sessionSubmitInflightCacheKey_(authUserId, sessionSubmitId), resp);
     return sendResponse(resp);
   }
+
+  const submitClaim = tryBeginSessionSubmit_(authUserId, sessionSubmitId);
+  if (!submitClaim.ok) {
+    if (submitClaim.cached) {
+      const cached = Object.assign({ alreadyProcessed: true }, submitClaim.cached);
+      return sendResponse(cached);
+    }
+    if (submitClaim.processing) {
+      return sendResponse({
+        status: "error",
+        message: "同じ結果を処理中です。しばらく待ってから再度お試しください。",
+        retryable: true
+      });
+    }
+  }
+  const submitInflightKey = submitClaim.cacheKey || "";
 
   const now = new Date();
   const todayStr = now.toISOString().split('T')[0];
@@ -1086,7 +1173,7 @@ function handleSaveLearningSession(req) {
     userData.trainingProgressJson[todayStr][midStr][req.trainingStepIndex] = true;
   }
 
-  rememberSessionSubmitLock_(userData, req.sessionSubmitId, earnedPoints, newTotalPoints, now.toISOString());
+  rememberSessionSubmitLock_(userData, sessionSubmitId, earnedPoints, newTotalPoints, now.toISOString());
   userData.historyJson = pruneHistoryJsonToFit_(userData.historyJson, userData.lastStudyJson);
 
   usersSheet.getRange(targetRowIdx, 4).setValue(newTotalPoints);
@@ -1120,6 +1207,7 @@ function handleSaveLearningSession(req) {
       resp.kanjiChallengePatch = kRoot[charKey];
     }
   }
+  finishSessionSubmitInflight_(submitInflightKey, resp);
   return sendResponse(resp);
 }
 

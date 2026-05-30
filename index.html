@@ -2274,6 +2274,8 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
     // ▼ GASのURLを貼り付けてください（※前回と同じURLならそのままで大丈夫） ▼
     const GAS_API_URL = "https://script.google.com/macros/s/AKfycbwa8uswC534RYSB-r1mir_Db2ctFPZ7AXGOGkxidpqokuVksyFtU_Wvgnyd-sdp-c8zkQ/exec";
     const LS_PENDING_FINISH_SAVE = "app_pending_finish_quiz_v1";
+    const LS_FLUSHED_SUBMIT_IDS = "app_flushed_submit_ids_v1";
+    const PENDING_FINISH_FLUSH_MAX_ATTEMPTS = 5;
 
     /** 公開 API のレート制限用（端末ごと。PII は含めない） */
     function getKidClientNonce() {
@@ -2410,7 +2412,11 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       try {
         localStorage.setItem(LS_PENDING_FINISH_SAVE, JSON.stringify({
           payload: payload,
-          savedAt: Date.now()
+          savedAt: Date.now(),
+          userId: String((payload && payload.userId) || ""),
+          sessionSubmitId: String((payload && payload.sessionSubmitId) || ""),
+          flushAttempts: 0,
+          lastFlushAt: 0
         }));
       } catch (_) {}
     }
@@ -2419,10 +2425,38 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       try { localStorage.removeItem(LS_PENDING_FINISH_SAVE); } catch (_) {}
     }
 
-    function applyPendingFinishQuizSuccess(d) {
+    function getFlushedSubmitIdSet() {
+      try {
+        const raw = localStorage.getItem(LS_FLUSHED_SUBMIT_IDS);
+        const arr = raw ? JSON.parse(raw) : [];
+        return Array.isArray(arr) ? arr.map(String) : [];
+      } catch (_) {
+        return [];
+      }
+    }
+
+    function rememberFlushedSubmitId(sessionSubmitId) {
+      const id = String(sessionSubmitId || "").trim();
+      if (!id) return;
+      try {
+        const list = getFlushedSubmitIdSet().filter(function (x) { return x !== id; });
+        list.unshift(id);
+        localStorage.setItem(LS_FLUSHED_SUBMIT_IDS, JSON.stringify(list.slice(0, 40)));
+      } catch (_) {}
+    }
+
+    function isSubmitIdAlreadyFlushedLocally(sessionSubmitId) {
+      const id = String(sessionSubmitId || "").trim();
+      if (!id) return false;
+      return getFlushedSubmitIdSet().indexOf(id) >= 0;
+    }
+
+    function applyPendingFinishQuizSuccess(d, expectedUserId) {
       if (!d || d.status !== "success") return;
       try {
         const user = JSON.parse(localStorage.getItem("app_kid_user") || "null");
+        if (!user || !user.id) return;
+        if (expectedUserId && String(user.id) !== String(expectedUserId)) return;
         if (user && d.newTotal != null) {
           user.points = d.newTotal;
           if (d.historyJson) user.historyJson = d.historyJson;
@@ -2435,35 +2469,73 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       } catch (_) {}
     }
 
-    function flushPendingFinishQuizSave() {
-      let raw = null;
-      try { raw = localStorage.getItem(LS_PENDING_FINISH_SAVE); } catch (_) {}
-      if (!raw) return Promise.resolve(false);
-      let rec = null;
-      try { rec = JSON.parse(raw); } catch (_) {
-        clearPendingFinishQuizPayload();
-        return Promise.resolve(false);
-      }
-      if (!rec || !rec.payload) {
-        clearPendingFinishQuizPayload();
-        return Promise.resolve(false);
-      }
-      const age = Date.now() - Number(rec.savedAt || 0);
-      if (age > 7 * 24 * 60 * 60 * 1000) {
-        clearPendingFinishQuizPayload();
-        return Promise.resolve(false);
-      }
-      return gasApiFetchText(rec.payload, { retries: 2, timeoutMs: 60000, xhrFallback: true })
-        .then(function (res) {
-          const d = gasApiParseJsonResponse(res);
-          if (d && d.status === "success") {
-            clearPendingFinishQuizPayload();
-            applyPendingFinishQuizSuccess(d);
-            return true;
-          }
-          return false;
-        })
-        .catch(function () { return false; });
+    function flushPendingFinishQuizSave(user) {
+      if (window.__pendingFinishFlushPromise) return window.__pendingFinishFlushPromise;
+      const currentUserId = user && user.id ? String(user.id) : "";
+      if (!currentUserId) return Promise.resolve(false);
+
+      window.__pendingFinishFlushPromise = (function () {
+        let raw = null;
+        try { raw = localStorage.getItem(LS_PENDING_FINISH_SAVE); } catch (_) {}
+        if (!raw) return Promise.resolve(false);
+        let rec = null;
+        try { rec = JSON.parse(raw); } catch (_) {
+          clearPendingFinishQuizPayload();
+          return Promise.resolve(false);
+        }
+        if (!rec || !rec.payload) {
+          clearPendingFinishQuizPayload();
+          return Promise.resolve(false);
+        }
+        const payloadUserId = String(rec.userId || (rec.payload && rec.payload.userId) || "");
+        if (payloadUserId && payloadUserId !== currentUserId) {
+          clearPendingFinishQuizPayload();
+          return Promise.resolve(false);
+        }
+        const submitId = String(rec.sessionSubmitId || (rec.payload && rec.payload.sessionSubmitId) || "");
+        if (submitId && isSubmitIdAlreadyFlushedLocally(submitId)) {
+          clearPendingFinishQuizPayload();
+          return Promise.resolve(false);
+        }
+        const age = Date.now() - Number(rec.savedAt || 0);
+        if (age > 7 * 24 * 60 * 60 * 1000) {
+          clearPendingFinishQuizPayload();
+          return Promise.resolve(false);
+        }
+        const flushAttempts = Number(rec.flushAttempts || 0);
+        const lastFlushAt = Number(rec.lastFlushAt || 0);
+        if (flushAttempts >= PENDING_FINISH_FLUSH_MAX_ATTEMPTS) {
+          return Promise.resolve(false);
+        }
+        if (lastFlushAt && Date.now() - lastFlushAt < 15000) {
+          return Promise.resolve(false);
+        }
+        try {
+          rec.flushAttempts = flushAttempts + 1;
+          rec.lastFlushAt = Date.now();
+          localStorage.setItem(LS_PENDING_FINISH_SAVE, JSON.stringify(rec));
+        } catch (_) {}
+
+        return gasApiFetchText(rec.payload, { retries: 1, timeoutMs: 60000, xhrFallback: true })
+          .then(function (res) {
+            const d = gasApiParseJsonResponse(res);
+            if (d && d.status === "success") {
+              clearPendingFinishQuizPayload();
+              if (submitId) rememberFlushedSubmitId(submitId);
+              applyPendingFinishQuizSuccess(d, currentUserId);
+              return true;
+            }
+            if (d && d.retryable) {
+              return false;
+            }
+            return false;
+          })
+          .catch(function () { return false; });
+      })().finally(function () {
+        window.__pendingFinishFlushPromise = null;
+      });
+
+      return window.__pendingFinishFlushPromise;
     }
 
     let selectedUserId = null; let currentPin = ""; let isPinResetMode = false;
@@ -4067,6 +4139,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
           }).catch(function () {});
         }
       } catch (_) {}
+      clearPendingFinishQuizPayload();
       localStorage.removeItem('app_kid_user');
       selectedUserId = null;
       currentPin = "";
@@ -4088,7 +4161,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       applyKanjiHwDominantHandToBody();
       syncKanjiHwHandSwitchUI();
       syncMaterialsListFromServerIfChanged();
-      flushPendingFinishQuizSave();
+      flushPendingFinishQuizSave(user);
     }
 
     function toggleBtnLoading(btn, isLoading, originalText = "") { if(!btn) return ""; if(isLoading) { const text = btn.innerHTML; btn.innerHTML = "⏳ よみこみ中..."; btn.classList.add("btn-loading"); return text; } else { btn.innerHTML = originalText; btn.classList.remove("btn-loading"); } }
@@ -10480,6 +10553,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
             }
             if (d.status === "success") {
               clearPendingFinishQuizPayload();
+              if (sessionSubmitId) rememberFlushedSubmitId(sessionSubmitId);
               try {
                 applySuccessResult(d);
               } catch (eApply) {
