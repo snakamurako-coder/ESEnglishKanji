@@ -2311,13 +2311,6 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       return JSON.stringify(gasApiPayload(bodyObj));
     }
 
-    function handleGasSessionAuthError(data) {
-      if (!data || data.code !== "SESSION_REQUIRED") return false;
-      alert(data.message || "ログインの有効期限が切れました。もう一度PINを入力してください。");
-      logout();
-      return true;
-    }
-
     /** GAS 向け POST（Content-Type 未指定＝text/plain。application/json は CORS プリフライトを誘発） */
     function gasApiBuildBody(bodyObj) {
       return gasPostBody(bodyObj);
@@ -2409,11 +2402,6 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
           err.rawText = res && res.text;
           throw err;
         }
-        if (handleGasSessionAuthError(data)) {
-          const err = new Error("SESSION_REQUIRED");
-          err.code = "SESSION_REQUIRED";
-          throw err;
-        }
         return data;
       });
     }
@@ -2468,7 +2456,6 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       return gasApiFetchText(rec.payload, { retries: 2, timeoutMs: 60000, xhrFallback: true })
         .then(function (res) {
           const d = gasApiParseJsonResponse(res);
-          if (handleGasSessionAuthError(d)) return false;
           if (d && d.status === "success") {
             clearPendingFinishQuizPayload();
             applyPendingFinishQuizSuccess(d);
@@ -3171,7 +3158,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         if (saved) {
           try {
             const u = JSON.parse(saved);
-            if (u && u.id && u.sessionToken) {
+            if (u && u.id) {
               showHome(u);
               loadKanjiHandScoreWeightsFromLocalCache();
               fetchAppSettings();
@@ -4008,7 +3995,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
           var raw = String((e && e.rawText) || "");
           if (/<!DOCTYPE|<html|Sign in|accounts\.google/i.test(raw)) {
             msg = "サーバーがログイン画面を返しました。GAS Webアプリの「アクセス: 全員」（匿名）を確認してください。";
-          } else if (e && e.message && !/SESSION_REQUIRED/.test(String(e.message))) {
+          } else if (e && e.message) {
             msg = String(e.message);
           }
           if (c) c.innerHTML = "<p style='text-align:center;color:#c62828;'>" + msg + "</p>";
@@ -4044,8 +4031,8 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
             return;
           }
           if (d.status === "success") {
-            if (!d.user || !d.user.sessionToken) {
-              if (msgEl) msgEl.innerText = "ログイン応答が不完全です。GASを再デプロイしてから再試行してください。";
+            if (!d.user || !d.user.id) {
+              if (msgEl) msgEl.innerText = "ログイン応答が不完全です。もう一度お試しください。";
               currentPin = "";
               updatePinDisplay();
               return;
@@ -10481,14 +10468,6 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
             const httpStatus = res.status;
             const rawText = String(res.text || "");
             const d = gasApiParseJsonResponse(res);
-            if (handleGasSessionAuthError(d)) {
-              showSubmitError(
-                "ログインの有効期限が切れました",
-                `<p style="font-size:13px;color:#666;">もう一度PINを入力してから、結果を送り直してください。</p>`,
-                true
-              );
-              return;
-            }
             if (!d) {
               console.error("save_learning_session: 非JSON応答 status=" + httpStatus, rawText.slice(0, 500));
               savePendingFinishQuizPayload(payload);

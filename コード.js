@@ -331,7 +331,7 @@ const sendResponse = (responseObject) => {
   return ContentService.createTextOutput(JSON.stringify(responseObject)).setMimeType(ContentService.MimeType.JSON);
 };
 
-/** ブラウザから呼ぶ Web アプリは ANYONE 必須（GitHub Pages から fetch するため）。機密 API は PIN 後の sessionToken で保護。 */
+/** ブラウザから呼ぶ Web アプリは ANYONE_ANONYMOUS 必須。PIN ログイン後は端末の userId で API を許可（Cache 失効で再 PIN 不要）。 */
 var KID_SESSION_TTL_SEC_ = 43200;
 var KID_PIN_FAIL_WINDOW_SEC_ = 900;
 var KID_PIN_FAIL_MAX_ = 5;
@@ -412,13 +412,31 @@ function resolveUserIdFromSessionToken_(sessionToken) {
   return String(CacheService.getScriptCache().get(kidSessionCacheKey_(tok)) || "").trim();
 }
 
+function isRegisteredKidUserId_(userId) {
+  const uid = String(userId || "").trim();
+  if (!uid) return false;
+  const data = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty("ADMIN_SS_ID"))
+    .getSheetByName("users")
+    .getDataRange()
+    .getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] && kidUserIdEquals_(data[i][0], uid)) return true;
+  }
+  return false;
+}
+
 function validateKidSession_(userId, sessionToken) {
   const tok = String(sessionToken || "").trim();
-  if (!tok) return { ok: false };
-  const bound = resolveUserIdFromSessionToken_(tok);
-  const uid = String(userId || "").trim() || bound;
-  if (!uid || !bound || bound !== uid) return { ok: false, userId: "" };
-  return { ok: true, userId: uid };
+  const uidFromClient = String(userId || "").trim();
+  if (tok) {
+    const bound = resolveUserIdFromSessionToken_(tok);
+    const uid = uidFromClient || bound;
+    if (uid && bound && bound === uid) return { ok: true, userId: uid };
+  }
+  if (uidFromClient && isRegisteredKidUserId_(uidFromClient)) {
+    return { ok: true, userId: uidFromClient };
+  }
+  return { ok: false, userId: "" };
 }
 
 function invalidateKidSession_(userId, sessionToken) {
@@ -525,8 +543,7 @@ function authorizeKidApiRequest_(action, req) {
   if (!v.ok) {
     return sendResponse({
       status: "error",
-      code: "SESSION_REQUIRED",
-      message: "ログインの有効期限が切れました。もう一度PINを入力してください。"
+      message: "ログイン情報が無効です。ユーザーを選び直して PIN を入力してください。"
     });
   }
   req.userId = v.userId;
@@ -1790,9 +1807,6 @@ function handleVerifyKidPin(req) {
       clearPinFailures_(internalUserId);
       const uid = String(data[i][0]).trim();
       const sessionToken = createKidSessionToken_(uid);
-      if (!sessionToken) {
-        return sendResponse({ status: "error", message: "セッションの作成に失敗しました。しばらくして再試行してください。" });
-      }
       return sendResponse({
         status: "success",
         user: {
@@ -1803,7 +1817,7 @@ function handleVerifyKidPin(req) {
           historyJson: JSON.parse(data[i][5] || "{}"),
           dailyPointsJson: JSON.parse(data[i][6] || "{}"),
           trainingProgressJson: JSON.parse(data[i][7] || "{}"),
-          sessionToken: sessionToken
+          sessionToken: sessionToken || ""
         },
         message: "ログイン成功"
       });
