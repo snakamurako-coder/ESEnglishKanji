@@ -3777,6 +3777,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
 
     // ★ 特訓ルートの読み込み処理を追加
     function showHome(user) {
+      resetResultScreenActionButtons();
       document.body.classList.remove('kanji-study-mode');
       switchSection('section-home');
       document.getElementById('header-user-info').innerText = `ID: ${user.id} / ${user.name}`; document.getElementById('global-header').style.display = 'block';
@@ -6388,6 +6389,50 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         b.style.opacity = "";
       }
     }
+    /** 英語・漢字共通の結果画面ボタン一覧 */
+    function getResultScreenActionButtons() {
+      return [
+        document.getElementById("result-retry-btn"),
+        document.getElementById("result-settings-btn"),
+        document.getElementById("result-home-btn"),
+        document.getElementById("result-kanji-same-book-btn"),
+        document.getElementById("result-kanji-other-book-btn")
+      ].filter(Boolean);
+    }
+    /**
+     * 結果画面ボタンの kj-busy / 一括 disabled を解除する。
+     * 漢字結果でホーム等へ遷移したあと英語の集計画面に来たとき、
+     * 前回のローディング状態が残って操作不能になるのを防ぐ。
+     */
+    function resetResultScreenActionButtons() {
+      var btns = getResultScreenActionButtons();
+      for (var i = 0; i < btns.length; i++) {
+        try { stopKanjiActionBusy(btns[i]); } catch (_) {}
+      }
+      try { restoreKanjiButtonGroup(btns); } catch (_) {}
+    }
+    /** 英語クイズ終了後の結果画面用デフォルト onclick（漢字用ラッパーを上書き） */
+    function bindEnglishResultButtonHandlers(isTrainingMode) {
+      var retryBtn = document.getElementById("result-retry-btn");
+      var settingsBtn = document.getElementById("result-settings-btn");
+      var homeBtn = document.getElementById("result-home-btn");
+      var sameBookBtn = document.getElementById("result-kanji-same-book-btn");
+      var otherBookBtn = document.getElementById("result-kanji-other-book-btn");
+      if (sameBookBtn) { sameBookBtn.style.display = "none"; sameBookBtn.onclick = null; }
+      if (otherBookBtn) { otherBookBtn.style.display = "none"; otherBookBtn.onclick = null; }
+      if (!isTrainingMode && retryBtn) {
+        retryBtn.onclick = function () { prepareQuiz(); };
+      }
+      if (!isTrainingMode && settingsBtn) {
+        settingsBtn.onclick = function () { openSettingsScreen(); };
+      }
+      if (homeBtn) {
+        homeBtn.onclick = function () {
+          var u = JSON.parse(localStorage.getItem("app_kid_user") || "null");
+          if (u) showHome(u);
+        };
+      }
+    }
     let kanjiQuizHandSubmitBusy = false;
     let kanjiQuizHandSubmitAnimTimer = null;
     function setKanjiQuizHandSubmitBusy(isBusy) {
@@ -7729,6 +7774,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
     }
     function showKanjiQuizResult(totalEarned, logs, isTrainingMode, newTotalPoints) {
       restoreKanjiPracticeFrameIfMoved();
+      resetResultScreenActionButtons();
       switchSection('section-result');
       const rc = document.getElementById('result-content');
       const retryBtn = document.getElementById('result-retry-btn');
@@ -7790,11 +7836,8 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
               fn.call(self);
             } catch (e) {
               console.error("結果ページ操作で例外:", e);
-            }
-            // セクションが切り替わったかどうかで復元判定。まだ section-result 上に居る
-            // （= startKanjiQuizPlay で confirm をキャンセル等）の場合だけ元に戻す。
-            var resSec = document.getElementById('section-result');
-            if (resSec && resSec.classList.contains('active')) {
+            } finally {
+              // ホーム遷移などで section-result が非 active になっても必ずビジー解除
               try { stopKanjiActionBusy(self); } catch (_) {}
               try { restoreKanjiButtonGroup(__resultBtnGroup); } catch (_) {}
             }
@@ -10028,6 +10071,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
     function finishQuiz() {
       document.getElementById('section-quiz')?.classList.remove('pen-mode-active');
       document.getElementById('quiz-answer-area')?.classList.remove('pen-mode-active');
+      resetResultScreenActionButtons();
       switchSection('section-result'); 
       document.getElementById('result-content').innerHTML = "<p>おくっています...</p>"; 
       document.getElementById('result-retry-btn').style.display = "none"; document.getElementById('result-settings-btn').style.display = "none"; document.getElementById('result-home-btn').style.display = "none";
@@ -10094,6 +10138,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
           (detailHtml || "") +
           `<p style="margin-top:8px;">回答ログは <strong>「ホームにもどる」</strong> 後の復帰データに保存されています。</p>`;
         document.getElementById('result-home-btn').style.display = "block";
+        bindEnglishResultButtonHandlers(isTrainingMode);
         if (allowRetry) {
           const retryBtn = document.getElementById('result-retry-btn');
           if (retryBtn) {
@@ -10166,12 +10211,12 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
           if (__ko) __ko.style.display = "none";
         })();
 
+        bindEnglishResultButtonHandlers(isTrainingMode);
         const retryBtn = document.getElementById('result-retry-btn');
         if (!isTrainingMode) {
           if (retryBtn) {
             retryBtn.style.display = "block";
             retryBtn.innerText = "🔄 もう一度やる";
-            retryBtn.onclick = function () { prepareQuiz(); };
           }
           const settingsBtn = document.getElementById('result-settings-btn');
           if (settingsBtn) settingsBtn.style.display = "block";
@@ -10193,16 +10238,22 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         let httpStatus = 0;
         let rawText = "";
         function postFinishQuizWithRetry(retryCount) {
+          var controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+          var timeoutId = controller
+            ? setTimeout(function () { try { controller.abort(); } catch (_) {} }, 45000)
+            : null;
           return fetch(GAS_API_URL, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
+            body: JSON.stringify(payload),
+            signal: controller ? controller.signal : undefined
           })
             .then(function (r) {
+              if (timeoutId) clearTimeout(timeoutId);
               httpStatus = r.status;
               return r.text();
             })
             .catch(function (e) {
+              if (timeoutId) clearTimeout(timeoutId);
               const msg = String((e && (e.message || e)) || "");
               const canRetry = retryCount > 0 && /Load failed|Failed to fetch|NetworkError|fetch|aborted|timeout/i.test(msg);
               if (!canRetry) throw e;
@@ -10241,14 +10292,13 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
                     `<p style="color:#FF9800;font-size:12px;">（表示の途中で軽微なエラーがありましたが、保存は完了しました。）</p>`;
                 }
                 try { mergeFinishQuizUserCache(d); } catch (_) {}
+                bindEnglishResultButtonHandlers(isTrainingMode);
+                const retryBtn = document.getElementById('result-retry-btn');
+                if (!isTrainingMode && retryBtn) retryBtn.style.display = "block";
+                const settingsBtn = document.getElementById('result-settings-btn');
+                if (!isTrainingMode && settingsBtn) settingsBtn.style.display = "block";
                 const homeBtn = document.getElementById('result-home-btn');
                 if (homeBtn) homeBtn.style.display = "block";
-                (function () {
-                  var __kb = document.getElementById('result-kanji-same-book-btn');
-                  var __ko = document.getElementById('result-kanji-other-book-btn');
-                  if (__kb) __kb.style.display = "none";
-                  if (__ko) __ko.style.display = "none";
-                })();
               }
               return;
             }
