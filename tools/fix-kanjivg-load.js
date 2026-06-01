@@ -123,6 +123,7 @@ const overrideBlock = `<script>
       if (!meta || typeof meta !== "object") return false;
       var rev = getKanjiVgListRev();
       if (!rev || String(meta.rev || "") !== rev) return false;
+      if (meta.source === "sheet") return (Number(meta.count) || 0) > 0;
       try {
         if (String(meta.url || "") !== resolveKanjiVgTxtUrl()) return false;
       } catch (e) { return false; }
@@ -142,22 +143,70 @@ const overrideBlock = `<script>
     }
     function loadKanjiDataFromLocalCache() {
       var cacheKey = "kanjiData_KanjiVG_txt";
+      var legacyKey = "kanjiData_KanjiVG.txt";
       try {
         if (window.parent && window.parent !== window && window.parent.__kanjiVgDataMap) {
           if (applyKanjiDataMap(window.parent.__kanjiVgDataMap)) return true;
         }
       } catch (eP) {}
       var meta = readKanjiVgMeta();
-      if (!isKanjiVgCacheFresh(meta)) return false;
-      var cached = SafeStorage.get(cacheKey);
-      if (!cached) return false;
-      try {
-        var parsed = JSON.parse(cached);
-        if (applyKanjiDataMap(parsed)) return true;
-      } catch (e) {}
+      if (isKanjiVgCacheFresh(meta)) {
+        var cached = SafeStorage.get(cacheKey) || SafeStorage.get(legacyKey);
+        if (cached) {
+          try {
+            var parsed = JSON.parse(cached);
+            if (applyKanjiDataMap(parsed)) return true;
+          } catch (e) {}
+        }
+      }
+      if (!meta) {
+        var legacyOnly = SafeStorage.get(legacyKey);
+        if (legacyOnly) {
+          try {
+            var legParsed = JSON.parse(legacyOnly);
+            if (applyKanjiDataMap(legParsed)) return true;
+          } catch (e2) {}
+        }
+      }
       SafeStorage.remove(cacheKey);
+      SafeStorage.remove(legacyKey);
       SafeStorage.remove("kanjiData_KanjiVG_meta");
       return false;
+    }
+    function persistKanjiDataAfterLoad(data, opts) {
+      var cacheKey = "kanjiData_KanjiVG_txt";
+      var legacyKey = "kanjiData_KanjiVG.txt";
+      var rev = getKanjiVgListRev();
+      var o = opts || {};
+      KANJI_DATA = data;
+      try {
+        SafeStorage.set(cacheKey, JSON.stringify(data));
+        SafeStorage.set("kanjiData_KanjiVG_meta", JSON.stringify({
+          rev: rev,
+          source: o.source || "txt",
+          url: o.url || "",
+          count: Object.keys(data).length,
+          savedAt: Date.now()
+        }));
+        SafeStorage.remove(legacyKey);
+        if (window.parent && window.parent !== window) {
+          window.parent.__kanjiVgDataMap = data;
+        }
+      } catch (e) {}
+      populateKanjiSelector();
+      showLoading(false);
+    }
+    function loadKanjiDataFromSheetFallback() {
+      showLoading(true, "筆順データを読込中（シート）...");
+      return postKanjiApi("get_kanji_data_from_sheet", { sheetName: "KanjiVG.txt" })
+        .then(function(res) {
+          if (!res || res.status !== "success") {
+            throw new Error((res && res.message) || "シートからの取得に失敗しました");
+          }
+          var data = res.data || {};
+          if (!Object.keys(data).length) throw new Error("シートに有効な漢字データがありません");
+          persistKanjiDataAfterLoad(data, { source: "sheet" });
+        });
     }
     window.syncData = function() {
       try { SafeStorage.remove("kanjiData_KanjiVG_txt"); } catch (_) {}
@@ -186,25 +235,14 @@ const overrideBlock = `<script>
         .then(function(text) {
           var data = parseKanjiVgTsv(text);
           if (!Object.keys(data).length) throw new Error("TSVに有効な行がありません");
-          KANJI_DATA = data;
-          SafeStorage.set("kanjiData_KanjiVG_txt", JSON.stringify(data));
-          SafeStorage.set("kanjiData_KanjiVG_meta", JSON.stringify({
-            rev: rev,
-            url: url,
-            count: Object.keys(data).length,
-            savedAt: Date.now()
-          }));
-          try {
-            if (window.parent && window.parent !== window) {
-              window.parent.__kanjiVgDataMap = data;
-            }
-          } catch (e) {}
-          populateKanjiSelector();
-          showLoading(false);
+          persistKanjiDataAfterLoad(data, { source: "txt", url: url });
         })
         .catch(function(e) {
-          alert("KanjiVG.txt の読み込みに失敗: " + (e && e.message ? e.message : e));
-          showLoading(false);
+          return loadKanjiDataFromSheetFallback().catch(function(e2) {
+            var msg = (e2 && e2.message) ? e2.message : String(e2 || e || "不明");
+            alert("筆順データの読み込みに失敗しました。\\nKanjiVG.txt: " + (e && e.message ? e.message : e) + "\\nシート: " + msg);
+            showLoading(false);
+          });
         })
         .finally(function() { window.__kpKanjiInflight = null; });
       return window.__kpKanjiInflight;
@@ -212,11 +250,19 @@ const overrideBlock = `<script>
     (function() {
       var _kjpPrev = window.onload;
       window.onload = function() {
-        if (typeof _kjpPrev === "function") _kjpPrev();
         updateProfileSelectUI();
+        function _kpSheetInit() {
+          if (typeof _kjpPrev === "function") _kjpPrev();
+        }
         if (typeof window.loadKanjiData === "function") {
-          window.loadKanjiData();
+          var _kpP = window.loadKanjiData();
+          if (_kpP && typeof _kpP.then === "function") {
+            _kpP.then(_kpSheetInit).catch(_kpSheetInit);
+          } else {
+            _kpSheetInit();
+          }
         } else {
+          _kpSheetInit();
           showLoading(false);
         }
       };
@@ -310,7 +356,7 @@ if (!fullIdx.includes("function clearKanjiVgLocalCache")) {
       try {
         const meta = JSON.parse(localStorage.getItem("kanjiData_KanjiVG_meta") || "null");
         if (!meta || String(meta.rev || "") !== KANJI_VG_LIST_REV) return false;
-        const raw = localStorage.getItem("kanjiData_KanjiVG_txt");
+        const raw = localStorage.getItem("kanjiData_KanjiVG_txt") || localStorage.getItem("kanjiData_KanjiVG.txt");
         if (!raw) return false;
         const parsed = JSON.parse(raw);
         if (parsed && typeof parsed === "object" && Object.keys(parsed).length > 0) {
