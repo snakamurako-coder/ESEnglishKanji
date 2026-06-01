@@ -3778,6 +3778,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
     // ★ 特訓ルートの読み込み処理を追加
     function showHome(user) {
       document.body.classList.remove('kanji-study-mode');
+      resetResultScreenActionButtons();
       switchSection('section-home');
       document.getElementById('header-user-info').innerText = `ID: ${user.id} / ${user.name}`; document.getElementById('global-header').style.display = 'block';
       document.getElementById('welcome-message').innerText = `${user.name} さん`; document.getElementById('user-points').innerText = user.points;
@@ -6381,11 +6382,46 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       for (var i = 0; i < buttons.length; i++) {
         var b = buttons[i];
         if (!b) continue;
+        try { stopKanjiActionBusy(b); } catch (_) {}
         if (b.dataset.kjGroupOriginalDisabled != null) {
           b.disabled = b.dataset.kjGroupOriginalDisabled === "1";
           delete b.dataset.kjGroupOriginalDisabled;
         }
         b.style.opacity = "";
+      }
+    }
+    function getResultScreenActionButtons() {
+      return [
+        document.getElementById("result-retry-btn"),
+        document.getElementById("result-settings-btn"),
+        document.getElementById("result-home-btn"),
+        document.getElementById("result-kanji-same-book-btn"),
+        document.getElementById("result-kanji-other-book-btn")
+      ].filter(function (b) { return !!b; });
+    }
+    /** 漢字リザルトの kj-busy が残ると英語の集計画面ボタンも押せなくなるため、必ず解除する */
+    function resetResultScreenActionButtons() {
+      var btns = getResultScreenActionButtons();
+      for (var i = 0; i < btns.length; i++) {
+        try { stopKanjiActionBusy(btns[i]); } catch (_) {}
+      }
+      try { restoreKanjiButtonGroup(btns); } catch (_) {}
+    }
+    function bindEnglishResultButtonHandlers(opts) {
+      opts = opts || {};
+      var retryBtn = document.getElementById("result-retry-btn");
+      var settingsBtn = document.getElementById("result-settings-btn");
+      var homeBtn = document.getElementById("result-home-btn");
+      if (retryBtn && opts.retryOnclick !== null) {
+        retryBtn.onclick = opts.retryOnclick || function () { prepareQuiz(); };
+      }
+      if (settingsBtn) {
+        settingsBtn.onclick = opts.settingsOnclick || function () { openSettingsScreen(); };
+      }
+      if (homeBtn) {
+        homeBtn.onclick = opts.homeOnclick || function () {
+          showHome(JSON.parse(localStorage.getItem("app_kid_user")));
+        };
       }
     }
     let kanjiQuizHandSubmitBusy = false;
@@ -7729,6 +7765,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
     }
     function showKanjiQuizResult(totalEarned, logs, isTrainingMode, newTotalPoints) {
       restoreKanjiPracticeFrameIfMoved();
+      document.body.classList.add('kanji-study-mode');
       switchSection('section-result');
       const rc = document.getElementById('result-content');
       const retryBtn = document.getElementById('result-retry-btn');
@@ -7790,11 +7827,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
               fn.call(self);
             } catch (e) {
               console.error("結果ページ操作で例外:", e);
-            }
-            // セクションが切り替わったかどうかで復元判定。まだ section-result 上に居る
-            // （= startKanjiQuizPlay で confirm をキャンセル等）の場合だけ元に戻す。
-            var resSec = document.getElementById('section-result');
-            if (resSec && resSec.classList.contains('active')) {
+            } finally {
               try { stopKanjiActionBusy(self); } catch (_) {}
               try { restoreKanjiButtonGroup(__resultBtnGroup); } catch (_) {}
             }
@@ -9936,6 +9969,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
     function checkAnswer(userA, correctA, q) {
       document.querySelectorAll('#section-quiz button').forEach(b => b.disabled = true);
       let advanceScheduled = false;
+      let resultRecorded = false;
       try {
         const format = document.getElementById('setting-format').value;
         const ansType = document.getElementById('setting-answer-type').value;
@@ -9959,6 +9993,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         const basePoint = computeQuizBasePoint(format, ansType, isWord);
 
         quizResults.push({ questionId: q["通し番号"], isCorrect: isCorrect, timeSec: Math.round((Date.now() - questionStartTime) / 1000), basePoint: basePoint, maxDeduction: maxDeduction });
+        resultRecorded = true;
         saveQuizRecoveryDraft(currentQuestionIndex + 1);
         const feedback = document.getElementById('quiz-feedback');
 
@@ -9995,17 +10030,21 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         try { if (document.getElementById('setting-format') && document.getElementById('setting-format').value === 'ja_to_en_sort') destroySortQuizIfAny(); } catch (_) {}
         const feedback = document.getElementById('quiz-feedback');
         try { document.getElementById('quiz-word-blank-area').style.display = "none"; } catch (_) {}
-        feedback.innerHTML = `<span style='color:#F44336;font-size:30px;font-weight:bold;'>⚠️ エラー</span><br><span style="font-size:18px;">「つぎへ」でつづけてね。</span>`;
-        try {
-          const format = document.getElementById('setting-format').value;
-          const ansType = document.getElementById('setting-answer-type').value;
-          const isWord = currentModeName.includes("単語");
-          const basePoint = computeQuizBasePoint(format, ansType, isWord);
-          quizResults.push({ questionId: q["通し番号"], isCorrect: false, timeSec: Math.round((Date.now() - questionStartTime) / 1000), basePoint: basePoint, maxDeduction: maxDeduction });
-          saveQuizRecoveryDraft(currentQuestionIndex + 1);
-        } catch (_) {
-          quizResults.push({ questionId: q["通し番号"] || 0, isCorrect: false, timeSec: 0, basePoint: 0, maxDeduction: 0 });
-          saveQuizRecoveryDraft(currentQuestionIndex + 1);
+        if (feedback) {
+          feedback.innerHTML = `<span style='color:#F44336;font-size:30px;font-weight:bold;'>⚠️ エラー</span><br><span style="font-size:18px;">「つぎへ」でつづけてね。</span>`;
+        }
+        if (!resultRecorded) {
+          try {
+            const format = document.getElementById('setting-format').value;
+            const ansType = document.getElementById('setting-answer-type').value;
+            const isWord = currentModeName.includes("単語");
+            const basePoint = computeQuizBasePoint(format, ansType, isWord);
+            quizResults.push({ questionId: q["通し番号"], isCorrect: false, timeSec: Math.round((Date.now() - questionStartTime) / 1000), basePoint: basePoint, maxDeduction: maxDeduction });
+            saveQuizRecoveryDraft(currentQuestionIndex + 1);
+          } catch (_) {
+            quizResults.push({ questionId: q["通し番号"] || 0, isCorrect: false, timeSec: 0, basePoint: 0, maxDeduction: 0 });
+            saveQuizRecoveryDraft(currentQuestionIndex + 1);
+          }
         }
         updateSessionScoreDisplay();
         advanceScheduled = true;
@@ -10026,6 +10065,8 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
     function quitQuiz() { clearTimeout(autoNextTimer); window.speechSynthesis.cancel(); resetHandwritingInputState(); document.getElementById('section-quiz')?.classList.remove('pen-mode-active'); document.getElementById('quiz-answer-area')?.classList.remove('pen-mode-active'); openSettingsScreen(); }
     
     function finishQuiz() {
+      resetResultScreenActionButtons();
+      document.body.classList.remove('kanji-study-mode');
       document.getElementById('section-quiz')?.classList.remove('pen-mode-active');
       document.getElementById('quiz-answer-area')?.classList.remove('pen-mode-active');
       switchSection('section-result'); 
@@ -10041,12 +10082,19 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       const user = JSON.parse(localStorage.getItem('app_kid_user') || 'null');
       if (!user || !user.id) {
         document.getElementById('result-content').innerHTML = `<h2 style="color:#F44336;">ログイン情報が見つかりません</h2><p>ホームにもどってから再ログインしてください。</p>`;
+        bindEnglishResultButtonHandlers();
         document.getElementById('result-home-btn').style.display = "block";
         return;
       }
       const isRandom = document.getElementById('setting-order').value === 'random';
       const detailedUnitId = getDetailedUnitId();
-      const sessionSubmitId = buildQuizSessionSubmitId(user.id, detailedUnitId, quizResults);
+      const expectedCount = Array.isArray(filteredQuestions) ? filteredQuestions.length : 0;
+      let resultsToSend = Array.isArray(quizResults) ? quizResults.slice() : [];
+      if (expectedCount > 0 && resultsToSend.length > expectedCount) {
+        console.warn("quizResults が問題数を超えています。集計用に先頭", expectedCount, "件に切り詰めます。", resultsToSend.length);
+        resultsToSend = resultsToSend.slice(0, expectedCount);
+      }
+      const sessionSubmitId = buildQuizSessionSubmitId(user.id, detailedUnitId, resultsToSend);
 
       let payload = {
         action: "save_learning_session",
@@ -10055,7 +10103,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         unitSheetName: currentUnitName,
         isReviewMode: currentIsReviewMode,
         isRandom: isRandom,
-        results: quizResults,
+        results: resultsToSend,
         sessionSubmitId: sessionSubmitId
       };
       if (isTrainingMode) {
@@ -10093,13 +10141,15 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
           `<h2 style="color:#F44336;">⚠️ ${safeTitle}</h2>` +
           (detailHtml || "") +
           `<p style="margin-top:8px;">回答ログは <strong>「ホームにもどる」</strong> 後の復帰データに保存されています。</p>`;
+        bindEnglishResultButtonHandlers({
+          retryOnclick: allowRetry ? function () { window.__retryFinishQuizSubmit(); } : undefined
+        });
         document.getElementById('result-home-btn').style.display = "block";
         if (allowRetry) {
           const retryBtn = document.getElementById('result-retry-btn');
           if (retryBtn) {
             retryBtn.style.display = "block";
             retryBtn.innerText = "🔁 もういちど結果を送る";
-            retryBtn.onclick = function () { window.__retryFinishQuizSubmit(); };
           }
         }
       }
@@ -10117,9 +10167,12 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         if (d.alreadyProcessed) {
           bonusMsg += `<p style="color:#FF9800;font-size:13px;margin:6px 0;">※ すでに保存済みの結果を表示しています（ポイントの二重付与はしていません）。</p>`;
         }
+        const correctCount = resultsToSend.filter(function (r) { return r && r.isCorrect; }).length;
+        const totalCount = expectedCount || resultsToSend.length;
         const earnedTxt = escapeHtml(String(d.earnedPoints != null ? d.earnedPoints : 0));
         const totalTxt = escapeHtml(String(d.newTotal != null ? d.newTotal : user.points || 0));
-        return `<h2 style="color:#4CAF50;">✨ おつかれさま！ ✨</h2>` + bonusMsg +
+        const scoreSummary = `<p style="font-size:15px;color:#bbb;margin:8px 0;">正解 ${correctCount} / ${totalCount} 問</p>`;
+        return `<h2 style="color:#4CAF50;">✨ おつかれさま！ ✨</h2>` + bonusMsg + scoreSummary +
           `<p>かくとくポイント: <span style="color:gold;font-size:30px;">+${earnedTxt}</span></p>` +
           `<hr style="border-color:#444;"><p>合計ポイント: ${totalTxt}</p>`;
       }
@@ -10171,12 +10224,18 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
           if (retryBtn) {
             retryBtn.style.display = "block";
             retryBtn.innerText = "🔄 もう一度やる";
-            retryBtn.onclick = function () { prepareQuiz(); };
           }
           const settingsBtn = document.getElementById('result-settings-btn');
           if (settingsBtn) settingsBtn.style.display = "block";
+          bindEnglishResultButtonHandlers();
         } else if (retryBtn) {
           retryBtn.style.display = "none";
+          bindEnglishResultButtonHandlers({
+            retryOnclick: null,
+            settingsOnclick: function () { openTrainingMenu(); }
+          });
+        } else {
+          bindEnglishResultButtonHandlers();
         }
         const homeBtn = document.getElementById('result-home-btn');
         if (homeBtn) homeBtn.style.display = "block";
@@ -10193,24 +10252,31 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         let httpStatus = 0;
         let rawText = "";
         function postFinishQuizWithRetry(retryCount) {
+          var controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+          var timeoutId = controller ? setTimeout(function () { controller.abort(); }, 45000) : null;
           return fetch(GAS_API_URL, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
+            body: JSON.stringify(payload),
+            cache: 'no-store',
+            signal: controller ? controller.signal : undefined
           })
             .then(function (r) {
               httpStatus = r.status;
               return r.text();
             })
             .catch(function (e) {
+              if (timeoutId) clearTimeout(timeoutId);
               const msg = String((e && (e.message || e)) || "");
-              const canRetry = retryCount > 0 && /Load failed|Failed to fetch|NetworkError|fetch|aborted|timeout/i.test(msg);
+              const canRetry = retryCount > 0 && /Load failed|Failed to fetch|NetworkError|fetch|aborted|timeout|AbortError/i.test(msg);
               if (!canRetry) throw e;
               return new Promise(function (resolve) {
                 setTimeout(resolve, 500 + (2 - retryCount) * 400);
               }).then(function () {
                 return postFinishQuizWithRetry(retryCount - 1);
               });
+            })
+            .finally(function () {
+              if (timeoutId) clearTimeout(timeoutId);
             });
         }
         postFinishQuizWithRetry(2)
@@ -10241,6 +10307,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
                     `<p style="color:#FF9800;font-size:12px;">（表示の途中で軽微なエラーがありましたが、保存は完了しました。）</p>`;
                 }
                 try { mergeFinishQuizUserCache(d); } catch (_) {}
+                bindEnglishResultButtonHandlers();
                 const homeBtn = document.getElementById('result-home-btn');
                 if (homeBtn) homeBtn.style.display = "block";
                 (function () {
