@@ -6,6 +6,20 @@ const fs = require("fs");
 const path = require("path");
 
 const indexPath = path.join(__dirname, "..", "index.html");
+const kanjiVgPath = path.join(__dirname, "..", "KanjiVG.txt");
+
+function computeKanjiVgListRev() {
+  const t = fs.readFileSync(kanjiVgPath, "utf8");
+  const rows = t.split(/\r?\n/).filter((l) => {
+    const r = l.trim();
+    return r && r.charAt(0) !== "#" && r.split("\t").length >= 3;
+  });
+  return rows.length + "-" + Buffer.byteLength(t, "utf8");
+}
+
+const KANJI_VG_LIST_REV = computeKanjiVgListRev();
+console.log("KANJI_VG_LIST_REV =", KANJI_VG_LIST_REV);
+
 const lines = fs.readFileSync(indexPath, "utf8").split(/\r?\n/);
 const lineIdx = lines.findIndex((l) => l.startsWith("window.KP_HTML"));
 if (lineIdx < 0) throw new Error("window.KP_HTML line not found");
@@ -87,29 +101,83 @@ const overrideBlock = `<script>
       }
       return map;
     }
+    function getKanjiVgListRev() {
+      try {
+        var r = window.KANJI_VG_LIST_REV;
+        if (r != null && String(r).trim()) return String(r).trim();
+      } catch (e0) {}
+      try {
+        if (window.parent && window.parent !== window && window.parent.KANJI_VG_LIST_REV) {
+          return String(window.parent.KANJI_VG_LIST_REV).trim();
+        }
+      } catch (e1) {}
+      return "";
+    }
+    function readKanjiVgMeta() {
+      try {
+        var raw = SafeStorage.get("kanjiData_KanjiVG_meta");
+        return raw ? JSON.parse(raw) : null;
+      } catch (e) { return null; }
+    }
+    function isKanjiVgCacheFresh(meta) {
+      if (!meta || typeof meta !== "object") return false;
+      var rev = getKanjiVgListRev();
+      if (!rev || String(meta.rev || "") !== rev) return false;
+      try {
+        if (String(meta.url || "") !== resolveKanjiVgTxtUrl()) return false;
+      } catch (e) { return false; }
+      return (Number(meta.count) || 0) > 0;
+    }
+    function applyKanjiDataMap(data) {
+      if (!data || typeof data !== "object" || !Object.keys(data).length) return false;
+      KANJI_DATA = data;
+      try {
+        if (window.parent && window.parent !== window) {
+          window.parent.__kanjiVgDataMap = data;
+        }
+      } catch (e) {}
+      populateKanjiSelector();
+      showLoading(false);
+      return true;
+    }
+    function loadKanjiDataFromLocalCache() {
+      var cacheKey = "kanjiData_KanjiVG_txt";
+      try {
+        if (window.parent && window.parent !== window && window.parent.__kanjiVgDataMap) {
+          if (applyKanjiDataMap(window.parent.__kanjiVgDataMap)) return true;
+        }
+      } catch (eP) {}
+      var meta = readKanjiVgMeta();
+      if (!isKanjiVgCacheFresh(meta)) return false;
+      var cached = SafeStorage.get(cacheKey);
+      if (!cached) return false;
+      try {
+        var parsed = JSON.parse(cached);
+        if (applyKanjiDataMap(parsed)) return true;
+      } catch (e) {}
+      SafeStorage.remove(cacheKey);
+      SafeStorage.remove("kanjiData_KanjiVG_meta");
+      return false;
+    }
     window.syncData = function() {
       try { SafeStorage.remove("kanjiData_KanjiVG_txt"); } catch (_) {}
+      try { SafeStorage.remove("kanjiData_KanjiVG_meta"); } catch (_) {}
       try { SafeStorage.remove("kanjiData_KanjiVG.txt"); } catch (_) {}
+      try {
+        if (window.parent && window.parent !== window) {
+          window.parent.__kanjiVgDataMap = null;
+        }
+      } catch (_) {}
       return window.loadKanjiData();
     };
     window.loadKanjiData = function() {
       if (window.__kpKanjiInflight) return window.__kpKanjiInflight;
-      var cacheKey = "kanjiData_KanjiVG_txt";
-      var cached = SafeStorage.get(cacheKey);
-      if (cached) {
-        try {
-          var parsed = JSON.parse(cached);
-          if (parsed && typeof parsed === "object" && Object.keys(parsed).length > 0) {
-            KANJI_DATA = parsed;
-            populateKanjiSelector();
-            showLoading(false);
-            return Promise.resolve();
-          }
-          SafeStorage.remove(cacheKey);
-        } catch (_) { SafeStorage.remove(cacheKey); }
+      if (loadKanjiDataFromLocalCache()) {
+        return Promise.resolve();
       }
       showLoading(true, "KanjiVG.txt を読込中...");
       var url = resolveKanjiVgTxtUrl();
+      var rev = getKanjiVgListRev();
       window.__kpKanjiInflight = fetch(url)
         .then(function(r) {
           if (!r.ok) throw new Error("HTTP " + r.status);
@@ -119,7 +187,18 @@ const overrideBlock = `<script>
           var data = parseKanjiVgTsv(text);
           if (!Object.keys(data).length) throw new Error("TSVに有効な行がありません");
           KANJI_DATA = data;
-          SafeStorage.set(cacheKey, JSON.stringify(data));
+          SafeStorage.set("kanjiData_KanjiVG_txt", JSON.stringify(data));
+          SafeStorage.set("kanjiData_KanjiVG_meta", JSON.stringify({
+            rev: rev,
+            url: url,
+            count: Object.keys(data).length,
+            savedAt: Date.now()
+          }));
+          try {
+            if (window.parent && window.parent !== window) {
+              window.parent.__kanjiVgDataMap = data;
+            }
+          } catch (e) {}
           populateKanjiSelector();
           showLoading(false);
         })
@@ -161,14 +240,17 @@ if (h.includes("loadKanjiData();\n        } catch(e) { alert(\"初期化エラ�
   console.log("Removed loadKanjiData() from get_kanji_init_data handler");
 }
 
-// Insert override before </body>
+// Insert or replace override before </body>
 const bodyClose = "</body>";
-if (h.indexOf(OVERRIDE_MARKER) < 0) {
+if (overrideRe.test(h)) {
+  h = h.replace(overrideRe, overrideBlock);
+  console.log("Replaced KanjiVG fetch override block");
+} else if (h.indexOf(OVERRIDE_MARKER) < 0) {
   if (!h.includes(bodyClose)) throw new Error("</body> not found in KP_HTML");
   h = h.replace(bodyClose, overrideBlock + "\n" + bodyClose);
   console.log("Inserted KanjiVG fetch override");
 } else {
-  console.log("Override marker already present");
+  throw new Error("Override marker found but block regex did not match");
 }
 
 // kpLookupKanjiPaths helper
@@ -190,7 +272,79 @@ if (!h.includes("window.kpLookupKanjiPaths")) {
 
 o.value = h;
 lines[lineIdx] = prefix + JSON.stringify(o) + ";";
-fs.writeFileSync(indexPath, lines.join("\n"), "utf8");
+let fullIdx = lines.join("\n");
+
+// 親ページ: KanjiVG リスト版・ローカルキャッシュ復元
+const revConst = `const KANJI_VG_LIST_REV = "${KANJI_VG_LIST_REV}";`;
+if (!fullIdx.includes("const KANJI_VG_LIST_REV")) {
+  fullIdx = fullIdx.replace(
+    /(\/\*\* GitHub Pages 等：index\.html と同階層の KanjiVG\.txt への絶対 URL)/,
+    "/** KanjiVG.txt を更新したら rev を変える（fix-kanjivg-load.js が自動算出可） */\n    " +
+      revConst +
+      "\n    $1"
+  );
+  console.log("Inserted KANJI_VG_LIST_REV in parent script");
+} else {
+  fullIdx = fullIdx.replace(
+    /const KANJI_VG_LIST_REV = "[^"]+";/,
+    revConst
+  );
+  console.log("Updated KANJI_VG_LIST_REV in parent script");
+}
+
+if (!fullIdx.includes("function clearKanjiVgLocalCache")) {
+  fullIdx = fullIdx.replace(
+    "function getKanjiVgTxtUrl() {",
+    `function clearKanjiVgLocalCache() {
+      try {
+        localStorage.removeItem("kanjiData_KanjiVG_txt");
+        localStorage.removeItem("kanjiData_KanjiVG_meta");
+        localStorage.removeItem("kanjiData_KanjiVG.txt");
+        window.__kanjiVgDataMap = null;
+      } catch (_kv) {}
+    }
+    function hydrateParentKanjiVgCache() {
+      if (window.__kanjiVgDataMap && typeof window.__kanjiVgDataMap === "object" && Object.keys(window.__kanjiVgDataMap).length > 0) {
+        return true;
+      }
+      try {
+        const meta = JSON.parse(localStorage.getItem("kanjiData_KanjiVG_meta") || "null");
+        if (!meta || String(meta.rev || "") !== KANJI_VG_LIST_REV) return false;
+        const raw = localStorage.getItem("kanjiData_KanjiVG_txt");
+        if (!raw) return false;
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === "object" && Object.keys(parsed).length > 0) {
+          window.__kanjiVgDataMap = parsed;
+          return true;
+        }
+      } catch (_hy) {}
+      return false;
+    }
+    function getKanjiVgTxtUrl() {`
+  );
+  console.log("Inserted clearKanjiVgLocalCache / hydrateParentKanjiVgCache");
+}
+
+fullIdx = fullIdx.replace(
+  /const tag = "<scr" \+ "ipt>window\.KANJI_VG_TXT_URL=" \+ JSON\.stringify\(getKanjiVgTxtUrl\(\)\) \+ ";<\/scr" \+ "ipt>";/,
+  'const tag = "<scr" + "ipt>window.KANJI_VG_TXT_URL=" + JSON.stringify(getKanjiVgTxtUrl()) + ";window.KANJI_VG_LIST_REV=" + JSON.stringify(KANJI_VG_LIST_REV) + ";</scr" + "ipt>";'
+);
+
+if (!fullIdx.includes("hydrateParentKanjiVgCache();")) {
+  fullIdx = fullIdx.replace(
+    "function ensureKanjiVgPrefetch() {\n      try {\n        if (document.getElementById(\"kanji-vg-prefetch-link\")) return;",
+    "function ensureKanjiVgPrefetch() {\n      hydrateParentKanjiVgCache();\n      try {\n        if (document.getElementById(\"kanji-vg-prefetch-link\")) return;"
+  );
+}
+
+if (!fullIdx.includes("clearKanjiVgLocalCache();")) {
+  fullIdx = fullIdx.replace(
+    "function clearAppCacheAndReload() {\n      if (!confirm(",
+    "function clearAppCacheAndReload() {\n      clearKanjiVgLocalCache();\n      if (!confirm("
+  );
+}
+
+fs.writeFileSync(indexPath, fullIdx, "utf8");
 
 // Bump KP_EMBED_VER
 let idx = fs.readFileSync(indexPath, "utf8");
