@@ -2273,7 +2273,222 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
   <script>
     // ▼ GASのURLを貼り付けてください（※前回と同じURLならそのままで大丈夫） ▼
     const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzehr3gxBeckKKpXAX_sUF5H6SJFgCgRsnEclMKgHWdsdWnDiSsikKKGsyNNIEeEyMIiQ/exec";
-    
+    const LS_PENDING_FINISH_SAVE = "app_pending_finish_quiz_save_v1";
+    const LS_FLUSHED_SUBMIT_IDS = "app_flushed_submit_ids_v1";
+    const PENDING_FINISH_FLUSH_MAX_ATTEMPTS = 5;
+
+    /** GAS 向け POST（Content-Type 未指定＝text/plain。application/json は CORS プリフライトを誘発しやすい） */
+    function gasApiBuildBody(bodyObj) {
+      return JSON.stringify(bodyObj == null ? {} : bodyObj);
+    }
+    function gasApiIsRetryableError(msg) {
+      return /Load failed|Failed to fetch|NetworkError|network|fetch|aborted|timeout|timed out|XHR|AbortError|Cancelled|CORS|temporarily unavailable|ECONNRESET|socket/i.test(String(msg || ""));
+    }
+    function gasApiFetchOnce(bodyStr, timeoutMs, useXhr) {
+      if (useXhr && typeof XMLHttpRequest !== "undefined") {
+        return new Promise(function (resolve, reject) {
+          const xhr = new XMLHttpRequest();
+          xhr.open("POST", GAS_API_URL, true);
+          xhr.timeout = timeoutMs;
+          xhr.onload = function () {
+            resolve({ status: xhr.status, text: String(xhr.responseText || "") });
+          };
+          xhr.onerror = function () { reject(new Error("XHR network error")); };
+          xhr.ontimeout = function () { reject(new Error("XHR timeout")); };
+          xhr.send(bodyStr);
+        });
+      }
+      const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+      let timer = null;
+      if (controller && timeoutMs > 0) {
+        timer = setTimeout(function () {
+          try { controller.abort(); } catch (_) {}
+        }, timeoutMs);
+      }
+      const init = {
+        method: "POST",
+        mode: "cors",
+        body: bodyStr,
+        cache: "no-store",
+        credentials: "omit",
+        redirect: "follow"
+      };
+      if (controller) init.signal = controller.signal;
+      return fetch(GAS_API_URL, init)
+        .then(function (r) {
+          return r.text().then(function (text) {
+            return { status: r.status, text: String(text || "") };
+          });
+        })
+        .finally(function () {
+          if (timer) clearTimeout(timer);
+        });
+    }
+    function gasApiFetchText(bodyObj, opts) {
+      const o = opts || {};
+      const retries = typeof o.retries === "number" ? o.retries : 2;
+      const timeoutMs = typeof o.timeoutMs === "number" ? o.timeoutMs : 90000;
+      const bodyStr = typeof bodyObj === "string" ? bodyObj : gasApiBuildBody(bodyObj);
+      const delays = Array.isArray(o.retryDelaysMs) ? o.retryDelaysMs : [600, 1400, 2800];
+      function attempt(left, attemptIndex) {
+        const useXhr = o.xhrFallback === true && left === 0;
+        return gasApiFetchOnce(bodyStr, timeoutMs, useXhr).catch(function (e) {
+          const msg = String((e && (e.message || e)) || "");
+          if (left <= 0 || !gasApiIsRetryableError(msg)) throw e;
+          const delay = delays[Math.min(attemptIndex, delays.length - 1)] || 1000;
+          return new Promise(function (resolve) {
+            setTimeout(resolve, delay);
+          }).then(function () {
+            return attempt(left - 1, attemptIndex + 1);
+          });
+        });
+      }
+      return attempt(retries, 0);
+    }
+    function gasApiParseJsonResponse(res) {
+      const raw = String((res && res.text) || "").replace(/^\uFEFF/, "").trim();
+      if (!raw) return null;
+      try { return JSON.parse(raw); } catch (_) {}
+      if (/<!DOCTYPE|<html/i.test(raw)) {
+        return { status: "error", message: "サーバーが HTML を返しました（Webアプリの公開設定を確認してください）" };
+      }
+      return null;
+    }
+    function savePendingFinishQuizPayload(payload) {
+      try {
+        localStorage.setItem(LS_PENDING_FINISH_SAVE, JSON.stringify({
+          payload: payload,
+          savedAt: Date.now(),
+          userId: String((payload && payload.userId) || ""),
+          sessionSubmitId: String((payload && payload.sessionSubmitId) || "")
+        }));
+      } catch (_) {}
+    }
+    function clearPendingFinishQuizPayload() {
+      try { localStorage.removeItem(LS_PENDING_FINISH_SAVE); } catch (_) {}
+    }
+    function getFlushedSubmitIdSet() {
+      try {
+        const raw = localStorage.getItem(LS_FLUSHED_SUBMIT_IDS);
+        const arr = raw ? JSON.parse(raw) : [];
+        return Array.isArray(arr) ? arr.map(String) : [];
+      } catch (_) {
+        return [];
+      }
+    }
+    function rememberFlushedSubmitId(sessionSubmitId) {
+      const id = String(sessionSubmitId || "").trim();
+      if (!id) return;
+      try {
+        const list = getFlushedSubmitIdSet().filter(function (x) { return x !== id; });
+        list.unshift(id);
+        localStorage.setItem(LS_FLUSHED_SUBMIT_IDS, JSON.stringify(list.slice(0, 40)));
+      } catch (_) {}
+    }
+    function isSubmitIdAlreadyFlushedLocally(sessionSubmitId) {
+      const id = String(sessionSubmitId || "").trim();
+      if (!id) return false;
+      return getFlushedSubmitIdSet().indexOf(id) >= 0;
+    }
+    function applyPendingFinishQuizSuccess(d, expectedUserId) {
+      if (!d || d.status !== "success") return;
+      try {
+        const user = JSON.parse(localStorage.getItem("app_kid_user") || "null");
+        if (!user || !user.id) return;
+        if (expectedUserId && String(user.id) !== String(expectedUserId)) return;
+        if (d.newTotal != null) user.points = d.newTotal;
+        if (!user.historyJson) user.historyJson = {};
+        if (d.historyUnitId && d.historyUnitPatch) {
+          user.historyJson[d.historyUnitId] = d.historyUnitPatch;
+        } else if (d.historyJson) {
+          user.historyJson = d.historyJson;
+        }
+        if (d.lastStudyKey && d.lastStudyAt) {
+          if (!user.lastStudyJson) user.lastStudyJson = {};
+          user.lastStudyJson[d.lastStudyKey] = d.lastStudyAt;
+        }
+        if (d.dailyPointsJson) user.dailyPointsJson = d.dailyPointsJson;
+        if (d.trainingProgressJson) user.trainingProgressJson = d.trainingProgressJson;
+        localStorage.setItem("app_kid_user", JSON.stringify(user));
+        const ptsEl = document.getElementById("user-points");
+        if (ptsEl && d.newTotal != null) ptsEl.innerText = String(d.newTotal);
+      } catch (_) {}
+    }
+    function flushPendingFinishQuizSave(user) {
+      if (window.__pendingFinishFlushPromise) return window.__pendingFinishFlushPromise;
+      const currentUserId = user && user.id ? String(user.id) : "";
+      if (!currentUserId) return Promise.resolve(false);
+      window.__pendingFinishFlushPromise = (function () {
+        let raw = null;
+        try { raw = localStorage.getItem(LS_PENDING_FINISH_SAVE); } catch (_) {}
+        if (!raw) return Promise.resolve(false);
+        let rec = null;
+        try { rec = JSON.parse(raw); } catch (_) {
+          clearPendingFinishQuizPayload();
+          return Promise.resolve(false);
+        }
+        if (!rec || !rec.payload) {
+          clearPendingFinishQuizPayload();
+          return Promise.resolve(false);
+        }
+        const payloadUserId = String(rec.userId || (rec.payload && rec.payload.userId) || "");
+        if (payloadUserId && payloadUserId !== currentUserId) {
+          clearPendingFinishQuizPayload();
+          return Promise.resolve(false);
+        }
+        const submitId = String(rec.sessionSubmitId || (rec.payload && rec.payload.sessionSubmitId) || "");
+        if (submitId && isSubmitIdAlreadyFlushedLocally(submitId)) {
+          clearPendingFinishQuizPayload();
+          return Promise.resolve(false);
+        }
+        const age = Date.now() - Number(rec.savedAt || 0);
+        if (age > 7 * 24 * 60 * 60 * 1000) {
+          clearPendingFinishQuizPayload();
+          return Promise.resolve(false);
+        }
+        const flushAttempts = Number(rec.flushAttempts || 0);
+        const lastFlushAt = Number(rec.lastFlushAt || 0);
+        if (flushAttempts >= PENDING_FINISH_FLUSH_MAX_ATTEMPTS) {
+          return Promise.resolve(false);
+        }
+        if (lastFlushAt && Date.now() - lastFlushAt < 15000) {
+          return Promise.resolve(false);
+        }
+        try {
+          rec.flushAttempts = flushAttempts + 1;
+          rec.lastFlushAt = Date.now();
+          localStorage.setItem(LS_PENDING_FINISH_SAVE, JSON.stringify(rec));
+        } catch (_) {}
+        return gasApiFetchText(rec.payload, { retries: 1, timeoutMs: 60000, xhrFallback: true })
+          .then(function (res) {
+            const d = gasApiParseJsonResponse(res);
+            if (d && d.status === "success") {
+              clearPendingFinishQuizPayload();
+              if (submitId) rememberFlushedSubmitId(submitId);
+              applyPendingFinishQuizSuccess(d, currentUserId);
+              return true;
+            }
+            return false;
+          })
+          .catch(function () { return false; });
+      })().finally(function () {
+        window.__pendingFinishFlushPromise = null;
+      });
+      return window.__pendingFinishFlushPromise;
+    }
+    function gasApiFetchJson(bodyObj, opts) {
+      return gasApiFetchText(bodyObj, opts).then(function (res) {
+        const d = gasApiParseJsonResponse(res);
+        if (!d) {
+          const err = new Error("GAS non-JSON response HTTP " + String((res && res.status) || 0));
+          err.httpStatus = res && res.status;
+          err.rawText = String((res && res.text) || "").slice(0, 500);
+          throw err;
+        }
+        return d;
+      });
+    }
+
     let selectedUserId = null; let currentPin = ""; let isPinResetMode = false;
     let currentModeId = ""; let currentModeName = ""; let currentUnitName = "";
     let currentQuestions = []; let filteredQuestions = []; let currentQuestionIndex = 0; 
@@ -2821,6 +3036,23 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       return "q_" + (h >>> 0).toString(36);
     }
 
+    /** 英語クイズ終了時：サーバー応答を待たず端末側の集計を先に表示する */
+    function buildLocalFinishQuizSummaryHtml(saveStatusHtml) {
+      const totalQ = Array.isArray(filteredQuestions) ? filteredQuestions.length : 0;
+      const correctCount = (quizResults || []).filter(function (r) { return r && r.isCorrect; }).length;
+      const mult = computePointsMultiplierClient();
+      const sheetPct = parseUnitSheetPointPercentClient(currentUnitName);
+      const maxRaw = sumMaxPossibleRawForSession();
+      const maxEarned = applySessionEarnedFromRaw(maxRaw, mult, sheetPct);
+      const curRaw = rawPointsFromQuizResults(quizResults);
+      const curEarned = applySessionEarnedFromRaw(curRaw, mult, sheetPct);
+      const statusLine = saveStatusHtml != null ? String(saveStatusHtml) : "";
+      return `<h2 style="color:#4CAF50;">✨ おつかれさま！ ✨</h2>` +
+        `<p>正解: <strong>${correctCount}</strong> / ${totalQ} 問</p>` +
+        `<p>このセッションの得点: <span style="color:gold;font-size:30px;">${formatPointDisplayNum(curEarned)}</span> / ${formatPointDisplayNum(maxEarned)} 点</p>` +
+        (statusLine ? `<p id="result-save-status" style="font-size:14px;color:#aaa;margin-top:10px;">${statusLine}</p>` : "");
+    }
+
     function sumMaxPossibleRawForSession() {
       if (!filteredQuestions || filteredQuestions.length === 0) return 0;
       const format = document.getElementById('setting-format').value;
@@ -3355,7 +3587,8 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       return ensureMaterialsListLoaded().catch(() => {});
     }
 
-    function switchSection(id) {
+    function switchSection(id, opts) {
+      opts = opts || {};
       abandonKanjiQuizPlayIfLeavingSection(id);
       document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
       document.getElementById(id).classList.add('active');
@@ -3368,8 +3601,12 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         "section-kanji-practice"
       ];
       let isKanjiFlow = kanjiFlowIds.includes(id) || ((id === 'section-materials' || id === 'section-settings') && currentMaterialsCategory === 'kanji');
-      if (id === 'section-result' && document.body.classList.contains('kanji-study-mode')) {
-        isKanjiFlow = true;
+      if (id === 'section-result') {
+        if (opts.forceEnglishResult) {
+          isKanjiFlow = false;
+        } else if (document.body.classList.contains('kanji-study-mode')) {
+          isKanjiFlow = true;
+        }
       }
       document.body.classList.toggle('kanji-study-mode', isKanjiFlow);
       if (id === 'section-kanji-quiz-sets') {
@@ -3787,6 +4024,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       applyKanjiHwDominantHandToBody();
       syncKanjiHwHandSwitchUI();
       syncMaterialsListFromServerIfChanged();
+      flushPendingFinishQuizSave(user);
     }
 
     function toggleBtnLoading(btn, isLoading, originalText = "") { if(!btn) return ""; if(isLoading) { const text = btn.innerHTML; btn.innerHTML = "⏳ よみこみ中..."; btn.classList.add("btn-loading"); return text; } else { btn.innerHTML = originalText; btn.classList.remove("btn-loading"); } }
@@ -10069,8 +10307,8 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       document.body.classList.remove('kanji-study-mode');
       document.getElementById('section-quiz')?.classList.remove('pen-mode-active');
       document.getElementById('quiz-answer-area')?.classList.remove('pen-mode-active');
-      switchSection('section-result'); 
-      document.getElementById('result-content').innerHTML = "<p>おくっています...</p>"; 
+      switchSection('section-result', { forceEnglishResult: true });
+      document.getElementById('result-content').innerHTML = buildLocalFinishQuizSummaryHtml("結果を保存しています…");
       document.getElementById('result-retry-btn').style.display = "none"; document.getElementById('result-settings-btn').style.display = "none"; document.getElementById('result-home-btn').style.display = "none";
       (function () {
         var __kb = document.getElementById('result-kanji-same-book-btn');
@@ -10086,7 +10324,8 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         document.getElementById('result-home-btn').style.display = "block";
         return;
       }
-      const isRandom = document.getElementById('setting-order').value === 'random';
+      const orderEl = document.getElementById('setting-order');
+      const isRandom = orderEl ? orderEl.value === 'random' : false;
       const detailedUnitId = getDetailedUnitId();
       const expectedCount = Array.isArray(filteredQuestions) ? filteredQuestions.length : 0;
       let resultsToSend = Array.isArray(quizResults) ? quizResults.slice() : [];
@@ -10122,7 +10361,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
           return;
         }
         if (submitInFlight) return;
-        document.getElementById('result-content').innerHTML = "<p>おくっています...（さいど）</p>";
+        document.getElementById('result-content').innerHTML = buildLocalFinishQuizSummaryHtml("結果を保存しています…（再送）");
         document.getElementById('result-retry-btn').style.display = "none";
         document.getElementById('result-settings-btn').style.display = "none";
         document.getElementById('result-home-btn').style.display = "none";
@@ -10138,9 +10377,11 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       function showSubmitError(title, detailHtml, allowRetry) {
         const safeTitle = escapeHtml(String(title || "エラー"));
         document.getElementById('result-content').innerHTML =
-          `<h2 style="color:#F44336;">⚠️ ${safeTitle}</h2>` +
+          buildLocalFinishQuizSummaryHtml("") +
+          `<h2 style="color:#F44336;margin-top:14px;">⚠️ ${safeTitle}</h2>` +
           (detailHtml || "") +
-          `<p style="margin-top:8px;">回答ログは <strong>「ホームにもどる」</strong> 後の復帰データに保存されています。</p>`;
+          `<p style="margin-top:8px;">上の得点はこの端末での計算です。サーバー保存が完了していない場合は「もういちど結果を送る」をお試しください（同じ内容なら二重付与されません）。</p>` +
+          `<p style="margin-top:8px;font-size:13px;color:#888;">回答ログは <strong>「ホームにもどる」</strong> 後の復帰データに保存されています。ホームを開くと未送信の結果を自動で再送します。</p>`;
         bindEnglishResultButtonHandlers({
           retryOnclick: allowRetry ? function () { window.__retryFinishQuizSubmit(); } : undefined
         });
@@ -10249,85 +10490,81 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         if (submitInFlight) return;
         submitInFlight = true;
 
-        let httpStatus = 0;
-        let rawText = "";
-        function postFinishQuizWithRetry(retryCount) {
-          var controller = typeof AbortController !== "undefined" ? new AbortController() : null;
-          var timeoutId = controller ? setTimeout(function () { controller.abort(); }, 45000) : null;
-          return fetch(GAS_API_URL, {
-            method: 'POST',
-            body: JSON.stringify(payload),
-            cache: 'no-store',
-            signal: controller ? controller.signal : undefined
-          })
-            .then(function (r) {
-              httpStatus = r.status;
-              return r.text();
-            })
-            .catch(function (e) {
-              if (timeoutId) clearTimeout(timeoutId);
-              const msg = String((e && (e.message || e)) || "");
-              const canRetry = retryCount > 0 && /Load failed|Failed to fetch|NetworkError|fetch|aborted|timeout|AbortError/i.test(msg);
-              if (!canRetry) throw e;
-              return new Promise(function (resolve) {
-                setTimeout(resolve, 500 + (2 - retryCount) * 400);
-              }).then(function () {
-                return postFinishQuizWithRetry(retryCount - 1);
-              });
-            })
-            .finally(function () {
-              if (timeoutId) clearTimeout(timeoutId);
-            });
-        }
-        postFinishQuizWithRetry(2)
-          .then(function (txt) {
-            rawText = String(txt || "");
-            let d = null;
-            try { d = JSON.parse(rawText); } catch (e) { d = null; }
-            if (!d) {
-              console.error("save_learning_session: 非JSON応答 status=" + httpStatus, rawText.slice(0, 500));
+        gasApiFetchText(payload, { retries: 4, timeoutMs: 90000, xhrFallback: true })
+          .then(function (res) {
+            try {
+              const httpStatus = res.status;
+              const rawText = String(res.text || "");
+              const d = gasApiParseJsonResponse(res);
+              if (!d) {
+                console.error("save_learning_session: 非JSON応答 status=" + httpStatus, rawText.slice(0, 500));
+                savePendingFinishQuizPayload(payload);
+                showSubmitError(
+                  "サーバー応答が読めませんでした",
+                  `<p style="font-size:13px;color:#666;">HTTP ${httpStatus}。<br>結果は端末に一時保存しました。ホームを開くと自動で再送します。</p>`,
+                  true
+                );
+                return;
+              }
+              if (d.status === "success") {
+                clearPendingFinishQuizPayload();
+                if (sessionSubmitId) rememberFlushedSubmitId(sessionSubmitId);
+                try {
+                  applySuccessResult(d);
+                } catch (eApply) {
+                  console.error("結果表示中にエラー（保存自体は成功）:", eApply);
+                  submitSucceeded = true;
+                  lastSuccessData = d;
+                  clearQuizRecoveryDraft();
+                  const resultEl = document.getElementById('result-content');
+                  if (resultEl) {
+                    resultEl.innerHTML = renderFinishQuizSuccessHtml(d) +
+                      `<p style="color:#FF9800;font-size:12px;">（表示の途中で軽微なエラーがありましたが、保存は完了しました。）</p>`;
+                  }
+                  try { mergeFinishQuizUserCache(d); } catch (_) {}
+                  bindEnglishResultButtonHandlers();
+                  const homeBtn = document.getElementById('result-home-btn');
+                  if (homeBtn) homeBtn.style.display = "block";
+                  (function () {
+                    var __kb = document.getElementById('result-kanji-same-book-btn');
+                    var __ko = document.getElementById('result-kanji-other-book-btn');
+                    if (__kb) __kb.style.display = "none";
+                    if (__ko) __ko.style.display = "none";
+                  })();
+                }
+                return;
+              }
+              console.error("save_learning_session error:", d);
+              savePendingFinishQuizPayload(payload);
+              const detail = `<p style="font-size:13px;color:#666;">${escapeHtml(String(d.message || "サーバーが error を返しました。"))}<br>ホームを開くと自動で再送します。</p>`;
+              showSubmitError("結果の保存に失敗しました", detail, true);
+            } catch (eHandler) {
+              console.error("save_learning_session handler error:", eHandler);
+              savePendingFinishQuizPayload(payload);
               showSubmitError(
-                "サーバー応答が読めませんでした",
-                `<p style="font-size:13px;color:#666;">HTTP ${httpStatus}。<br>ポイントが付いているかはホームで確認できます。<br>もう一度送る場合、同じ内容なら二重付与されません。</p>`,
+                "結果の表示中にエラーが発生しました",
+                `<p style="font-size:13px;color:#666;">${escapeHtml(String((eHandler && eHandler.message) || eHandler || ""))}<br>保存処理は続行できます。「もういちど結果を送る」をお試しください。</p>`,
                 true
               );
-              return;
             }
-            if (d.status === "success") {
-              try {
-                applySuccessResult(d);
-              } catch (eApply) {
-                console.error("結果表示中にエラー（保存自体は成功）:", eApply);
-                submitSucceeded = true;
-                lastSuccessData = d;
-                clearQuizRecoveryDraft();
-                const resultEl = document.getElementById('result-content');
-                if (resultEl) {
-                  resultEl.innerHTML = renderFinishQuizSuccessHtml(d) +
-                    `<p style="color:#FF9800;font-size:12px;">（表示の途中で軽微なエラーがありましたが、保存は完了しました。）</p>`;
-                }
-                try { mergeFinishQuizUserCache(d); } catch (_) {}
-                bindEnglishResultButtonHandlers();
-                const homeBtn = document.getElementById('result-home-btn');
-                if (homeBtn) homeBtn.style.display = "block";
-                (function () {
-                  var __kb = document.getElementById('result-kanji-same-book-btn');
-                  var __ko = document.getElementById('result-kanji-other-book-btn');
-                  if (__kb) __kb.style.display = "none";
-                  if (__ko) __ko.style.display = "none";
-                })();
-              }
-              return;
-            }
-            console.error("save_learning_session error:", d);
-            const detail = `<p style="font-size:13px;color:#666;">${escapeHtml(String(d.message || "サーバーが error を返しました。"))}</p>`;
-            showSubmitError("結果の保存に失敗しました", detail, true);
           })
           .catch(function (e) {
             console.error("save_learning_session network/parse error:", e);
+            savePendingFinishQuizPayload(payload);
+            const netMsg = String((e && (e.message || e)) || "");
+            let netHint;
+            if (/non-JSON|Unexpected token|JSON/i.test(netMsg)) {
+              netHint = "サーバーから想定外の応答が返りました。ページを再読み込みしてから「もういちど結果を送る」をお試しください。";
+            } else if (/timeout|aborted|AbortError/i.test(netMsg)) {
+              netHint = "サーバーへの応答が時間切れになりました。回線が遅いときやサーバーが混み合っているときに起きます。ページを再読み込みしてから「もういちど結果を送る」をお試しください。";
+            } else if (/Load failed|Failed to fetch|NetworkError|XHR|CORS|socket/i.test(netMsg)) {
+              netHint = "ブラウザがサーバーへ接続できませんでした。ページを再読み込み（スーパーリロード）してから、もう一度「もういちど結果を送る」をお試しください。";
+            } else {
+              netHint = "結果の送信が完了しなかった可能性があります。（" + netMsg + "）";
+            }
             showSubmitError(
               "通信エラー",
-              `<p>結果の送信が完了しなかった可能性があります。<br>ホームでポイントを確認してから、必要なら「もういちど結果を送る」をおしてください（同じ内容なら二重付与されません）。</p>`,
+              `<p>${escapeHtml(netHint)}<br>結果は端末に一時保存しました。ホームを開くと自動で再送します。</p>`,
               true
             );
           })
