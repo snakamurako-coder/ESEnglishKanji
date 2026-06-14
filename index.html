@@ -2647,6 +2647,40 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       return "";
     }
 
+    /** 英語→英語：イニシャル／穴埋め列を手がかりに英文を答えるモード */
+    function isEnToEnClueAnswerType(ansType) {
+      return ansType === "initial_typing" || ansType === "sheet_fill_typing" ||
+        ansType === "initial_voice" || ansType === "sheet_fill_voice";
+    }
+    function isQuizFreeTypingAnswerType(ansType) {
+      return ansType === "typing" || ansType === "initial_typing" || ansType === "sheet_fill_typing";
+    }
+    function isQuizVoiceAnswerType(ansType) {
+      return ansType === "voice" || ansType === "initial_voice" || ansType === "sheet_fill_voice";
+    }
+    function getSheetFillClueCandidates(q) {
+      const out = [];
+      const a = String(q["穴埋め１"] != null ? q["穴埋め１"] : q["穴埋め1"] || "").trim();
+      const b = String(q["穴埋め２"] != null ? q["穴埋め２"] : q["穴埋め2"] || "").trim();
+      if (a) out.push(a);
+      if (b) out.push(b);
+      return out;
+    }
+    function pickRandomSheetFillClue(q) {
+      const opts = getSheetFillClueCandidates(q);
+      if (!opts.length) return "";
+      return opts[Math.floor(Math.random() * opts.length)];
+    }
+    function getEnToEnCluePrompt(q, ansType) {
+      if (ansType === "initial_typing" || ansType === "initial_voice") {
+        return String(q["イニシャル"] || "").trim();
+      }
+      if (ansType === "sheet_fill_typing" || ansType === "sheet_fill_voice") {
+        return String(q._enClueText || pickRandomSheetFillClue(q) || "").trim();
+      }
+      return "";
+    }
+
     function parseSortPhraseTokens(q) {
       const list = [];
       for (let i = 1; i <= 40; i++) {
@@ -2836,10 +2870,12 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       if (hasCustom) return customPoint;
       if (isWord) {
         if (ansType === "4choice") return format.includes("to_en") ? 3 : 2;
-        if (ansType === "typing" || ansType === "voice") return 20;
+        if (isQuizFreeTypingAnswerType(ansType) || isQuizVoiceAnswerType(ansType)) return 20;
       } else {
         if (ansType === "4choice") return format.includes("to_en") ? 3 : 2;
-        if (ansType === "typing" || ansType === "voice") return (format.includes("qtext") || format.includes("qaudio")) ? 30 : 25;
+        if (isQuizFreeTypingAnswerType(ansType) || isQuizVoiceAnswerType(ansType)) {
+          return (format.includes("qtext") || format.includes("qaudio")) ? 30 : 25;
+        }
       }
       return 0;
     }
@@ -3323,7 +3359,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       if (quizSec && quizSec.classList.contains('active')) {
         const at = document.getElementById('setting-answer-type') && document.getElementById('setting-answer-type').value;
         const fmt = document.getElementById('setting-format') && document.getElementById('setting-format').value;
-        if (at === 'typing') renderCustomKeyboard(false);
+        if (isQuizFreeTypingAnswerType(at)) renderCustomKeyboard(false);
         else if (at === 'fill_typing') renderCustomKeyboard(true);
         else if (fmt === 'ja_to_en_sort' && at === 'sort_missing') renderCustomKeyboard(false, true);
       }
@@ -4190,7 +4226,11 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         else if (route.qFormat === "英語→英語" || route.qFormat === "英単語→英単語") mappedFormat = "en_to_en";
         
         if (route.aFormat === "タイピング") mappedAnsType = "typing";
+        else if (route.aFormat === "タイピング（イニシャル）") mappedAnsType = "initial_typing";
+        else if (route.aFormat === "タイピング（穴埋め）") mappedAnsType = "sheet_fill_typing";
         else if (route.aFormat === "音声") mappedAnsType = "voice";
+        else if (route.aFormat === "音声入力（イニシャル）") mappedAnsType = "initial_voice";
+        else if (route.aFormat === "音声入力（穴埋め）") mappedAnsType = "sheet_fill_voice";
         else if (route.aFormat === "穴埋め4択") mappedAnsType = "fill_4choice";
         else if (route.aFormat === "穴埋めタイピング") mappedAnsType = "fill_typing";
 
@@ -8479,6 +8519,12 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       } else if (format === "en_to_en") {
         aSelect.innerHTML += `<option value="typing" selected>タイピング（入力する）</option>`;
         aSelect.innerHTML += `<option value="voice">🎙️ 音声入力（マイク）</option>`;
+        if (!isWord) {
+          aSelect.innerHTML += `<option value="initial_typing">タイピング（イニシャル）</option>`;
+          aSelect.innerHTML += `<option value="sheet_fill_typing">タイピング（穴埋め）</option>`;
+          aSelect.innerHTML += `<option value="initial_voice">🎙️ 音声入力（イニシャル）</option>`;
+          aSelect.innerHTML += `<option value="sheet_fill_voice">🎙️ 音声入力（穴埋め）</option>`;
+        }
       }
       toggleBlankSetting();
     }
@@ -9015,7 +9061,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
     function getPenTargetInput() {
       const ansTypeEl = document.getElementById('setting-answer-type');
       const ansType = ansTypeEl ? ansTypeEl.value : '';
-      if (ansType === "typing") {
+      if (isQuizFreeTypingAnswerType(ansType)) {
         return document.getElementById('type-answer');
       }
       if (ansType === "fill_typing") {
@@ -9654,7 +9700,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       setUserPref(LS_INPUT_MODE, inputMethodMode);
       const ansTypeEl = document.getElementById('setting-answer-type');
       const ansType = ansTypeEl ? String(ansTypeEl.value || '').trim() : '';
-      if (ansType !== "typing" && ansType !== "fill_typing") return;
+      if (!isQuizFreeTypingAnswerType(ansType) && ansType !== "fill_typing") return;
       mountTypingMethodBody(ansType === "fill_typing");
       const answerArea = document.getElementById('quiz-answer-area');
       if (answerArea) placeQuizFeedbackAboveKeyboard(answerArea);
@@ -9717,7 +9763,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       if (inputMethodMode !== 'pen') return;
       const ansTypeEl = document.getElementById('setting-answer-type');
       const ansType = ansTypeEl ? String(ansTypeEl.value || '').trim() : '';
-      if (ansType !== "typing" && ansType !== "fill_typing") return;
+      if (!isQuizFreeTypingAnswerType(ansType) && ansType !== "fill_typing") return;
       if (isPenRecognitionInFlight) {
         setPenStatus('文字起こし中です。少し待ってください。');
         return;
@@ -9902,6 +9948,22 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         }
       }
 
+      if (format === "en_to_en" && (ansType === "initial_typing" || ansType === "initial_voice")) {
+        filteredQuestions = filteredQuestions.filter(q => String(q["イニシャル"] || "").trim());
+        if (filteredQuestions.length === 0) {
+          alert("イニシャル列にデータがある問題がありません。学習セットの「イニシャル」列を確認してください。");
+          return;
+        }
+      }
+      if (format === "en_to_en" && (ansType === "sheet_fill_typing" || ansType === "sheet_fill_voice")) {
+        filteredQuestions = filteredQuestions.filter(q => getSheetFillClueCandidates(q).length > 0);
+        filteredQuestions.forEach(q => { q._enClueText = pickRandomSheetFillClue(q); });
+        if (filteredQuestions.length === 0) {
+          alert("穴埋め１／穴埋め２列にデータがある問題がありません。学習セットを確認してください。");
+          return;
+        }
+      }
+
       if (currentIsReviewMode) {
         const user = JSON.parse(localStorage.getItem('app_kid_user')); 
         const unitKey = getDetailedUnitId(); 
@@ -9962,7 +10024,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
 
       const kbdPanel = document.getElementById('quiz-keyboard-settings-panel');
       if (kbdPanel) {
-        kbdPanel.style.display = (answerType === 'typing' || answerType === 'fill_typing' || (format === 'ja_to_en_sort' && answerType === 'sort_missing')) ? 'block' : 'none';
+        kbdPanel.style.display = (isQuizFreeTypingAnswerType(answerType) || answerType === 'fill_typing' || (format === 'ja_to_en_sort' && answerType === 'sort_missing')) ? 'block' : 'none';
         const kbdBody = document.getElementById('quiz-keyboard-settings-body');
         if (kbdBody) kbdBody.style.display = 'none';
       }
@@ -9976,7 +10038,15 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       else if (format === "en_audio_to_ja") { engTextForAudio = q["英単語"] || q["英文"]; correctA = q["日本語"]; }
       else if (format === "qaudio_to_en") { engTextForAudio = q["疑問文"]; correctA = q["英文"]; }
       else if (format === "en_audio_to_en") { engTextForAudio = q["英単語"] || q["英文"]; correctA = (q["英単語"] || q["英文"]).trim(); }
-      else if (format === "en_to_en") { qText = (q["英単語"] || q["英文"]).trim(); engTextForAudio = qText; correctA = qText; }
+      else if (format === "en_to_en") {
+        correctA = (q["英単語"] || q["英文"]).trim();
+        engTextForAudio = correctA;
+        if (isEnToEnClueAnswerType(answerType)) {
+          qText = getEnToEnCluePrompt(q, answerType);
+        } else {
+          qText = correctA;
+        }
+      }
 
       if (format === "ja_to_en_sort") {
         const ja = String(q["日本語"] || "");
@@ -9987,7 +10057,17 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         setTimeout(() => speakText(engTextForAudio), 500); 
       } else if (format === "en_to_en") {
         const safeText = qText || "";
-        document.getElementById('quiz-q-text').innerHTML = `<div style="margin-bottom:8px;">${safeText}</div><button onclick="speakText('${safeText.replace(/'/g, "\\'")}')" class="submit-btn btn-blue" style="border-radius:50px;">🔊 英語をきく</button>`;
+        const clueLabel = (answerType === "initial_typing" || answerType === "initial_voice")
+          ? "イニシャル"
+          : (answerType === "sheet_fill_typing" || answerType === "sheet_fill_voice")
+            ? "穴埋め"
+            : "";
+        const clueBadge = clueLabel
+          ? `<div style="font-size:14px;color:#90A4AE;margin-bottom:6px;">手がかり（${clueLabel}）</div>`
+          : "";
+        document.getElementById('quiz-q-text').innerHTML = clueBadge +
+          `<div style="margin-bottom:8px;font-size:clamp(22px,5vw,36px);font-weight:bold;letter-spacing:0.06em;line-height:1.45;">${escapeHtml(safeText)}</div>` +
+          (isEnToEnClueAnswerType(answerType) ? "" : `<button onclick="speakText('${(correctA || "").replace(/'/g, "\\'")}')" class="submit-btn btn-blue" style="border-radius:50px;">🔊 英語をきく</button>`);
       } else {
         document.getElementById('quiz-q-text').innerText = qText; 
       }
@@ -10003,7 +10083,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       
       document.getElementById('hint-btn-2').innerText = isWord ? "💡 イニシャルと文字数を見る（-7 Pt）" : "💡 ヒントを見る（-7 Pt）";
 
-      if (answerType === "4choice" || format.includes("en_to_ja") || format === "en_audio_to_ja" || answerType.startsWith("fill_")) {
+      if (answerType === "4choice" || format.includes("en_to_ja") || format === "en_audio_to_ja" || answerType.startsWith("fill_") || isEnToEnClueAnswerType(answerType)) {
         hintArea.style.display = "none";
       } else {
         hintArea.style.display = "flex";
@@ -10031,14 +10111,14 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         choices.sort(() => Math.random() - 0.5);
         choices.forEach(c => { const btn = document.createElement('button'); btn.innerText = c; btn.className = "choice-btn"; btn.onclick = () => checkAnswer(c, correctA, q); answerArea.appendChild(btn); });
       } 
-      else if (answerType === "typing") { 
+      else if (isQuizFreeTypingAnswerType(answerType)) { 
         shiftMode = 0; isShiftHoldMode = false;
         answerArea.innerHTML = buildTypingInputAreaMarkup(false);
         if (inputMethodMode === 'pen') setPenMode('pen');
         mountTypingMethodBody(false);
         placeQuizFeedbackAboveKeyboard(answerArea);
       }
-      else if (answerType === "voice") {
+      else if (isQuizVoiceAnswerType(answerType)) {
         answerArea.innerHTML = `<input type="text" id="voice-recognized-text" class="large-input" readonly placeholder="ここに聞き取った言葉が出ます"><button id="voice-btn" class="submit-btn btn-blue" style="padding: 20px 40px; font-size: 24px; border-radius: 50px; display: block; margin: 0 auto;" onclick="startVoiceInput()">🎙️ マイクでこたえる</button><div id="voice-feedback" style="margin-top:15px; font-size:18px; color:#ccc;">おうちの静かな場所でやってみてね。</div>`;
       }
       else if (answerType.startsWith("fill_")) {
@@ -10253,7 +10333,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         }
         feedback.innerHTML = buildFeedbackContentHtml(userA, resolvedCorrect, isCorrect, isSkip, maxDeduction, fillFeedback && !isSkip, ansType, plusLine);
         updateSessionScoreDisplay();
-        if (ansType === "typing" || ansType === "fill_typing" || format === "ja_to_en_sort") {
+        if (isQuizFreeTypingAnswerType(ansType) || ansType === "fill_typing" || format === "ja_to_en_sort") {
           requestAnimationFrame(() => {
             try { feedback.scrollIntoView({ block: "nearest", behavior: "smooth" }); } catch (_) {}
           });
@@ -10583,7 +10663,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
 
       const ansType = document.getElementById('setting-answer-type').value;
 
-      if (ansType === "typing" && answerInput) {
+      if (isQuizFreeTypingAnswerType(ansType) && answerInput) {
         if (inputMethodMode === 'pen') return;
         if (['Enter', 'Backspace', ' ', 'Shift'].includes(e.key) || (e.key.length === 1 && /^[\x20-\x7E¥]$/.test(e.key))) { e.preventDefault(); }
         if (e.key === 'Enter') { const enterBtn = Array.from(document.querySelectorAll('.key-action')).find(btn => btn.innerText === "けってい"); if (enterBtn && !enterBtn.disabled) enterBtn.click(); } 

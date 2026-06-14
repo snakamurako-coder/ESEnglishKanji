@@ -120,6 +120,10 @@ function setupSystem() {
       ["基本Pt_en_audio_to_en_fill_typing", 5],
       ["基本Pt_en_to_en_typing", 20],
       ["基本Pt_en_to_en_voice", 20],
+      ["基本Pt_en_to_en_initial_typing", 25],
+      ["基本Pt_en_to_en_sheet_fill_typing", 25],
+      ["基本Pt_en_to_en_initial_voice", 25],
+      ["基本Pt_en_to_en_sheet_fill_voice", 25],
       ["基本Pt_qtext_to_en_4choice", 3],
       ["基本Pt_qtext_to_en_typing", 30],
       ["基本Pt_qtext_to_en_voice", 30],
@@ -220,6 +224,10 @@ function setupSystem() {
     ["全員", "", "音声→英単語", "音声", "ランダム", ""],
     ["全員", "", "英語→英語", "タイピング", "ランダム", ""],
     ["全員", "", "英語→英語", "音声", "ランダム", ""],
+    ["全員", "", "英語→英語", "タイピング（イニシャル）", "ランダム", ""],
+    ["全員", "", "英語→英語", "タイピング（穴埋め）", "ランダム", ""],
+    ["全員", "", "英語→英語", "音声入力（イニシャル）", "ランダム", ""],
+    ["全員", "", "英語→英語", "音声入力（穴埋め）", "ランダム", ""],
     ["全員", "", "漢字→採点チャレンジ", "採点", "ランダム", ""]
   ];
   let trainingSheet = adminSs.getSheetByName("特訓メニュー");
