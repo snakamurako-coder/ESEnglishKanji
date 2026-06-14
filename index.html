@@ -10062,12 +10062,23 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
           : (answerType === "sheet_fill_typing" || answerType === "sheet_fill_voice")
             ? "穴埋め"
             : "";
-        const clueBadge = clueLabel
-          ? `<div style="font-size:14px;color:#90A4AE;margin-bottom:6px;">手がかり（${clueLabel}）</div>`
-          : "";
-        document.getElementById('quiz-q-text').innerHTML = clueBadge +
-          `<div style="margin-bottom:8px;font-size:clamp(22px,5vw,36px);font-weight:bold;letter-spacing:0.06em;line-height:1.45;">${escapeHtml(safeText)}</div>` +
-          (isEnToEnClueAnswerType(answerType) ? "" : `<button onclick="speakText('${(correctA || "").replace(/'/g, "\\'")}')" class="submit-btn btn-blue" style="border-radius:50px;">🔊 英語をきく</button>`);
+        if (isEnToEnClueAnswerType(answerType)) {
+          const jaLine = String(q["日本語"] || "").trim();
+          const clueBadge = clueLabel
+            ? `<div style="font-size:14px;color:#90A4AE;margin-bottom:6px;">手がかり（${clueLabel}）</div>`
+            : "";
+          document.getElementById('quiz-q-text').innerHTML =
+            (jaLine ? `<div style="font-size:clamp(26px,5.5vw,38px);font-weight:bold;margin-bottom:12px;line-height:1.45;">${escapeHtml(jaLine)}</div>` : "") +
+            clueBadge +
+            `<div style="font-size:clamp(22px,5vw,36px);font-weight:bold;letter-spacing:0.06em;line-height:1.45;color:#e8eaf0;">${escapeHtml(safeText)}</div>`;
+        } else {
+          const clueBadge = clueLabel
+            ? `<div style="font-size:14px;color:#90A4AE;margin-bottom:6px;">手がかり（${clueLabel}）</div>`
+            : "";
+          document.getElementById('quiz-q-text').innerHTML = clueBadge +
+            `<div style="margin-bottom:8px;font-size:clamp(22px,5vw,36px);font-weight:bold;letter-spacing:0.06em;line-height:1.45;">${escapeHtml(safeText)}</div>` +
+            `<button onclick="speakText('${(correctA || "").replace(/'/g, "\\'")}')" class="submit-btn btn-blue" style="border-radius:50px;">🔊 英語をきく</button>`;
+        }
       } else {
         document.getElementById('quiz-q-text').innerText = qText; 
       }
