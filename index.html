@@ -2647,6 +2647,34 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       return "";
     }
 
+    /** 日本語→英単語の「文字を隠す」穴埋め（fill_4choice / fill_typing）。sheet_fill_* は別系統。 */
+    function isLegacyFillBlankAnswerType(ansType) {
+      return ansType === "fill_4choice" || ansType === "fill_typing";
+    }
+    function applyEnToEnClueQuestionFilters(questions, format, ansType) {
+      let list = Array.isArray(questions) ? questions.slice() : [];
+      if (format !== "en_to_en") return list;
+      if (ansType === "initial_typing" || ansType === "initial_voice") {
+        list = list.filter(function (q) { return String(q["イニシャル"] || "").trim(); });
+      } else if (ansType === "sheet_fill_typing" || ansType === "sheet_fill_voice") {
+        list = list.filter(function (q) { return getSheetFillClueCandidates(q).length > 0; });
+        list.forEach(function (q) { q._enClueText = pickRandomSheetFillClue(q); });
+      }
+      return list;
+    }
+    function getActiveQuizAnswerType() {
+      const formatEl = document.getElementById("setting-format");
+      const format = formatEl ? String(formatEl.value || "") : "";
+      return syncAnswerTypeWithFormat(format);
+    }
+    /** セッション中の1問あたり基本点（記録済みなら quizResults と一致させる） */
+    function getSessionBasePointPerQuestion(format, ansType, isWord) {
+      if (Array.isArray(quizResults) && quizResults.length > 0) {
+        const bp0 = Number(quizResults[0].basePoint);
+        if (!isNaN(bp0) && bp0 > 0) return bp0;
+      }
+      return computeQuizBasePoint(format, ansType, isWord);
+    }
     /** 英語→英語：イニシャル／穴埋め列を手がかりに英文を答えるモード */
     function isEnToEnClueAnswerType(ansType) {
       return ansType === "initial_typing" || ansType === "sheet_fill_typing" ||
@@ -2853,7 +2881,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       const customPoint = Number(appSettings[settingKey]);
       const hasCustom = !isNaN(customPoint);
 
-      if (ansType.startsWith("fill_")) {
+      if (isLegacyFillBlankAnswerType(ansType)) {
         if (hasCustom) return customPoint;
         const numBlanks = parseInt(document.getElementById('setting-blank-count').value) || 1;
         return 5 + numBlanks;
@@ -2866,6 +2894,15 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         if (ansType === "sort_dummy") return 28;
         if (ansType === "sort_missing") return 30;
         return 25;
+      }
+      if (isEnToEnClueAnswerType(ansType)) {
+        if (hasCustom) return customPoint;
+        const parentKey = isQuizVoiceAnswerType(ansType)
+          ? `基本Pt_${format}_voice`
+          : `基本Pt_${format}_typing`;
+        const parentPt = Number(appSettings[parentKey]);
+        if (!isNaN(parentPt)) return parentPt;
+        return isWord ? 20 : 25;
       }
       if (hasCustom) return customPoint;
       if (isWord) {
@@ -3092,10 +3129,18 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
     function sumMaxPossibleRawForSession() {
       if (!filteredQuestions || filteredQuestions.length === 0) return 0;
       const format = document.getElementById('setting-format').value;
-      const ansType = document.getElementById('setting-answer-type').value;
+      const ansType = getActiveQuizAnswerType();
       const isWord = currentModeName.includes("単語");
-      const bp = computeQuizBasePoint(format, ansType, isWord);
-      return filteredQuestions.length * bp;
+      const defaultBp = getSessionBasePointPerQuestion(format, ansType, isWord);
+      const results = Array.isArray(quizResults) ? quizResults : [];
+      let sum = 0;
+      for (let i = 0; i < results.length; i++) {
+        const rbp = Number(results[i].basePoint);
+        sum += (!isNaN(rbp) && rbp > 0) ? rbp : defaultBp;
+      }
+      const remaining = Math.max(0, filteredQuestions.length - results.length);
+      sum += remaining * defaultBp;
+      return sum;
     }
 
     function formatPointDisplayNum(v) {
@@ -3191,8 +3236,8 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       if (isTrainingMode) return `TrainingRoute_${currentTrainingStepIndex}_${currentUnitName}`;
       const format = document.getElementById('setting-format').value; 
       const ansType = document.getElementById('setting-answer-type').value; 
-      let unitId = `${currentModeName}_${currentUnitName}_${format}_${ansType}`; 
-      if (ansType.startsWith("fill_")) {
+      let unitId = `${currentModeName}_${currentUnitName}_${format}_${ansType}`;
+      if (isLegacyFillBlankAnswerType(ansType)) {
         const blankCount = document.getElementById('setting-blank-count').value;
         unitId += `_${blankCount}blanks`;
       }
@@ -3224,20 +3269,22 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
 
     function fetchAppSettings() { 
       const cacheKey = 'app_cached_settings';
-      const cached = localStorage.getItem(cacheKey);
-      if (cached) {
-        try {
-          const d = JSON.parse(cached);
-          appSettings = d.settings;
-          return Promise.resolve(d);
-        } catch(e) {}
-      }
       return fetch(GAS_API_URL, { method: 'POST', body: JSON.stringify({ action: "get_app_settings" }) }).then(r=>r.json()).then(d=>{ 
         if(d.status==="success") {
           appSettings = d.settings; 
           localStorage.setItem(cacheKey, JSON.stringify(d));
         }
         return d; 
+      }).catch(function () {
+        const cached = localStorage.getItem(cacheKey);
+        if (cached) {
+          try {
+            const d = JSON.parse(cached);
+            appSettings = d.settings;
+            return d;
+          } catch(e) {}
+        }
+        return { status: "error" };
       }); 
     }
 
@@ -8534,7 +8581,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       const blankGroup = document.getElementById('setting-group-blanks');
       const blankSelect = document.getElementById('setting-blank-count');
       
-      if (aSelect.startsWith('fill_')) {
+      if (isLegacyFillBlankAnswerType(aSelect)) {
         let maxLen = 0;
         currentQuestions.forEach(q => {
           let word = (q["英単語"] || "").trim();
@@ -9936,7 +9983,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         }
       }
 
-      if (ansType.startsWith("fill_")) {
+      if (isLegacyFillBlankAnswerType(ansType)) {
         const numBlanks = parseInt(document.getElementById('setting-blank-count').value) || 1;
         filteredQuestions = filteredQuestions.filter(q => {
           let w = (q["英単語"] || q["英文"] || "").trim();
@@ -9948,20 +9995,14 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         }
       }
 
-      if (format === "en_to_en" && (ansType === "initial_typing" || ansType === "initial_voice")) {
-        filteredQuestions = filteredQuestions.filter(q => String(q["イニシャル"] || "").trim());
-        if (filteredQuestions.length === 0) {
+      filteredQuestions = applyEnToEnClueQuestionFilters(filteredQuestions, format, ansType);
+      if (isEnToEnClueAnswerType(ansType) && filteredQuestions.length === 0) {
+        if (ansType === "initial_typing" || ansType === "initial_voice") {
           alert("イニシャル列にデータがある問題がありません。学習セットの「イニシャル」列を確認してください。");
-          return;
-        }
-      }
-      if (format === "en_to_en" && (ansType === "sheet_fill_typing" || ansType === "sheet_fill_voice")) {
-        filteredQuestions = filteredQuestions.filter(q => getSheetFillClueCandidates(q).length > 0);
-        filteredQuestions.forEach(q => { q._enClueText = pickRandomSheetFillClue(q); });
-        if (filteredQuestions.length === 0) {
+        } else {
           alert("穴埋め１／穴埋め２列にデータがある問題がありません。学習セットを確認してください。");
-          return;
         }
+        return;
       }
 
       if (currentIsReviewMode) {
@@ -9969,7 +10010,12 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         const unitKey = getDetailedUnitId(); 
         const history = user.historyJson[unitKey] || {};
         filteredQuestions = filteredQuestions.filter(q => checkIsNigate(history[q["通し番号"]]));
-        if (filteredQuestions.length === 0) { alert("ニガテな問題はありません！通常モードでスタートします。"); currentIsReviewMode = false; document.getElementById('setting-play-mode').value = 'normal'; filteredQuestions = [...currentQuestions]; }
+        if (filteredQuestions.length === 0) {
+          alert("ニガテな問題はありません！通常モードでスタートします。");
+          currentIsReviewMode = false;
+          document.getElementById('setting-play-mode').value = 'normal';
+          filteredQuestions = applyEnToEnClueQuestionFilters([...currentQuestions], format, ansType);
+        }
       }
       if (order === 'random') filteredQuestions.sort(() => Math.random() - 0.5);
       currentQuestionIndex = 0; quizResults = []; switchSection('section-quiz'); saveQuizRecoveryDraft(0); showQuestion();
@@ -10094,7 +10140,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       
       document.getElementById('hint-btn-2').innerText = isWord ? "💡 イニシャルと文字数を見る（-7 Pt）" : "💡 ヒントを見る（-7 Pt）";
 
-      if (answerType === "4choice" || format.includes("en_to_ja") || format === "en_audio_to_ja" || answerType.startsWith("fill_") || isEnToEnClueAnswerType(answerType)) {
+      if (answerType === "4choice" || format.includes("en_to_ja") || format === "en_audio_to_ja" || isLegacyFillBlankAnswerType(answerType) || isEnToEnClueAnswerType(answerType)) {
         hintArea.style.display = "none";
       } else {
         hintArea.style.display = "flex";
@@ -10132,7 +10178,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       else if (isQuizVoiceAnswerType(answerType)) {
         answerArea.innerHTML = `<input type="text" id="voice-recognized-text" class="large-input" readonly placeholder="ここに聞き取った言葉が出ます"><button id="voice-btn" class="submit-btn btn-blue" style="padding: 20px 40px; font-size: 24px; border-radius: 50px; display: block; margin: 0 auto;" onclick="startVoiceInput()">🎙️ マイクでこたえる</button><div id="voice-feedback" style="margin-top:15px; font-size:18px; color:#ccc;">おうちの静かな場所でやってみてね。</div>`;
       }
-      else if (answerType.startsWith("fill_")) {
+      else if (isLegacyFillBlankAnswerType(answerType)) {
         setupFillBlankQuiz(correctA, answerType);
       }
       updateSessionScoreDisplay();
@@ -10301,7 +10347,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       let resultRecorded = false;
       try {
         const format = document.getElementById('setting-format').value;
-        const ansType = document.getElementById('setting-answer-type').value;
+        const ansType = getActiveQuizAnswerType();
         const isWord = currentModeName.includes("単語");
 
         let resolvedCorrect = correctA;
@@ -10329,7 +10375,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         document.getElementById('quiz-word-blank-area').style.display = "none";
 
         const isSkip = userA === "[スキップしました]";
-        const fillFeedback = ansType.startsWith("fill_");
+        const fillFeedback = isLegacyFillBlankAnswerType(ansType);
         if (!isSkip) playAnswerSound(isCorrect);
         let plusLine = "";
         if (isCorrect && !isSkip) {
@@ -10365,7 +10411,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         if (!resultRecorded) {
           try {
             const format = document.getElementById('setting-format').value;
-            const ansType = document.getElementById('setting-answer-type').value;
+            const ansType = getActiveQuizAnswerType();
             const isWord = currentModeName.includes("単語");
             const basePoint = computeQuizBasePoint(format, ansType, isWord);
             quizResults.push({ questionId: q["通し番号"], isCorrect: false, timeSec: Math.round((Date.now() - questionStartTime) / 1000), basePoint: basePoint, maxDeduction: maxDeduction });

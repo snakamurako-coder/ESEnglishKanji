@@ -1,3 +1,128 @@
+/** アプリ設定シートに入れる既定のキー一覧（足りない行だけ追加する） */
+function getDefaultAppSettingsRows_() {
+  return [
+    ["基本Pt_ja_to_en_4choice", 3],
+    ["基本Pt_ja_to_en_typing", 20],
+    ["基本Pt_ja_to_en_voice", 20],
+    ["基本Pt_ja_to_en_fill_4choice", 5],
+    ["基本Pt_ja_to_en_fill_typing", 5],
+    ["基本Pt_en_to_ja_4choice", 2],
+    ["基本Pt_en_to_ja_typing", 20],
+    ["基本Pt_en_to_ja_voice", 20],
+    ["基本Pt_en_audio_to_ja_4choice", 2],
+    ["基本Pt_en_audio_to_ja_typing", 20],
+    ["基本Pt_en_audio_to_ja_voice", 20],
+    ["基本Pt_en_audio_to_en_4choice", 3],
+    ["基本Pt_en_audio_to_en_typing", 20],
+    ["基本Pt_en_audio_to_en_voice", 20],
+    ["基本Pt_en_audio_to_en_fill_4choice", 5],
+    ["基本Pt_en_audio_to_en_fill_typing", 5],
+    ["基本Pt_en_to_en_typing", 20],
+    ["基本Pt_en_to_en_voice", 20],
+    ["基本Pt_en_to_en_initial_typing", 20],
+    ["基本Pt_en_to_en_sheet_fill_typing", 20],
+    ["基本Pt_en_to_en_initial_voice", 20],
+    ["基本Pt_en_to_en_sheet_fill_voice", 20],
+    ["基本Pt_qtext_to_en_4choice", 3],
+    ["基本Pt_qtext_to_en_typing", 30],
+    ["基本Pt_qtext_to_en_voice", 30],
+    ["基本Pt_qaudio_to_en_typing", 30],
+    ["基本Pt_qaudio_to_en_voice", 30],
+    ["基本Pt_ja_to_en_sort_sort_all", 25],
+    ["基本Pt_ja_to_en_sort_sort_dummy", 28],
+    ["基本Pt_ja_to_en_sort_sort_missing", 30],
+    ["漢字基本Pt_採点_90以上", 10],
+    ["漢字基本Pt_採点_80以上", 5],
+    ["漢字基本Pt_採点_70以上", 4],
+    ["漢字基本Pt_採点_60以上", 3],
+    ["漢字基本Pt_採点_50以上", 1],
+    ["漢字採点_高得点回数上限_週", 3],
+    ["漢字採点_回数上限後倍率", 0.1],
+    ["漢字採点_回復率_日", 0.15],
+    ["漢字採点_完全回復日数", 7],
+    ["漢字基本Pt_送り仮名選択_90以上", 10],
+    ["漢字基本Pt_送り仮名選択_80以上", 5],
+    ["漢字基本Pt_送り仮名選択_70以上", 4],
+    ["漢字基本Pt_送り仮名選択_60以上", 3],
+    ["漢字基本Pt_送り仮名選択_50以上", 1],
+    ["漢字基本Pt_書取り_90以上", 10],
+    ["漢字基本Pt_書取り_80以上", 5],
+    ["漢字基本Pt_書取り_70以上", 4],
+    ["漢字基本Pt_書取り_60以上", 3],
+    ["漢字基本Pt_書取り_50以上", 1],
+    ["漢字基本Pt_読みタイピング_90以上", 10],
+    ["漢字基本Pt_読みタイピング_80以上", 5],
+    ["漢字基本Pt_読みタイピング_70以上", 4],
+    ["漢字基本Pt_読みタイピング_60以上", 3],
+    ["漢字基本Pt_読みタイピング_50以上", 1],
+    ["漢字基本Pt_画数_90以上", 10],
+    ["漢字基本Pt_画数_80以上", 5],
+    ["漢字基本Pt_画数_70以上", 4],
+    ["漢字基本Pt_画数_60以上", 3],
+    ["漢字基本Pt_画数_50以上", 1],
+    ["trajectory", 40],
+    ["startEnd", 15],
+    ["structure", 20],
+    ["size", 25]
+  ];
+}
+
+/**
+ * アプリ設定シートの見出し行と不足キーを自動補完する。
+ * setupSystem() の手動実行に加え、get_app_settings 取得時にも呼ぶ（デプロイ後の追加分を自動反映）。
+ */
+function ensureAppSettingsDefaults_(adminSs) {
+  const result = { headerFixed: false, addedKeys: [], sheet: null };
+  if (!adminSs) return result;
+
+  let sheet = adminSs.getSheetByName("アプリ設定");
+  if (!sheet) {
+    sheet = adminSs.insertSheet("アプリ設定");
+    sheet.appendRow(["設定名", "値"]);
+    sheet.appendRow(["基本ポイント_4択", 2]);
+    sheet.appendRow(["基本ポイント_タイピング", 20]);
+    sheet.appendRow(["基本ポイント_穴埋め", 5]);
+    sheet.appendRow(["基本ポイント_音声", 20]);
+    sheet.appendRow(["ヒント減点_イニシャル", 5]);
+    sheet.appendRow(["ヒント減点_文字数", 7]);
+    sheet.appendRow(["ヒント減点_音声", 10]);
+    result.headerFixed = true;
+  }
+  result.sheet = sheet;
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow === 0) {
+    sheet.getRange(1, 1, 1, 2).setValues([["設定名", "値"]]);
+    result.headerFixed = true;
+  } else {
+    const row1 = sheet.getRange(1, 1, 1, 2).getValues()[0];
+    const colA = String(row1[0] || "").trim();
+    const colB = String(row1[1] || "").trim();
+    if (colA !== "設定名" || colB !== "値") {
+      sheet.insertRowBefore(1);
+      sheet.getRange(1, 1, 1, 2).setValues([["設定名", "値"]]);
+      result.headerFixed = true;
+    }
+  }
+
+  const settingsData = sheet.getDataRange().getValues();
+  const existingKeys = {};
+  for (let i = 1; i < settingsData.length; i++) {
+    const k = String(settingsData[i][0] || "").trim();
+    if (k) existingKeys[k] = true;
+  }
+
+  getDefaultAppSettingsRows_().forEach(function (row) {
+    const key = String(row[0] || "");
+    if (!key || existingKeys[key]) return;
+    sheet.appendRow(row);
+    result.addedKeys.push(key);
+    existingKeys[key] = true;
+  });
+
+  return result;
+}
+
 function setupSystem() {
   const scriptId = ScriptApp.getScriptId();
   const gasFile = DriveApp.getFileById(scriptId);
@@ -97,81 +222,13 @@ function setupSystem() {
     logMessage += "✅ 「アプリ設定」を追加しました。\n";
   }
 
-  // 形式×答え方ごとの基本ポイントキー（足りないものだけ追加）
-  if (appSettingsSheet) {
-    const settingsData = appSettingsSheet.getDataRange().getValues();
-    const existingKeys = new Set(settingsData.slice(1).map(r => String(r[0] || "")));
-    const defaultPointRows = [
-      ["基本Pt_ja_to_en_4choice", 3],
-      ["基本Pt_ja_to_en_typing", 20],
-      ["基本Pt_ja_to_en_voice", 20],
-      ["基本Pt_ja_to_en_fill_4choice", 5],
-      ["基本Pt_ja_to_en_fill_typing", 5],
-      ["基本Pt_en_to_ja_4choice", 2],
-      ["基本Pt_en_to_ja_typing", 20],
-      ["基本Pt_en_to_ja_voice", 20],
-      ["基本Pt_en_audio_to_ja_4choice", 2],
-      ["基本Pt_en_audio_to_ja_typing", 20],
-      ["基本Pt_en_audio_to_ja_voice", 20],
-      ["基本Pt_en_audio_to_en_4choice", 3],
-      ["基本Pt_en_audio_to_en_typing", 20],
-      ["基本Pt_en_audio_to_en_voice", 20],
-      ["基本Pt_en_audio_to_en_fill_4choice", 5],
-      ["基本Pt_en_audio_to_en_fill_typing", 5],
-      ["基本Pt_en_to_en_typing", 20],
-      ["基本Pt_en_to_en_voice", 20],
-      ["基本Pt_en_to_en_initial_typing", 25],
-      ["基本Pt_en_to_en_sheet_fill_typing", 25],
-      ["基本Pt_en_to_en_initial_voice", 25],
-      ["基本Pt_en_to_en_sheet_fill_voice", 25],
-      ["基本Pt_qtext_to_en_4choice", 3],
-      ["基本Pt_qtext_to_en_typing", 30],
-      ["基本Pt_qtext_to_en_voice", 30],
-      ["基本Pt_qaudio_to_en_typing", 30],
-      ["基本Pt_qaudio_to_en_voice", 30],
-      ["基本Pt_ja_to_en_sort_sort_all", 25],
-      ["基本Pt_ja_to_en_sort_sort_dummy", 28],
-      ["基本Pt_ja_to_en_sort_sort_missing", 30],
-      ["漢字基本Pt_採点_90以上", 10],
-      ["漢字基本Pt_採点_80以上", 5],
-      ["漢字基本Pt_採点_70以上", 4],
-      ["漢字基本Pt_採点_60以上", 3],
-      ["漢字基本Pt_採点_50以上", 1],
-      ["漢字採点_高得点回数上限_週", 3],
-      ["漢字採点_回数上限後倍率", 0.1],
-      ["漢字採点_回復率_日", 0.15],
-      ["漢字採点_完全回復日数", 7],
-      ["漢字基本Pt_送り仮名選択_90以上", 10],
-      ["漢字基本Pt_送り仮名選択_80以上", 5],
-      ["漢字基本Pt_送り仮名選択_70以上", 4],
-      ["漢字基本Pt_送り仮名選択_60以上", 3],
-      ["漢字基本Pt_送り仮名選択_50以上", 1],
-      ["漢字基本Pt_書取り_90以上", 10],
-      ["漢字基本Pt_書取り_80以上", 5],
-      ["漢字基本Pt_書取り_70以上", 4],
-      ["漢字基本Pt_書取り_60以上", 3],
-      ["漢字基本Pt_書取り_50以上", 1],
-      ["漢字基本Pt_読みタイピング_90以上", 10],
-      ["漢字基本Pt_読みタイピング_80以上", 5],
-      ["漢字基本Pt_読みタイピング_70以上", 4],
-      ["漢字基本Pt_読みタイピング_60以上", 3],
-      ["漢字基本Pt_読みタイピング_50以上", 1],
-      ["漢字基本Pt_画数_90以上", 10],
-      ["漢字基本Pt_画数_80以上", 5],
-      ["漢字基本Pt_画数_70以上", 4],
-      ["漢字基本Pt_画数_60以上", 3],
-      ["漢字基本Pt_画数_50以上", 1],
-      /* 手書き採点の加重（%）。空欄なら下記デフォルト。設定名は1行目見出しと同じキー */
-      ["trajectory", 40],
-      ["startEnd", 15],
-      ["structure", 20],
-      ["size", 25]
-    ];
-    defaultPointRows.forEach(row => {
-      if (!existingKeys.has(row[0])) {
-        appSettingsSheet.appendRow(row);
-      }
-    });
+  const appSettingsEnsure = ensureAppSettingsDefaults_(adminSs);
+  if (appSettingsEnsure.headerFixed) {
+    logMessage += "✅ 「アプリ設定」の見出し行（設定名・値）を整えました。\n";
+  }
+  if (appSettingsEnsure.addedKeys.length > 0) {
+    logMessage += "✅ 「アプリ設定」に不足キーを " + appSettingsEnsure.addedKeys.length + " 件追加しました。\n";
+    logMessage += "   追加: " + appSettingsEnsure.addedKeys.join(", ") + "\n";
   }
 
   let extLearningSheet = adminSs.getSheetByName("外部学習");
@@ -566,6 +623,7 @@ function parseUnitSheetPointPercent_(sheetName) {
 }
 
 function getAppSettingsMap_(adminSs) {
+  ensureAppSettingsDefaults_(adminSs);
   const sheet = adminSs.getSheetByName("アプリ設定");
   const out = {};
   if (!sheet) return out;
@@ -1311,7 +1369,18 @@ function handleGetKanjiWeakReviewPlan(req) {
 // ==========================================
 // 既存のハンドラー（変更なし）
 // ==========================================
-function handleGetAppSettings(req) { const settingsSheet = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('ADMIN_SS_ID')).getSheetByName("アプリ設定"); if (!settingsSheet) return sendResponse({ status: "success", settings: {} }); const data = settingsSheet.getDataRange().getValues(); const settings = {}; for (let i = 1; i < data.length; i++) { if (data[i][0]) settings[data[i][0]] = data[i][1]; } return sendResponse({ status: "success", settings: settings }); }
+function handleGetAppSettings(req) {
+  const adminSs = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('ADMIN_SS_ID'));
+  ensureAppSettingsDefaults_(adminSs);
+  const settingsSheet = adminSs.getSheetByName("アプリ設定");
+  if (!settingsSheet) return sendResponse({ status: "success", settings: {} });
+  const data = settingsSheet.getDataRange().getValues();
+  const settings = {};
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0]) settings[data[i][0]] = data[i][1];
+  }
+  return sendResponse({ status: "success", settings: settings });
+}
 function handleGetExternalLearning(req) { const sheet = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('ADMIN_SS_ID')).getSheetByName("外部学習"); const list = []; if (sheet) { const data = sheet.getDataRange().getValues(); if (data.length > 0) { const headers = data[0].map(String); const isNew = headers[0] === "カテゴリ"; for (let i = 1; i < data.length; i++) { if (!data[i][0]) continue; if (isNew) { list.push({ category: data[i][0], volume: data[i][1], points: Number(data[i][2]) }); } else { list.push({ category: data[i][0], volume: "", points: Number(data[i][1]) }); } } } } return sendResponse({ status: "success", list: list }); }
 
 function ensureExternalLearningRequestSheet_(adminSs) {
