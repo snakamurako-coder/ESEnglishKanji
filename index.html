@@ -1924,7 +1924,7 @@
       <hr style="border-color:#444; width: 90%; max-width:350px; margin: 15px 0;">
       <button class="menu-btn btn-orange" onclick="loadRewards(this)">🎁 けいひんを もらう</button>
       <button class="menu-btn btn-green" onclick="loadInventory(this)">🎒 もちもの（使う）</button>
-      <button class="menu-btn btn-gray" onclick="clearAppCacheAndReload()" style="margin-top: 10px; width:auto; padding: 10px 20px; font-size:16px;">🔄 データを最新に更新</button>
+      <button class="menu-btn btn-gray" onclick="clearAppCacheAndReload(this)" style="margin-top: 10px; width:auto; padding: 10px 20px; font-size:16px;">🔄 データを最新に更新</button>
       <button class="menu-btn btn-gray" onclick="logout()" style="margin-top: 20px; width:auto; padding: 10px 20px; font-size:16px;">ログアウト</button>
     </div>
     <div id="home-stopwatch" style="margin: 22px auto 0; max-width: 360px; background:#1f1f1f; border:1px solid #333; border-radius:12px; padding:14px;">
@@ -2511,14 +2511,32 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       const uid = getUserIdForPref();
       localStorage.setItem(`${uid}_${key}`, val);
     }
-    function clearAppCacheAndReload() {
-      if (!confirm("最新の学習データと設定を読み込み直します。\\nよろしいですか？（画面が再読み込みされます）")) return;
-      Object.keys(localStorage).forEach(k => {
-        if (k.startsWith('app_cached_')) {
-          localStorage.removeItem(k);
-        }
+    function clearAppCacheAndReload(btn) {
+      if (!confirm("最新の学習データと設定を読み込み直します。\nよろしいですか？（画面が再読み込みされます）")) return;
+      const orig = btn ? toggleBtnLoading(btn, true) : null;
+      const statusEl = document.getElementById("home-materials-sync-status");
+      if (statusEl) statusEl.textContent = "キャッシュを消去して最新データを取得しています…";
+      Object.keys(localStorage).forEach(function (k) {
+        if (k.startsWith("app_cached_")) localStorage.removeItem(k);
       });
-      location.reload();
+      materialsData = [];
+      Promise.all([
+        fetch(GAS_API_URL, { method: "POST", body: JSON.stringify({ action: "get_app_settings" }) }).then(function (r) { return r.json(); }),
+        fetchMaterialsListFromServer(),
+        fetchKanjiHandScoreWeightsFromServer()
+      ]).then(function (results) {
+        const settingsRes = results[0];
+        if (settingsRes && settingsRes.status === "success") {
+          appSettings = settingsRes.settings;
+          localStorage.setItem("app_cached_settings", JSON.stringify(settingsRes));
+        }
+        const mats = results[1];
+        if (mats && mats.status === "success") persistMaterialsPayload(mats);
+        location.reload();
+      }).catch(function () {
+        if (btn) toggleBtnLoading(btn, false, orig);
+        if (statusEl) statusEl.textContent = "取得に失敗しました。通信を確認のうえ、もう一度お試しください。";
+      });
     }
     let appSettings = {}; let maxDeduction = 0; let autoNextTimer = null; let materialsData = []; let externalMenus = [];
     let kanjiQuizSession = null; let lastKanjiQuizContext = null;
