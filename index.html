@@ -2736,6 +2736,63 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       return list;
     }
 
+    function getSortCardRawText(card) {
+      if (!card) return "";
+      if (card.dataset && card.dataset.sortRaw != null) return String(card.dataset.sortRaw);
+      return String(card.textContent || "").trim();
+    }
+
+    /** 文頭語句用：先頭の英字だけ大文字に（データが小文字でも自然な見え方） */
+    function capitalizeSortLeadingToken(raw) {
+      const t = String(raw || "");
+      if (!t) return t;
+      return t.replace(/^(\s*)([a-z])/, function (_m, sp, c) { return sp + c.toUpperCase(); });
+    }
+
+    /** 模範解答・ユーザー回答の表示用（文頭を大文字化） */
+    function formatSortSentenceForDisplay(text) {
+      const t = String(text || "").trim();
+      if (!t) return t;
+      return capitalizeSortLeadingToken(t);
+    }
+
+    function formatSortUserAnswerForDisplay(joined) {
+      const parts = String(joined || "").trim().split(/\s+/).filter(Boolean);
+      if (!parts.length) return "";
+      parts[0] = capitalizeSortLeadingToken(parts[0]);
+      return parts.join(" ");
+    }
+
+    function refreshSortCardDisplays() {
+      const pool = document.getElementById("sort-word-pool");
+      const trash = document.getElementById("sort-trash-slot");
+      if (pool) {
+        Array.from(pool.children).forEach(function (c) {
+          c.textContent = getSortCardRawText(c);
+        });
+      }
+      if (trash) {
+        Array.from(trash.children).forEach(function (c) {
+          c.textContent = getSortCardRawText(c);
+        });
+      }
+      const slot = document.getElementById("sort-answer-slot");
+      if (slot) {
+        Array.from(slot.children).forEach(function (c, idx) {
+          const raw = getSortCardRawText(c);
+          c.textContent = idx === 0 ? capitalizeSortLeadingToken(raw) : raw;
+        });
+      }
+    }
+
+    function createSortWordCard(rawText) {
+      const card = document.createElement("div");
+      card.className = "word-card";
+      card.dataset.sortRaw = String(rawText || "");
+      card.textContent = String(rawText || "");
+      return card;
+    }
+
     function getDummyTokenForSort(q) {
       const raw = String(q["並び替え語句ダミー"] || "").trim();
       if (!raw) return "";
@@ -2799,10 +2856,9 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       if (!inp || !pool) return;
       const val = inp.value.trim();
       if (!val) return;
-      const card = document.createElement("div");
-      card.className = "word-card";
-      card.textContent = val;
+      const card = createSortWordCard(val);
       card.dataset.userMade = "1";
+      pool.appendChild(card);
       pool.appendChild(card);
       inp.value = "";
       checkSortQuizSubmit();
@@ -2812,7 +2868,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       const q = filteredQuestions[currentQuestionIndex];
       const slot = document.getElementById("sort-answer-slot");
       if (!slot || !sortQuizState) return;
-      const userJoined = Array.from(slot.children).map(c => c.textContent).join(" ");
+      const userJoined = Array.from(slot.children).map(function (c) { return getSortCardRawText(c); }).join(" ");
       checkAnswer(userJoined, sortQuizState.primaryCorrect, q);
     }
 
@@ -2847,8 +2903,8 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         primaryCorrect: primaryDisplay,
         sortables: []
       };
-      const trashLabel = variant === "dummy" ? "使わないカード（除外置き場）" : "使わないカード（整理用）";
       const showMissing = variant === "missing";
+      const showTrash = variant === "dummy";
       const answerArea = document.getElementById("quiz-answer-area");
       answerArea.innerHTML =
         `<div id="sort-quiz-root" class="sort-quiz-root">` +
@@ -2860,22 +2916,27 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         `<div class="sort-area-header"><span class="sort-area-label">仮置き場（自由に並べ替え可能）</span>` +
         `<button type="button" id="sort-move-all-btn" class="sort-btn-small">↑ この順で回答欄にいれる</button></div>` +
         `<div id="sort-word-pool" class="sortable-area sort-word-pool"></div>` +
-        `<div class="sort-area-header"><span class="sort-area-label">${escapeHtml(trashLabel)}</span></div>` +
-        `<div id="sort-trash-slot" class="sortable-area sort-trash-slot"></div>` +
+        (showTrash
+          ? `<div class="sort-area-header"><span class="sort-area-label">使わないカード（除外置き場）</span></div>` +
+            `<div id="sort-trash-slot" class="sortable-area sort-trash-slot"></div>`
+          : "") +
         `<button type="button" id="sort-submit-btn" class="submit-btn btn-green" style="display:none;width:100%;max-width:420px;margin:16px auto 0;">これで回答する</button></div>`;
       const pool = document.getElementById("sort-word-pool");
-      allCards.forEach(w => {
-        const card = document.createElement("div");
-        card.className = "word-card";
-        card.textContent = w;
-        pool.appendChild(card);
+      allCards.forEach(function (w) {
+        pool.appendChild(createSortWordCard(w));
       });
       if (showMissing) {
         shiftMode = 0; isShiftHoldMode = false;
         renderCustomKeyboard(false, true);
       }
-      const opts = { group: "sort-shared", animation: 150, ghostClass: "sortable-ghost", onSort: () => checkSortQuizSubmit() };
-      ["sort-answer-slot", "sort-word-pool", "sort-trash-slot"].forEach(id => {
+      const onSortChange = function () {
+        refreshSortCardDisplays();
+        checkSortQuizSubmit();
+      };
+      const opts = { group: "sort-shared", animation: 150, ghostClass: "sortable-ghost", onSort: onSortChange };
+      const sortAreaIds = ["sort-answer-slot", "sort-word-pool"];
+      if (showTrash) sortAreaIds.push("sort-trash-slot");
+      sortAreaIds.forEach(function (id) {
         const el = document.getElementById(id);
         if (el && typeof Sortable !== "undefined") sortQuizState.sortables.push(Sortable.create(el, opts));
       });
@@ -2885,7 +2946,8 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
           const wp = document.getElementById("sort-word-pool");
           const ans = document.getElementById("sort-answer-slot");
           if (!wp || !ans) return;
-          Array.from(wp.children).forEach(c => ans.appendChild(c));
+          Array.from(wp.children).forEach(function (c) { ans.appendChild(c); });
+          refreshSortCardDisplays();
           checkSortQuizSubmit();
         };
       }
@@ -10024,7 +10086,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         filteredQuestions = filteredQuestions.filter(q => {
           const toks = parseSortPhraseTokens(q);
           const slot = String(q["並び替え箇所"] || "").trim();
-          if (toks.length < 2 || !slot) return false;
+          if (toks.length < 3 || !slot) return false;
           if (ansType === "sort_dummy") {
             const d = getDummyTokenForSort(q);
             if (!d) return false;
@@ -10032,7 +10094,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
           return true;
         });
         if (filteredQuestions.length === 0) {
-          alert("並び替えのデータが足りません。\n「並び替え箇所」と「並び替え語句1」…を確認してください。\n不要語混入の場合は「並び替え語句ダミー」も必要です。");
+          alert("並び替えのデータが足りません。\n「並び替え箇所」と「並び替え語句1」…（3語以上）を確認してください。\n不要語混入の場合は「並び替え語句ダミー」も必要です。");
           return;
         }
       }
@@ -10447,7 +10509,13 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
           const d = Math.round((eAfter - eBefore) * 100) / 100;
           if (d > 0) plusLine = `<p class="quiz-feedback-points-plus">＋${formatPointDisplayNum(d)}点</p>`;
         }
-        feedback.innerHTML = buildFeedbackContentHtml(userA, resolvedCorrect, isCorrect, isSkip, maxDeduction, fillFeedback && !isSkip, ansType, plusLine);
+        let feedbackUserA = userA;
+        let feedbackCorrect = resolvedCorrect;
+        if (format === "ja_to_en_sort" && !isSkip) {
+          feedbackUserA = formatSortUserAnswerForDisplay(userA);
+          feedbackCorrect = formatSortSentenceForDisplay(resolvedCorrect);
+        }
+        feedback.innerHTML = buildFeedbackContentHtml(feedbackUserA, feedbackCorrect, isCorrect, isSkip, maxDeduction, fillFeedback && !isSkip, ansType, plusLine);
         updateSessionScoreDisplay();
         if (isQuizFreeTypingAnswerType(ansType) || ansType === "fill_typing" || format === "ja_to_en_sort") {
           requestAnimationFrame(() => {
