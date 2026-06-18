@@ -2804,6 +2804,30 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       return String(q["並び替え箇所"] || q["英文"] || "").trim();
     }
 
+    /** 並び替え出題対象か（語句3未満・模範なしの行はスキップ） */
+    function isSortQuestionEligible(q, ansType) {
+      const toks = parseSortPhraseTokens(q);
+      if (toks.length < 3) return false;
+      if (!getSortPrimaryCorrectDisplay(q)) return false;
+      if (ansType === "sort_dummy" && !getDummyTokenForSort(q)) return false;
+      return true;
+    }
+
+    function applyQuizQuestionFilters(questions, format, ansType) {
+      let list = Array.isArray(questions) ? questions.slice() : [];
+      if (format === "ja_to_en_sort") {
+        return list.filter(function (q) { return isSortQuestionEligible(q, ansType); });
+      }
+      if (isLegacyFillBlankAnswerType(ansType)) {
+        const numBlanks = parseInt(document.getElementById("setting-blank-count").value) || 1;
+        list = list.filter(function (q) {
+          const w = (q["英単語"] || q["英文"] || "").trim();
+          return w.length > numBlanks;
+        });
+      }
+      return applyEnToEnClueQuestionFilters(list, format, ansType);
+    }
+
     function getSortAcceptableRawStrings(q) {
       const list = [];
       const add = (s) => { const t = String(s || "").trim(); if (t) list.push(t); };
@@ -2858,7 +2882,6 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       if (!val) return;
       const card = createSortWordCard(val);
       card.dataset.userMade = "1";
-      pool.appendChild(card);
       pool.appendChild(card);
       inp.value = "";
       checkSortQuizSubmit();
@@ -10080,38 +10103,18 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       const format = document.getElementById('setting-format').value;
       const ansType = syncAnswerTypeWithFormat(format);
 
-      filteredQuestions = [...currentQuestions];
+      filteredQuestions = applyQuizQuestionFilters(currentQuestions, format, ansType);
 
-      if (format === "ja_to_en_sort") {
-        filteredQuestions = filteredQuestions.filter(q => {
-          const toks = parseSortPhraseTokens(q);
-          const slot = String(q["並び替え箇所"] || "").trim();
-          if (toks.length < 3 || !slot) return false;
-          if (ansType === "sort_dummy") {
-            const d = getDummyTokenForSort(q);
-            if (!d) return false;
-          }
-          return true;
-        });
-        if (filteredQuestions.length === 0) {
-          alert("並び替えのデータが足りません。\n「並び替え箇所」と「並び替え語句1」…（3語以上）を確認してください。\n不要語混入の場合は「並び替え語句ダミー」も必要です。");
-          return;
-        }
+      if (format === "ja_to_en_sort" && filteredQuestions.length === 0) {
+        alert("並び替えの出題データがありません。\n並び替え語句が3語以上の行だけ出題します（1〜2語の行はスキップ）。\n「並び替え箇所」または「英文」と語句列を確認してください。\n不要語混入の場合は「並び替え語句ダミー」も必要です。");
+        return;
       }
 
-      if (isLegacyFillBlankAnswerType(ansType)) {
-        const numBlanks = parseInt(document.getElementById('setting-blank-count').value) || 1;
-        filteredQuestions = filteredQuestions.filter(q => {
-          let w = (q["英単語"] || q["英文"] || "").trim();
-          return w.length > numBlanks;
-        });
-        if (filteredQuestions.length === 0) {
-          alert("選択した文字数を隠せる単語がありません！隠す数を減らしてください。");
-          return;
-        }
+      if (isLegacyFillBlankAnswerType(ansType) && filteredQuestions.length === 0) {
+        alert("選択した文字数を隠せる単語がありません！隠す数を減らしてください。");
+        return;
       }
 
-      filteredQuestions = applyEnToEnClueQuestionFilters(filteredQuestions, format, ansType);
       if (isEnToEnClueAnswerType(ansType) && filteredQuestions.length === 0) {
         if (ansType === "initial_typing" || ansType === "initial_voice") {
           alert("イニシャル列にデータがある問題がありません。学習セットの「イニシャル」列を確認してください。");
@@ -10130,7 +10133,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
           alert("ニガテな問題はありません！通常モードでスタートします。");
           currentIsReviewMode = false;
           document.getElementById('setting-play-mode').value = 'normal';
-          filteredQuestions = applyEnToEnClueQuestionFilters([...currentQuestions], format, ansType);
+          filteredQuestions = applyQuizQuestionFilters([...currentQuestions], format, ansType);
         }
       }
       if (order === 'random') filteredQuestions.sort(() => Math.random() - 0.5);
