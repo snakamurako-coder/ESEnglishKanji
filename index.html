@@ -2793,6 +2793,32 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       return card;
     }
 
+    /** 回答欄に並んだカードを順に読み上げ（新操作時は speakText 内で前の読み上げを中断） */
+    function speakSortAnswerSlotInOrder() {
+      const slot = document.getElementById("sort-answer-slot");
+      if (!slot || slot.children.length === 0) return;
+      const joined = Array.from(slot.children)
+        .map(function (c) { return getSortCardRawText(c); })
+        .filter(Boolean)
+        .join(" ");
+      if (!joined) return;
+      speakText(formatSortUserAnswerForDisplay(joined), 0.88);
+    }
+
+    /** ドラッグ開始時：触ったカードの1語だけ読み上げ */
+    function speakSortWordCard(card) {
+      const raw = getSortCardRawText(card);
+      if (!raw) return;
+      speakText(capitalizeSortLeadingToken(raw), 0.88);
+    }
+
+    function shouldSpeakSortAnswerSlotOnSort(evt) {
+      if (!evt || !evt.to || evt.to.id !== "sort-answer-slot") return false;
+      if (evt.to.children.length === 0) return false;
+      if (evt.from && evt.from.id === "sort-answer-slot" && evt.to.id !== "sort-answer-slot") return false;
+      return true;
+    }
+
     function getDummyTokenForSort(q) {
       const raw = String(q["並び替え語句ダミー"] || "").trim();
       if (!raw) return "";
@@ -2952,11 +2978,20 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         shiftMode = 0; isShiftHoldMode = false;
         renderCustomKeyboard(false, true);
       }
-      const onSortChange = function () {
+      const onSortEnd = function (evt) {
         refreshSortCardDisplays();
         checkSortQuizSubmit();
+        if (shouldSpeakSortAnswerSlotOnSort(evt)) speakSortAnswerSlotInOrder();
       };
-      const opts = { group: "sort-shared", animation: 150, ghostClass: "sortable-ghost", onSort: onSortChange };
+      const opts = {
+        group: "sort-shared",
+        animation: 150,
+        ghostClass: "sortable-ghost",
+        onStart: function (evt) {
+          if (evt && evt.item) speakSortWordCard(evt.item);
+        },
+        onEnd: onSortEnd
+      };
       const sortAreaIds = ["sort-answer-slot", "sort-word-pool"];
       if (showTrash) sortAreaIds.push("sort-trash-slot");
       sortAreaIds.forEach(function (id) {
@@ -2972,6 +3007,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
           Array.from(wp.children).forEach(function (c) { ans.appendChild(c); });
           refreshSortCardDisplays();
           checkSortQuizSubmit();
+          speakSortAnswerSlotInOrder();
         };
       }
       const sub = document.getElementById("sort-submit-btn");
