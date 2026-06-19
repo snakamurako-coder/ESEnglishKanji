@@ -617,6 +617,7 @@ function doPost(e) {
     else if (action === "get_training_menu_admin") return handleGetTrainingMenuAdmin(requestData);
     else if (action === "save_training_menu_meta") return handleSaveTrainingMenuMeta(requestData);
     else if (action === "save_training_menu_route") return handleSaveTrainingMenuRoute(requestData);
+    else if (action === "save_training_menu_routes_batch") return handleSaveTrainingMenuRoutesBatch(requestData);
     else if (action === "delete_training_menu_route") return handleDeleteTrainingMenuRoute(requestData);
     else if (action === "save_training_base_point") return handleSaveTrainingBasePoint(requestData);
     
@@ -905,6 +906,68 @@ function handleSaveTrainingMenuRoute(req) {
     mode: row[4],
     blankCount: row[5]
   }});
+}
+
+function buildTrainingMenuRouteRow_(r, materials, rowLabel) {
+  const qFormat = String(r.qFormat || "");
+  const aFormat = String(r.aFormat || "");
+  const unitName = String(r.unitName || "");
+  const label = rowLabel ? ("ルート " + rowLabel + ": ") : "";
+  if (!unitName || !qFormat || !aFormat) {
+    return { error: label + "単元・問題形式・こたえ方を選んでください" };
+  }
+  if (!isValidTrainingRouteCombo_(unitName, qFormat, aFormat, materials)) {
+    return { error: label + "選んだ組み合わせはこの単元では使えません" };
+  }
+  const blankRaw = (aFormat === "穴埋め4択" || aFormat === "穴埋めタイピング") && r.blankCount != null && String(r.blankCount).trim() !== "" ? r.blankCount : "";
+  if ((aFormat === "穴埋め4択" || aFormat === "穴埋めタイピング") && (!blankRaw || Number(blankRaw) < 1)) {
+    return { error: label + "穴埋めのときは「隠す文字数」を1以上で入力してください" };
+  }
+  return {
+    row: [
+      String(r.targetUsers || "全員"),
+      unitName,
+      qFormat,
+      aFormat,
+      String(r.mode || "ランダム"),
+      blankRaw
+    ]
+  };
+}
+
+function writeTrainingMenuRoutesToSheet_(sheet, dataRows) {
+  const header = ["対象ユーザー", "単元", "問題の形式", "こたえ方", "出し方", "隠す文字数"];
+  const values = [header].concat(dataRows);
+  const lastCol = header.length;
+  sheet.getRange(1, 1, values.length, lastCol).setValues(values);
+  const currentLast = sheet.getLastRow();
+  if (currentLast > values.length) {
+    sheet.deleteRows(values.length + 1, currentLast - values.length);
+  }
+}
+
+function handleSaveTrainingMenuRoutesBatch(req) {
+  const adminSs = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty("ADMIN_SS_ID"));
+  const v = verifyExternalAdminPin_(adminSs, req.adminPin);
+  if (!v.ok) return sendResponse({ status: "error", message: v.message });
+
+  let menuId = parseInt(req.menuId, 10);
+  if (isNaN(menuId) || menuId < 1 || menuId > 12) return sendResponse({ status: "error", message: "メニューIDが不正です" });
+
+  const sheet = getTrainingMenuSheet_(adminSs, menuId);
+  if (!sheet) return sendResponse({ status: "error", message: "特訓メニューシートが見つかりません" });
+
+  const materials = getMaterialsList_();
+  const routes = Array.isArray(req.routes) ? req.routes : [];
+  const dataRows = [];
+  for (let i = 0; i < routes.length; i++) {
+    const built = buildTrainingMenuRouteRow_(routes[i], materials, String(i + 1));
+    if (built.error) return sendResponse({ status: "error", message: built.error });
+    dataRows.push(built.row);
+  }
+
+  writeTrainingMenuRoutesToSheet_(sheet, dataRows);
+  return sendResponse({ status: "success", message: "ルートを一括保存しました（" + dataRows.length + " 件）", count: dataRows.length });
 }
 
 function handleSaveTrainingBasePoint(req) {

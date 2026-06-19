@@ -2229,10 +2229,12 @@
           <button type="button" class="cancel-btn" style="margin:0;" onclick="closeTrainingAdminRoutePanel()">閉じる</button>
         </div>
         <div id="training-admin-route-list"></div>
-        <h4 style="margin:16px 0 8px;color:#aaa;font-size:14px;">ルートを追加 / 編集</h4>
+        <p id="training-admin-route-draft-hint" style="color:#888;font-size:13px;margin:8px 0 0;display:none;"></p>
+        <h4 style="margin:16px 0 8px;color:#aaa;font-size:14px;">ルートを追加</h4>
         <div id="training-admin-route-form" class="training-admin-route-form"></div>
         <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;">
-          <button type="button" id="training-admin-route-save-btn" class="submit-btn btn-green" style="margin:0;" onclick="saveTrainingAdminRoute()">ルートを保存</button>
+          <button type="button" id="training-admin-route-add-btn" class="submit-btn btn-blue" style="margin:0;" onclick="addTrainingAdminRouteToDraft()">リストに追加</button>
+          <button type="button" id="training-admin-route-save-btn" class="submit-btn btn-green" style="margin:0;" onclick="saveTrainingAdminRoutesBatch()">ルートを保存</button>
           <button type="button" class="cancel-btn" style="margin:0;" onclick="resetTrainingAdminRouteForm()">入力をクリア</button>
         </div>
       </div>
@@ -4377,8 +4379,6 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         const homeRouteArea = document.getElementById('home-route-area');
         if (homeRouteArea) homeRouteArea.style.display = 'block';
         const routeContainer = document.getElementById('route-container');
-        if (routeContainer) routeContainer.innerHTML = "<p>ルートを確認中...</p>";
-        
         const cacheKey = `app_cached_training_route_${currentTrainingMenuId}`;
         const cached = localStorage.getItem(cacheKey);
 
@@ -4392,12 +4392,18 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
             }
         };
 
+        var showedCache = false;
         if (cached) {
            try {
                const d = JSON.parse(cached);
-               processData(d);
-               return;
+               if (d.status === "success") {
+                 processData(d);
+                 showedCache = true;
+               }
            } catch(e) {}
+        }
+        if (!showedCache && routeContainer) {
+            routeContainer.innerHTML = "<p>ルートを確認中...</p>";
         }
 
         fetch(GAS_API_URL, { method: 'POST', body: JSON.stringify({ action: "get_training_route", userId: userId, trainingMenuId: currentTrainingMenuId }) })
@@ -4406,8 +4412,8 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
                localStorage.setItem(cacheKey, JSON.stringify(d));
             }
             processData(d);
-        }).catch(e => {
-            if (routeContainer) routeContainer.innerHTML = "<p>通信エラーが発生しました。</p>";
+        }).catch(function () {
+            if (!showedCache && routeContainer) routeContainer.innerHTML = "<p>通信エラーが発生しました。</p>";
         });
     }
 
@@ -4515,6 +4521,18 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
     function invalidateAppSettingsCache() {
       try { localStorage.removeItem("app_cached_settings"); } catch (_) {}
       appSettings = appSettings || {};
+    }
+
+    function invalidateTrainingRouteCache(menuId) {
+      try {
+        if (menuId != null && menuId !== "") {
+          localStorage.removeItem("app_cached_training_route_" + menuId);
+          return;
+        }
+        Object.keys(localStorage).forEach(function (k) {
+          if (k.startsWith("app_cached_training_route_")) localStorage.removeItem(k);
+        });
+      } catch (_) {}
     }
 
     function renderTrainingMenuPicker() {
@@ -5173,7 +5191,9 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
     // ====== 特訓メニュー管理（管理者） ======
     let trainingAdminData = null;
     let trainingAdminEditingMenuId = null;
-    let trainingAdminEditingRouteRowIdx = null;
+    let trainingAdminDraftRoutes = [];
+    let trainingAdminEditingDraftIdx = null;
+    let trainingAdminRoutesDirty = false;
 
     function getTrainingAdminPin() {
       const el = document.getElementById('training-admin-pin-input');
@@ -5184,7 +5204,9 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
     function logoutTrainingMenuAdmin(skipPinPanel) {
       trainingAdminData = null;
       trainingAdminEditingMenuId = null;
-      trainingAdminEditingRouteRowIdx = null;
+      trainingAdminDraftRoutes = [];
+      trainingAdminEditingDraftIdx = null;
+      trainingAdminRoutesDirty = false;
       document.getElementById('training-admin-main').style.display = "none";
       if (!skipPinPanel) {
         document.getElementById('training-admin-pin-panel').style.display = "block";
@@ -5303,9 +5325,45 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
 
     function closeTrainingAdminRoutePanel() {
       trainingAdminEditingMenuId = null;
-      trainingAdminEditingRouteRowIdx = null;
+      trainingAdminDraftRoutes = [];
+      trainingAdminEditingDraftIdx = null;
+      trainingAdminRoutesDirty = false;
       const panel = document.getElementById('training-admin-route-panel');
       if (panel) panel.style.display = "none";
+    }
+
+    function cloneTrainingAdminDraftRoutes(routes) {
+      return (routes || []).map(function (r) {
+        return {
+          targetUsers: String(r.targetUsers || "全員"),
+          unitName: String(r.unitName || ""),
+          qFormat: String(r.qFormat || ""),
+          aFormat: String(r.aFormat || ""),
+          mode: String(r.mode || "ランダム"),
+          blankCount: r.blankCount != null ? r.blankCount : ""
+        };
+      });
+    }
+
+    function updateTrainingAdminAddButtonLabel() {
+      const btn = document.getElementById('training-admin-route-add-btn');
+      if (!btn) return;
+      btn.innerText = trainingAdminEditingDraftIdx != null ? "リストに反映" : "リストに追加";
+    }
+
+    function updateTrainingAdminDraftHint() {
+      const el = document.getElementById('training-admin-route-draft-hint');
+      if (!el) return;
+      const n = trainingAdminDraftRoutes.length;
+      if (n === 0) {
+        el.style.display = "none";
+        el.innerText = "";
+        return;
+      }
+      el.style.display = "block";
+      el.innerText = trainingAdminRoutesDirty
+        ? (n + " 件のルート（未保存の変更あり →「ルートを保存」でスプレッドシートに反映）")
+        : (n + " 件のルート");
     }
 
     function getTrainingAdminMenuById(menuId) {
@@ -5330,16 +5388,19 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       return html;
     }
 
-    function renderTrainingAdminRouteList(menu) {
+    function renderTrainingAdminRouteList() {
       const listEl = document.getElementById('training-admin-route-list');
       if (!listEl) return;
-      const routes = Array.isArray(menu.routes) ? menu.routes : [];
+      const routes = trainingAdminDraftRoutes || [];
+      updateTrainingAdminDraftHint();
       if (!routes.length) {
-        listEl.innerHTML = "<p style='color:#888;font-size:14px;margin:8px 0 0;'>ルートがまだありません。下のフォームから追加してください。</p>";
+        listEl.innerHTML = "<p style='color:#888;font-size:14px;margin:8px 0 0;'>ルートがまだありません。下のフォームから「リストに追加」してください。</p>";
         return;
       }
+      const menuId = trainingAdminEditingMenuId;
       let rows = routes.map(function (r, idx) {
-        return `<tr>
+        const editingMark = trainingAdminEditingDraftIdx === idx ? " style='background:#2a1a32;'" : "";
+        return `<tr${editingMark}>
           <td>${idx + 1}</td>
           <td>${escapeHtml(r.targetUsers || "全員")}</td>
           <td>${escapeHtml(r.unitName || "")}</td>
@@ -5349,8 +5410,8 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
             return isLegacyFillBlankAnswerType(p.ansType) && r.blankCount !== "" && r.blankCount != null ? "<br>隠す:" + escapeHtml(String(r.blankCount)) : "";
           })()}</td>
           <td style="white-space:nowrap;">
-            <button type="button" class="submit-btn btn-blue" style="margin:0 4px 4px 0;padding:4px 8px;font-size:12px;" onclick="editTrainingAdminRoute(${menu.id}, ${r.rowIdx})">編集</button>
-            <button type="button" class="cancel-btn" style="margin:0;padding:4px 8px;font-size:12px;" onclick="deleteTrainingAdminRoute(${menu.id}, ${r.rowIdx}, this)">削除</button>
+            <button type="button" class="submit-btn btn-blue" style="margin:0 4px 4px 0;padding:4px 8px;font-size:12px;" onclick="editTrainingAdminRoute(${menuId}, ${idx})">編集</button>
+            <button type="button" class="cancel-btn" style="margin:0;padding:4px 8px;font-size:12px;" onclick="deleteTrainingAdminRoute(${menuId}, ${idx})">削除</button>
           </td>
         </tr>`;
       }).join("");
@@ -5533,54 +5594,41 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       const menu = getTrainingAdminMenuById(menuId);
       if (!menu) return;
       trainingAdminEditingMenuId = menuId;
-      trainingAdminEditingRouteRowIdx = null;
+      trainingAdminDraftRoutes = cloneTrainingAdminDraftRoutes(menu.routes);
+      trainingAdminEditingDraftIdx = null;
+      trainingAdminRoutesDirty = false;
       const panel = document.getElementById('training-admin-route-panel');
       const title = document.getElementById('training-admin-route-title');
       if (title) title.innerText = "メニュー" + menuId + " のルート編集";
-      renderTrainingAdminRouteList(menu);
+      renderTrainingAdminRouteList();
       renderTrainingAdminRouteForm(null);
+      updateTrainingAdminAddButtonLabel();
       if (panel) {
         panel.style.display = "block";
         panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
       }
     }
 
-    function editTrainingAdminRoute(menuId, rowIdx) {
-      const menu = getTrainingAdminMenuById(menuId);
-      if (!menu) return;
-      const route = (menu.routes || []).find(function (r) { return r.rowIdx === rowIdx; });
-      trainingAdminEditingMenuId = menuId;
-      trainingAdminEditingRouteRowIdx = rowIdx;
-      renderTrainingAdminRouteForm(route || null);
-      setTrainingAdminMessage("行 " + rowIdx + " を編集しています", true);
+    function editTrainingAdminRoute(menuId, draftIdx) {
+      if (trainingAdminEditingMenuId !== menuId) return;
+      const route = trainingAdminDraftRoutes[draftIdx];
+      if (!route) return;
+      trainingAdminEditingDraftIdx = draftIdx;
+      renderTrainingAdminRouteForm(route);
+      updateTrainingAdminAddButtonLabel();
+      renderTrainingAdminRouteList();
+      setTrainingAdminMessage("リスト " + (draftIdx + 1) + " 番を編集しています（反映するには「リストに反映」）", true);
     }
 
     function resetTrainingAdminRouteForm() {
-      trainingAdminEditingRouteRowIdx = null;
+      trainingAdminEditingDraftIdx = null;
       renderTrainingAdminRouteForm(null);
-      setTrainingAdminMessage("新規追加モードです", true);
+      updateTrainingAdminAddButtonLabel();
+      renderTrainingAdminRouteList();
+      setTrainingAdminMessage("入力をクリアしました", true);
     }
 
-    function reloadTrainingAdminData(menuIdToReopen, successMsg) {
-      const pin = getTrainingAdminPin();
-      return fetch(GAS_API_URL, { method: 'POST', body: JSON.stringify({ action: "get_training_menu_admin", adminPin: pin }) })
-      .then(r => r.json()).then(d => {
-        if (d.status !== "success") throw new Error(d.message || "再読み込み失敗");
-        trainingAdminData = d;
-        renderTrainingAdminMenuGrid();
-        if (menuIdToReopen) {
-          openTrainingAdminRouteEditor(menuIdToReopen);
-          resetTrainingAdminRouteForm();
-        }
-        if (successMsg) setTrainingAdminMessage(successMsg, true);
-        return d;
-      });
-    }
-
-    function saveTrainingAdminRoute() {
-      if (!trainingAdminEditingMenuId) return;
-      const menuId = trainingAdminEditingMenuId;
-      const pin = getTrainingAdminPin();
+    function readTrainingAdminRouteFormPayload() {
       const unitName = (document.getElementById('train-admin-route-unit') || {}).value || "";
       const formatEl = document.getElementById('train-admin-route-format');
       const ansEl = document.getElementById('train-admin-route-a');
@@ -5591,10 +5639,6 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       const ansType = ansEl ? ansEl.value : "";
       const blankEl = document.getElementById('train-admin-route-blank');
       const payload = {
-        action: "save_training_menu_route",
-        adminPin: pin,
-        menuId: menuId,
-        rowIdx: trainingAdminEditingRouteRowIdx || undefined,
         targetUsers: (document.getElementById('train-admin-route-users') || {}).value || "全員",
         unitName: unitName,
         qFormat: qFormat,
@@ -5604,55 +5648,102 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       };
       if (!payload.unitName || !payload.qFormat || !payload.aFormat) {
         setTrainingAdminMessage("単元・問題形式・こたえ方を選んでください", false);
-        return;
+        return null;
       }
       if (!isValidTrainingRouteCombo(payload.unitName, payload.qFormat, payload.aFormat, trainingAdminData.materials)) {
         setTrainingAdminMessage("選んだ組み合わせはこの単元では使えません。形式とこたえ方を確認してください", false);
-        return;
+        return null;
       }
-      if (isLegacyFillBlankAnswerType(ansEl.value) && (!payload.blankCount || Number(payload.blankCount) < 1)) {
+      if (isLegacyFillBlankAnswerType(ansType) && (!payload.blankCount || Number(payload.blankCount) < 1)) {
         setTrainingAdminMessage("穴埋めのときは「隠す文字数」を1以上で入力してください", false);
-        return;
+        return null;
       }
+      return payload;
+    }
+
+    function addTrainingAdminRouteToDraft() {
+      if (!trainingAdminEditingMenuId) return;
+      const payload = readTrainingAdminRouteFormPayload();
+      if (!payload) return;
+      if (trainingAdminEditingDraftIdx != null) {
+        trainingAdminDraftRoutes[trainingAdminEditingDraftIdx] = payload;
+        setTrainingAdminMessage("リスト " + (trainingAdminEditingDraftIdx + 1) + " 番を更新しました（まだ未保存）", true);
+        trainingAdminEditingDraftIdx = null;
+      } else {
+        trainingAdminDraftRoutes.push(payload);
+        setTrainingAdminMessage("リストに追加しました（あと " + (trainingAdminDraftRoutes.length) + " 件・「ルートを保存」で反映）", true);
+      }
+      trainingAdminRoutesDirty = true;
+      updateTrainingAdminAddButtonLabel();
+      renderTrainingAdminRouteList();
+    }
+
+    function reloadTrainingAdminData(menuIdToReopen, successMsg, keepForm) {
+      const pin = getTrainingAdminPin();
+      return fetch(GAS_API_URL, { method: 'POST', body: JSON.stringify({ action: "get_training_menu_admin", adminPin: pin }) })
+      .then(r => r.json()).then(d => {
+        if (d.status !== "success") throw new Error(d.message || "再読み込み失敗");
+        trainingAdminData = d;
+        renderTrainingAdminMenuGrid();
+        if (menuIdToReopen) {
+          const menu = getTrainingAdminMenuById(menuIdToReopen);
+          trainingAdminEditingMenuId = menuIdToReopen;
+          trainingAdminDraftRoutes = cloneTrainingAdminDraftRoutes(menu ? menu.routes : []);
+          trainingAdminEditingDraftIdx = null;
+          trainingAdminRoutesDirty = false;
+          const panel = document.getElementById('training-admin-route-panel');
+          const title = document.getElementById('training-admin-route-title');
+          if (title) title.innerText = "メニュー" + menuIdToReopen + " のルート編集";
+          if (panel) panel.style.display = "block";
+          renderTrainingAdminRouteList();
+          updateTrainingAdminAddButtonLabel();
+          if (!keepForm) {
+            renderTrainingAdminRouteForm(null);
+          }
+        }
+        if (successMsg) setTrainingAdminMessage(successMsg, true);
+        return d;
+      });
+    }
+
+    function saveTrainingAdminRoutesBatch() {
+      if (!trainingAdminEditingMenuId) return;
+      const menuId = trainingAdminEditingMenuId;
+      const pin = getTrainingAdminPin();
       const btn = document.getElementById('training-admin-route-save-btn');
       const orig = btn ? toggleBtnLoading(btn, true) : null;
-      fetch(GAS_API_URL, { method: 'POST', body: JSON.stringify(payload) })
+      fetch(GAS_API_URL, { method: 'POST', body: JSON.stringify({
+        action: "save_training_menu_routes_batch",
+        adminPin: pin,
+        menuId: menuId,
+        routes: trainingAdminDraftRoutes
+      }) })
       .then(r => r.json()).then(d => {
         if (d.status !== "success") {
           setTrainingAdminMessage(d.message || "保存に失敗しました", false);
           return;
         }
-        return reloadTrainingAdminData(menuId, "ルートを保存しました");
+        invalidateTrainingRouteCache(menuId);
+        return reloadTrainingAdminData(menuId, d.message || "ルートを保存しました", true);
       }).catch(function (e) { setTrainingAdminMessage(e.message || "通信エラー", false); })
       .finally(function () {
         if (btn && btn.isConnected) toggleBtnLoading(btn, false, orig);
       });
     }
 
-    function deleteTrainingAdminRoute(menuId, rowIdx, btn) {
-      if (!confirm("このルート（行 " + rowIdx + "）を削除しますか？")) return;
-      const pin = getTrainingAdminPin();
-      const orig = btn ? toggleBtnLoading(btn, true) : null;
-      const stopLoading = function () {
-        if (btn && btn.isConnected) toggleBtnLoading(btn, false, orig);
-      };
-      fetch(GAS_API_URL, { method: 'POST', body: JSON.stringify({
-        action: "delete_training_menu_route",
-        adminPin: pin,
-        menuId: menuId,
-        rowIdx: rowIdx
-      }) })
-      .then(r => r.json()).then(d => {
-        if (d.status !== "success") {
-          setTrainingAdminMessage(d.message || "削除に失敗しました", false);
-          stopLoading();
-          return;
-        }
-        return reloadTrainingAdminData(menuId, "ルートを削除しました");
-      }).catch(function () {
-        setTrainingAdminMessage("通信エラー", false);
-        stopLoading();
-      });
+    function deleteTrainingAdminRoute(menuId, draftIdx) {
+      if (trainingAdminEditingMenuId !== menuId) return;
+      if (!confirm("リスト " + (draftIdx + 1) + " 番を削除しますか？（「ルートを保存」するまでスプレッドシートは変わりません）")) return;
+      trainingAdminDraftRoutes.splice(draftIdx, 1);
+      if (trainingAdminEditingDraftIdx === draftIdx) {
+        trainingAdminEditingDraftIdx = null;
+        updateTrainingAdminAddButtonLabel();
+      } else if (trainingAdminEditingDraftIdx != null && trainingAdminEditingDraftIdx > draftIdx) {
+        trainingAdminEditingDraftIdx -= 1;
+      }
+      trainingAdminRoutesDirty = true;
+      renderTrainingAdminRouteList();
+      setTrainingAdminMessage("リストから削除しました（「ルートを保存」で反映）", true);
     }
 
     function getExternalAdminPin() {
