@@ -5344,7 +5344,10 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
           <td>${escapeHtml(r.targetUsers || "全員")}</td>
           <td>${escapeHtml(r.unitName || "")}</td>
           <td>${escapeHtml(r.qFormat || "")}<br><span style="color:#888;">${escapeHtml(r.aFormat || "")}</span></td>
-          <td>${escapeHtml(r.mode || "")}${r.blankCount !== "" && r.blankCount != null ? "<br>隠す:" + escapeHtml(String(r.blankCount)) : ""}</td>
+          <td>${escapeHtml(r.mode || "")}${(function () {
+            const p = trainingRouteLabelsToInternal(r.qFormat, r.aFormat);
+            return isLegacyFillBlankAnswerType(p.ansType) && r.blankCount !== "" && r.blankCount != null ? "<br>隠す:" + escapeHtml(String(r.blankCount)) : "";
+          })()}</td>
           <td style="white-space:nowrap;">
             <button type="button" class="submit-btn btn-blue" style="margin:0 4px 4px 0;padding:4px 8px;font-size:12px;" onclick="editTrainingAdminRoute(${menu.id}, ${r.rowIdx})">編集</button>
             <button type="button" class="cancel-btn" style="margin:0;padding:4px 8px;font-size:12px;" onclick="deleteTrainingAdminRoute(${menu.id}, ${r.rowIdx}, this)">削除</button>
@@ -5359,6 +5362,10 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       if (!form || !trainingAdminData) return;
       const r = route || {};
       const parsed = trainingRouteLabelsToInternal(r.qFormat, r.aFormat);
+      const isFillBlankRoute = isLegacyFillBlankAnswerType(parsed.ansType);
+      const blankDefault = isFillBlankRoute
+        ? (r.blankCount != null && String(r.blankCount).trim() !== "" ? String(r.blankCount) : "1")
+        : "";
       const mOpts = (trainingAdminData.modes || ["ランダム", "順番"]).map(function (m) {
         return `<option value="${escapeHtml(m)}"${m === (r.mode || "ランダム") ? " selected" : ""}>${escapeHtml(m)}</option>`;
       }).join("");
@@ -5373,7 +5380,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         `<div class="training-admin-field" style="grid-column:1/-1;"><label>1. もんだいの形式</label><select id="train-admin-route-format" class="large-select"></select></div>` +
         `<div class="training-admin-field" style="grid-column:1/-1;"><label>2. こたえ方</label><select id="train-admin-route-a" class="large-select"></select></div>` +
         `<div class="training-admin-field"><label>3. 出し方</label><select id="train-admin-route-mode">${mOpts}</select></div>` +
-        `<div class="training-admin-field" id="train-admin-route-blank-wrap" style="display:none;"><label>4. 隠す文字数（穴埋め）</label><input type="number" id="train-admin-route-blank" min="1" max="20" value="${escapeHtml(r.blankCount != null ? String(r.blankCount) : "1")}" placeholder="1以上"></div>`;
+        `<div class="training-admin-field" id="train-admin-route-blank-wrap" style="display:none;"><label>4. 隠す文字数（穴埋め）</label><input type="number" id="train-admin-route-blank" min="1" max="20" value="${escapeHtml(blankDefault)}" placeholder="1以上"></div>`;
       bindTrainingAdminRouteFormEvents(parsed.format, parsed.ansType);
     }
 
@@ -5382,6 +5389,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       const formatEl = document.getElementById('train-admin-route-format');
       const ansEl = document.getElementById('train-admin-route-a');
       const blankWrap = document.getElementById('train-admin-route-blank-wrap');
+      const blankEl = document.getElementById('train-admin-route-blank');
       if (!unitEl || !formatEl || !ansEl) return;
 
       function refreshFormatOptions(preferredFormat, preferredAns) {
@@ -5427,6 +5435,10 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         const ansType = ansEl.value;
         const show = isLegacyFillBlankAnswerType(ansType);
         if (blankWrap) blankWrap.style.display = show ? "block" : "none";
+        if (blankEl) {
+          if (!show) blankEl.value = "";
+          else if (!String(blankEl.value || "").trim()) blankEl.value = "1";
+        }
       }
 
       unitEl.onchange = function () { refreshFormatOptions("", ""); };
@@ -5576,6 +5588,8 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       const ansOpt = ansEl && ansEl.options[ansEl.selectedIndex];
       const qFormat = formatOpt ? (formatOpt.getAttribute('data-qformat') || "") : "";
       const aFormat = ansOpt ? (ansOpt.getAttribute('data-aformat') || "") : "";
+      const ansType = ansEl ? ansEl.value : "";
+      const blankEl = document.getElementById('train-admin-route-blank');
       const payload = {
         action: "save_training_menu_route",
         adminPin: pin,
@@ -5586,7 +5600,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         qFormat: qFormat,
         aFormat: aFormat,
         mode: (document.getElementById('train-admin-route-mode') || {}).value || "ランダム",
-        blankCount: (document.getElementById('train-admin-route-blank') || {}).value || ""
+        blankCount: isLegacyFillBlankAnswerType(ansType) && blankEl ? (blankEl.value || "") : ""
       };
       if (!payload.unitName || !payload.qFormat || !payload.aFormat) {
         setTrainingAdminMessage("単元・問題形式・こたえ方を選んでください", false);

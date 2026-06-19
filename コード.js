@@ -285,15 +285,18 @@ function readTrainingMenuRoutes_(sheet) {
   for (let i = 1; i < data.length; i++) {
     const row = data[i];
     if (!String(row[0] || "").trim() && !String(row[1] || "").trim() && !String(row[2] || "").trim()) continue;
+    const aFormat = String(row[3] || "");
+    const rawBlank = blankIdx >= 0 ? row[blankIdx] : "";
+    const blankCount = (aFormat === "穴埋め4択" || aFormat === "穴埋めタイピング") ? rawBlank : "";
     routes.push({
       rowIdx: i + 1,
       stepIndex: i + 1,
       targetUsers: String(row[0] || ""),
       unitName: String(row[1] || ""),
       qFormat: String(row[2] || ""),
-      aFormat: String(row[3] || ""),
+      aFormat: aFormat,
       mode: String(row[4] || ""),
-      blankCount: blankIdx >= 0 ? row[blankIdx] : ""
+      blankCount: blankCount
     });
   }
   return routes;
@@ -761,13 +764,15 @@ function handleGetTrainingRoute(req) {
     for (let i = 1; i < data.length; i++) {
       let target = String(data[i][0]);
       if (target === "全員" || target.includes(req.userId)) {
+        const aFormat = String(data[i][3] || "");
+        const rawBlank = blankIdx >= 0 ? data[i][blankIdx] : "";
         route.push({
           stepIndex: i,
           unitName: data[i][1],
           qFormat: data[i][2],
-          aFormat: data[i][3],
+          aFormat: aFormat,
           mode: data[i][4],
-          blankCount: blankIdx >= 0 ? data[i][blankIdx] : ""
+          blankCount: (aFormat === "穴埋め4択" || aFormat === "穴埋めタイピング") ? rawBlank : ""
         });
       }
     }
@@ -879,7 +884,7 @@ function handleSaveTrainingMenuRoute(req) {
     qFormat,
     aFormat,
     String(req.mode || "ランダム"),
-    req.blankCount != null && String(req.blankCount).trim() !== "" ? req.blankCount : ""
+    (aFormat === "穴埋め4択" || aFormat === "穴埋めタイピング") && req.blankCount != null && String(req.blankCount).trim() !== "" ? req.blankCount : ""
   ];
 
   let rowIdx = parseInt(req.rowIdx, 10);
