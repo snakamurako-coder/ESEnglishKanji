@@ -2240,7 +2240,7 @@
       <div id="training-admin-panel-points" style="display:none;">
         <p style="color:#aaa;font-size:14px;line-height:1.5;">学習者が選ぶのと同じプルダウンで、問題形式ごとの基本ポイント（1問あたり）を設定できます。値は <code style="color:#9C27B0;">アプリ設定</code> シートに保存されます。</p>
         <div id="training-admin-points-form" class="training-admin-points-form"></div>
-        <button type="button" class="submit-btn btn-green" style="margin-top:12px;" onclick="saveTrainingAdminBasePoint()">この組み合わせの点数を保存</button>
+        <button type="button" id="training-admin-point-save-btn" class="submit-btn btn-green" style="margin-top:12px;" onclick="saveTrainingAdminBasePoint(this)">この組み合わせの点数を保存</button>
       </div>
       <button type="button" class="cancel-btn" style="margin:20px auto 0;display:block;" onclick="backToParentAdminHub()">管理メニューにもどる</button>
     </div>
@@ -5261,18 +5261,22 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
             <input type="checkbox" id="train-admin-enabled-${menu.id}" ${menu.enabled ? "checked" : ""}> 表示する（子ども画面に出す）
           </label>
           <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;">
-            <button type="button" class="submit-btn btn-green" style="margin:0;padding:8px 10px;font-size:13px;" onclick="saveTrainingAdminMenuMeta(${menu.id})">設定を保存</button>
+            <button type="button" class="submit-btn btn-green" style="margin:0;padding:8px 10px;font-size:13px;" onclick="saveTrainingAdminMenuMeta(${menu.id}, this)">設定を保存</button>
             <button type="button" class="submit-btn btn-blue" style="margin:0;padding:8px 10px;font-size:13px;" onclick="openTrainingAdminRouteEditor(${menu.id})">ルート編集</button>
           </div>
         </div>`;
       }).join("");
     }
 
-    function saveTrainingAdminMenuMeta(menuId) {
+    function saveTrainingAdminMenuMeta(menuId, btn) {
       const pin = getTrainingAdminPin();
       const nameEl = document.getElementById('train-admin-name-' + menuId);
       const colorEl = document.getElementById('train-admin-color-' + menuId);
       const enabledEl = document.getElementById('train-admin-enabled-' + menuId);
+      const orig = btn ? toggleBtnLoading(btn, true) : null;
+      const stopLoading = function () {
+        if (btn && btn.isConnected) toggleBtnLoading(btn, false, orig);
+      };
       fetch(GAS_API_URL, { method: 'POST', body: JSON.stringify({
         action: "save_training_menu_meta",
         adminPin: pin,
@@ -5284,13 +5288,17 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       .then(r => r.json()).then(d => {
         if (d.status !== "success") {
           setTrainingAdminMessage(d.message || "保存に失敗しました", false);
+          stopLoading();
           return;
         }
         invalidateAppSettingsCache();
-        fetchAppSettings().then(function () {
+        return fetchAppSettings().then(function () {
           return reloadTrainingAdminData(null, "メニュー" + menuId + " の設定を保存しました");
-        }).catch(function () { setTrainingAdminMessage("通信エラー", false); });
-      }).catch(() => setTrainingAdminMessage("通信エラー", false));
+        });
+      }).catch(function () {
+        setTrainingAdminMessage("通信エラー", false);
+        stopLoading();
+      });
     }
 
     function closeTrainingAdminRoutePanel() {
@@ -5339,7 +5347,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
           <td>${escapeHtml(r.mode || "")}${r.blankCount !== "" && r.blankCount != null ? "<br>隠す:" + escapeHtml(String(r.blankCount)) : ""}</td>
           <td style="white-space:nowrap;">
             <button type="button" class="submit-btn btn-blue" style="margin:0 4px 4px 0;padding:4px 8px;font-size:12px;" onclick="editTrainingAdminRoute(${menu.id}, ${r.rowIdx})">編集</button>
-            <button type="button" class="cancel-btn" style="margin:0;padding:4px 8px;font-size:12px;" onclick="deleteTrainingAdminRoute(${menu.id}, ${r.rowIdx})">削除</button>
+            <button type="button" class="cancel-btn" style="margin:0;padding:4px 8px;font-size:12px;" onclick="deleteTrainingAdminRoute(${menu.id}, ${r.rowIdx}, this)">削除</button>
           </td>
         </tr>`;
       }).join("");
@@ -5473,7 +5481,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       refreshAnswerOptions();
     }
 
-    function saveTrainingAdminBasePoint() {
+    function saveTrainingAdminBasePoint(btn) {
       const formatEl = document.getElementById('train-admin-point-format');
       const ansEl = document.getElementById('train-admin-point-answer');
       const valueEl = document.getElementById('train-admin-point-value');
@@ -5486,6 +5494,8 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         return;
       }
       const pin = getTrainingAdminPin();
+      const saveBtn = btn || document.getElementById('training-admin-point-save-btn');
+      const orig = saveBtn ? toggleBtnLoading(saveBtn, true) : null;
       fetch(GAS_API_URL, { method: 'POST', body: JSON.stringify({
         action: "save_training_base_point",
         adminPin: pin,
@@ -5501,7 +5511,10 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         trainingAdminData.basePointSettings[settingKey] = pointValue;
         invalidateAppSettingsCache();
         setTrainingAdminMessage("点数を保存しました（" + settingKey + " = " + pointValue + "）", true);
-      }).catch(function () { setTrainingAdminMessage("通信エラー", false); });
+      }).catch(function () { setTrainingAdminMessage("通信エラー", false); })
+      .finally(function () {
+        if (saveBtn && saveBtn.isConnected) toggleBtnLoading(saveBtn, false, orig);
+      });
     }
 
     function openTrainingAdminRouteEditor(menuId) {
@@ -5587,6 +5600,8 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         setTrainingAdminMessage("穴埋めのときは「隠す文字数」を1以上で入力してください", false);
         return;
       }
+      const btn = document.getElementById('training-admin-route-save-btn');
+      const orig = btn ? toggleBtnLoading(btn, true) : null;
       fetch(GAS_API_URL, { method: 'POST', body: JSON.stringify(payload) })
       .then(r => r.json()).then(d => {
         if (d.status !== "success") {
@@ -5594,12 +5609,19 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
           return;
         }
         return reloadTrainingAdminData(menuId, "ルートを保存しました");
-      }).catch(function (e) { setTrainingAdminMessage(e.message || "通信エラー", false); });
+      }).catch(function (e) { setTrainingAdminMessage(e.message || "通信エラー", false); })
+      .finally(function () {
+        if (btn && btn.isConnected) toggleBtnLoading(btn, false, orig);
+      });
     }
 
-    function deleteTrainingAdminRoute(menuId, rowIdx) {
+    function deleteTrainingAdminRoute(menuId, rowIdx, btn) {
       if (!confirm("このルート（行 " + rowIdx + "）を削除しますか？")) return;
       const pin = getTrainingAdminPin();
+      const orig = btn ? toggleBtnLoading(btn, true) : null;
+      const stopLoading = function () {
+        if (btn && btn.isConnected) toggleBtnLoading(btn, false, orig);
+      };
       fetch(GAS_API_URL, { method: 'POST', body: JSON.stringify({
         action: "delete_training_menu_route",
         adminPin: pin,
@@ -5609,10 +5631,14 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       .then(r => r.json()).then(d => {
         if (d.status !== "success") {
           setTrainingAdminMessage(d.message || "削除に失敗しました", false);
+          stopLoading();
           return;
         }
         return reloadTrainingAdminData(menuId, "ルートを削除しました");
-      }).catch(function () { setTrainingAdminMessage("通信エラー", false); });
+      }).catch(function () {
+        setTrainingAdminMessage("通信エラー", false);
+        stopLoading();
+      });
     }
 
     function getExternalAdminPin() {
