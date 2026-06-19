@@ -2799,7 +2799,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
 
     function getSortCardRawText(card) {
       if (!card) return "";
-      if (card.dataset && card.dataset.sortRaw != null) return String(card.dataset.sortRaw);
+      if (card.dataset && card.dataset.sortRaw != null) return String(card.dataset.sortRaw).trim();
       return String(card.textContent || "").trim();
     }
 
@@ -2854,23 +2854,46 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       return card;
     }
 
-    /** 回答欄に並んだカードを順に読み上げ（新操作時は speakText 内で前の読み上げを中断） */
-    function speakSortAnswerSlotInOrder() {
+    /** 回答欄の語句を読み上げ用テキストに（表示用の capitalize は使わない） */
+    function getSortSpeechTextFromSlot() {
       const slot = document.getElementById("sort-answer-slot");
-      if (!slot || slot.children.length === 0) return;
-      const joined = Array.from(slot.children)
+      if (!slot || slot.children.length === 0) return "";
+      return Array.from(slot.children)
         .map(function (c) { return getSortCardRawText(c); })
         .filter(Boolean)
         .join(" ");
-      if (!joined) return;
-      speakText(formatSortUserAnswerForDisplay(joined), 0.88);
     }
 
-    /** ドラッグ開始時：触ったカードの1語だけ読み上げ */
+    let sortSpeechTimer = null;
+    function primeSpeechSynthesis() {
+      if (!("speechSynthesis" in window)) return;
+      loadVoices();
+      try { window.speechSynthesis.resume(); } catch (_) {}
+    }
+    function scheduleSortSpeech(text, delayMs) {
+      if (text == null || (typeof text !== "string" && typeof text !== "number")) return;
+      const t = String(text).trim();
+      if (!t) return;
+      primeSpeechSynthesis();
+      if (sortSpeechTimer) clearTimeout(sortSpeechTimer);
+      sortSpeechTimer = setTimeout(function () {
+        sortSpeechTimer = null;
+        speakText(t, 0.88);
+      }, delayMs == null ? 0 : delayMs);
+    }
+
+    /** 回答欄に並んだカードを順に読み上げ */
+    function speakSortAnswerSlotInOrder() {
+      const joined = getSortSpeechTextFromSlot();
+      if (!joined) return;
+      scheduleSortSpeech(joined, 80);
+    }
+
+    /** ドラッグ開始時：触ったカードの1語だけ読み上げ（表示用 capitalize は読まない） */
     function speakSortWordCard(card) {
       const raw = getSortCardRawText(card);
       if (!raw) return;
-      speakText(capitalizeSortLeadingToken(raw), 0.88);
+      scheduleSortSpeech(raw, 0);
     }
 
     function shouldSpeakSortAnswerSlotOnSort(evt) {
@@ -2945,6 +2968,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
     let sortQuizState = null;
 
     function destroySortQuizIfAny() {
+      if (sortSpeechTimer) { clearTimeout(sortSpeechTimer); sortSpeechTimer = null; }
       if (sortQuizState && Array.isArray(sortQuizState.sortables)) {
         sortQuizState.sortables.forEach(s => { try { s.destroy(); } catch (e) {} });
       }
@@ -3042,7 +3066,11 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       const onSortEnd = function (evt) {
         refreshSortCardDisplays();
         checkSortQuizSubmit();
-        if (shouldSpeakSortAnswerSlotOnSort(evt)) speakSortAnswerSlotInOrder();
+        if (shouldSpeakSortAnswerSlotOnSort(evt)) {
+          requestAnimationFrame(function () {
+            speakSortAnswerSlotInOrder();
+          });
+        }
       };
       const opts = {
         group: "sort-shared",
@@ -3074,6 +3102,12 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       const sub = document.getElementById("sort-submit-btn");
       if (sub) sub.onclick = () => submitSortQuizAnswer();
       placeQuizFeedbackAtTopOfAnswerArea(answerArea);
+      const sortRoot = document.getElementById("sort-quiz-root");
+      if (sortRoot && !sortRoot.dataset.sortSpeechPrimed) {
+        sortRoot.dataset.sortSpeechPrimed = "1";
+        sortRoot.addEventListener("pointerdown", function () { primeSpeechSynthesis(); }, { once: true, capture: true });
+      }
+      primeSpeechSynthesis();
     }
 
     function computeQuizBasePoint(format, ansType, isWord) {
@@ -3388,7 +3422,18 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
     }
     if ('speechSynthesis' in window) { window.speechSynthesis.onvoiceschanged = loadVoices; loadVoices(); }
     function speakText(text, rate = 0.9) {
-      if ('speechSynthesis' in window) { window.speechSynthesis.cancel(); const uttr = new SpeechSynthesisUtterance(text); uttr.lang = 'en-US'; uttr.rate = rate; if (preferredVoice) uttr.voice = preferredVoice; window.speechSynthesis.speak(uttr); }
+      if (!('speechSynthesis' in window)) return;
+      if (text == null || (typeof text !== 'string' && typeof text !== 'number')) return;
+      const t = String(text).trim();
+      if (!t) return;
+      loadVoices();
+      try { window.speechSynthesis.resume(); } catch (_) {}
+      window.speechSynthesis.cancel();
+      const uttr = new SpeechSynthesisUtterance(t);
+      uttr.lang = 'en-US';
+      uttr.rate = rate;
+      if (preferredVoice) uttr.voice = preferredVoice;
+      window.speechSynthesis.speak(uttr);
     }
 
     function formatStopwatch(ms) {
