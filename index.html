@@ -212,6 +212,17 @@
     .training-admin-route-table th, .training-admin-route-table td { border-bottom: 1px solid #333; padding: 8px 6px; vertical-align: top; }
     .training-admin-route-table th { color: #bbb; font-weight: normal; text-align: left; }
     .training-admin-route-form { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; margin-top: 12px; }
+    .training-admin-route-steps { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 12px; margin-top: 4px; }
+    .training-admin-step-group { border: 2px solid #555; border-radius: 10px; padding: 12px; background: #222; box-sizing: border-box; }
+    .training-admin-step-group h4 { margin: 0 0 10px; font-size: 15px; font-weight: bold; color: #ccc; }
+    .training-admin-step-group.training-admin-step-format { border-color: #9C27B0; }
+    .training-admin-step-group.training-admin-step-format h4 { color: #CE93D8; }
+    .training-admin-step-group.training-admin-step-answer { border-color: #2196F3; }
+    .training-admin-step-group.training-admin-step-answer h4 { color: #64B5F6; }
+    .training-admin-step-group.training-admin-step-mode { border-color: #607D8B; }
+    .training-admin-step-group.training-admin-step-mode h4 { color: #90A4AE; }
+    .training-admin-select { width: 100%; box-sizing: border-box; padding: 12px; font-size: 16px; border-radius: 8px; border: 1px solid #666; background: #1a1a1a; color: #fff; min-height: 48px; }
+    .training-admin-step-hint { margin: 8px 0 0; font-size: 12px; color: #888; line-height: 1.4; min-height: 1.2em; }
     .training-admin-msg { min-height: 1.2em; margin: 10px auto; max-width: 720px; text-align: center; font-size: 14px; }
     .training-admin-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0 16px; }
     .training-admin-tab { flex: 1 1 140px; padding: 10px 12px; border-radius: 10px; border: 2px solid #555; background: #1a1a1a; color: #ccc; font-weight: bold; cursor: pointer; }
@@ -5404,7 +5415,8 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
           <td>${idx + 1}</td>
           <td>${escapeHtml(r.targetUsers || "全員")}</td>
           <td>${escapeHtml(r.unitName || "")}</td>
-          <td>${escapeHtml(r.qFormat || "")}<br><span style="color:#888;">${escapeHtml(r.aFormat || "")}</span></td>
+          <td>${escapeHtml(r.qFormat || "")}</td>
+          <td>${escapeHtml(r.aFormat || "")}</td>
           <td>${escapeHtml(r.mode || "")}${(function () {
             const p = trainingRouteLabelsToInternal(r.qFormat, r.aFormat);
             return isLegacyFillBlankAnswerType(p.ansType) && r.blankCount !== "" && r.blankCount != null ? "<br>隠す:" + escapeHtml(String(r.blankCount)) : "";
@@ -5415,7 +5427,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
           </td>
         </tr>`;
       }).join("");
-      listEl.innerHTML = `<table class="training-admin-route-table"><thead><tr><th>#</th><th>対象</th><th>単元</th><th>形式</th><th>出し方</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+      listEl.innerHTML = `<table class="training-admin-route-table"><thead><tr><th>#</th><th>対象</th><th>単元</th><th>形式</th><th>こたえ方</th><th>出し方</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
     }
 
     function renderTrainingAdminRouteForm(route) {
@@ -5438,10 +5450,12 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       form.innerHTML =
         `<div class="training-admin-field"><label>対象ユーザー</label><select id="train-admin-route-users">${userOpts}</select></div>` +
         `<div class="training-admin-field"><label>単元</label><select id="train-admin-route-unit">${buildTrainingAdminUnitOptionsHtml(r.unitName)}</select></div>` +
-        `<div class="training-admin-field" style="grid-column:1/-1;"><label>1. もんだいの形式</label><select id="train-admin-route-format" class="large-select"></select></div>` +
-        `<div class="training-admin-field" style="grid-column:1/-1;"><label>2. こたえ方</label><select id="train-admin-route-a" class="large-select"></select></div>` +
-        `<div class="training-admin-field"><label>3. 出し方</label><select id="train-admin-route-mode">${mOpts}</select></div>` +
-        `<div class="training-admin-field" id="train-admin-route-blank-wrap" style="display:none;"><label>4. 隠す文字数（穴埋め）</label><input type="number" id="train-admin-route-blank" min="1" max="20" value="${escapeHtml(blankDefault)}" placeholder="1以上"></div>`;
+        `<div class="training-admin-route-steps">` +
+        `<div class="training-admin-step-group training-admin-step-format"><h4>1. もんだいの形式</h4><select id="train-admin-route-format" class="training-admin-select"></select></div>` +
+        `<div class="training-admin-step-group training-admin-step-answer"><h4>2. こたえ方</h4><select id="train-admin-route-a" class="training-admin-select"><option value="">（先に単元と形式を選んでください）</option></select><p id="train-admin-route-a-hint" class="training-admin-step-hint">単元を選ぶと、こたえ方の選択肢が表示されます。</p></div>` +
+        `<div class="training-admin-step-group training-admin-step-mode"><h4>3. 出し方</h4><select id="train-admin-route-mode" class="training-admin-select">${mOpts}</select></div>` +
+        `<div class="training-admin-step-group training-admin-step-mode" id="train-admin-route-blank-wrap" style="display:none;"><h4>4. 隠す文字数（穴埋め）</h4><input type="number" id="train-admin-route-blank" class="training-admin-select" min="1" max="20" value="${escapeHtml(blankDefault)}" placeholder="1以上"></div>` +
+        `</div>`;
       bindTrainingAdminRouteFormEvents(parsed.format, parsed.ansType);
     }
 
@@ -5451,7 +5465,12 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       const ansEl = document.getElementById('train-admin-route-a');
       const blankWrap = document.getElementById('train-admin-route-blank-wrap');
       const blankEl = document.getElementById('train-admin-route-blank');
+      const ansHintEl = document.getElementById('train-admin-route-a-hint');
       if (!unitEl || !formatEl || !ansEl) return;
+
+      function setAnswerHint(text) {
+        if (ansHintEl) ansHintEl.innerText = text || "";
+      }
 
       function refreshFormatOptions(preferredFormat, preferredAns) {
         const unit = unitEl.value;
@@ -5460,7 +5479,8 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         const formats = unit ? getLearnerFormatOptions(modeName, category) : [];
         if (!formats.length) {
           formatEl.innerHTML = `<option value="">（先に単元を選んでください）</option>`;
-          ansEl.innerHTML = `<option value="">—</option>`;
+          ansEl.innerHTML = `<option value="">（先に単元と形式を選んでください）</option>`;
+          setAnswerHint("単元を選ぶと、形式とこたえ方の選択肢が表示されます。");
           if (blankWrap) blankWrap.style.display = "none";
           return;
         }
@@ -5478,8 +5498,15 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         const format = formatEl.value;
         const modeName = getTrainingModeNameForUnit(unit, trainingAdminData.materials);
         const answers = format ? getLearnerAnswerOptions(format, modeName) : [];
+        if (!format) {
+          ansEl.innerHTML = `<option value="">（先に問題形式を選んでください）</option>`;
+          setAnswerHint("問題形式を選ぶと、こたえ方の選択肢が表示されます。");
+          updateBlankFieldVisibility();
+          return;
+        }
         if (!answers.length) {
-          ansEl.innerHTML = `<option value="">—</option>`;
+          ansEl.innerHTML = `<option value="">（この形式ではこたえ方がありません）</option>`;
+          setAnswerHint("この問題形式に対応するこたえ方がありません。形式を変えてください。");
           updateBlankFieldVisibility();
           return;
         }
@@ -5489,6 +5516,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
           const sel = a.value === selAns ? " selected" : "";
           return `<option value="${escapeHtml(a.value)}" data-aformat="${escapeHtml(a.aFormat)}"${sel}>${escapeHtml(a.label)}</option>`;
         }).join("");
+        setAnswerHint(answers.length + " 種類から選べます。");
         updateBlankFieldVisibility();
       }
 
