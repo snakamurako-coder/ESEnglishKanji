@@ -3438,6 +3438,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       recognition.lang = 'en-US'; recognition.interimResults = true; recognition.continuous = false;
     }
     let preferredVoice = null;
+    let preferredJapaneseVoice = null;
     function loadVoices() {
       const voices = window.speechSynthesis.getVoices();
       if (voices.length === 0) return;
@@ -3447,9 +3448,23 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         for (const keyword of premiumKeywords) { const match = englishVoices.find(v => v.name.toLowerCase().includes(keyword)); if (match) { preferredVoice = match; break; } }
         if (!preferredVoice) preferredVoice = englishVoices[0];
       }
+      const japaneseVoices = voices.filter(v => v.lang.startsWith('ja'));
+      if (japaneseVoices.length > 0) {
+        preferredJapaneseVoice = null;
+        const jaKeywords = ['google 日本語', 'google japanese', 'kyoko', 'otoya', 'enhanced', 'premium'];
+        for (const keyword of jaKeywords) {
+          const match = japaneseVoices.find(v => v.name.toLowerCase().includes(keyword.toLowerCase()));
+          if (match) { preferredJapaneseVoice = match; break; }
+        }
+        if (!preferredJapaneseVoice) preferredJapaneseVoice = japaneseVoices[0];
+      }
+    }
+    function textLooksJapanese(text) {
+      return /[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]/.test(String(text || ""));
     }
     if ('speechSynthesis' in window) { window.speechSynthesis.onvoiceschanged = loadVoices; loadVoices(); }
-    function speakText(text, rate = 0.9) {
+    /** langHint: 'ja' | 'en' | undefined（undefined は文字から自動判定） */
+    function speakText(text, rate = 0.9, langHint) {
       if (!('speechSynthesis' in window)) return;
       if (text == null || (typeof text !== 'string' && typeof text !== 'number')) return;
       const t = String(text).trim();
@@ -3458,9 +3473,20 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       try { window.speechSynthesis.resume(); } catch (_) {}
       window.speechSynthesis.cancel();
       const uttr = new SpeechSynthesisUtterance(t);
-      uttr.lang = 'en-US';
-      uttr.rate = rate;
-      if (preferredVoice) uttr.voice = preferredVoice;
+      const useJa = langHint === 'ja' || (langHint !== 'en' && textLooksJapanese(t));
+      if (useJa) {
+        uttr.lang = 'ja-JP';
+        uttr.rate = rate;
+        if (preferredJapaneseVoice) uttr.voice = preferredJapaneseVoice;
+        else {
+          const jaVoice = window.speechSynthesis.getVoices().find(function (v) { return v.lang.startsWith('ja'); });
+          if (jaVoice) uttr.voice = jaVoice;
+        }
+      } else {
+        uttr.lang = 'en-US';
+        uttr.rate = rate;
+        if (preferredVoice) uttr.voice = preferredVoice;
+      }
       window.speechSynthesis.speak(uttr);
     }
 
@@ -11572,7 +11598,8 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
 
         if (format === "ja_to_en_sort") destroySortQuizIfAny();
         const speakLine = (format === "ja_to_en_sort" && q["英文"]) ? q["英文"] : String(resolvedCorrect ?? "");
-        speakText(String(speakLine));
+        const speakLang = (format === "en_to_ja" || format === "en_audio_to_ja") ? "ja" : "en";
+        speakText(String(speakLine), 0.9, speakLang);
         advanceScheduled = true;
       } catch (e) {
         console.error(e);
