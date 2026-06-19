@@ -120,7 +120,90 @@ function ensureAppSettingsDefaults_(adminSs) {
     existingKeys[key] = true;
   });
 
+  ensureTrainingMenuAppSettings_(sheet, existingKeys, result);
+
   return result;
+}
+
+function getTrainingMenuDefaultColors_() {
+  return ["#9C27B0", "#2196F3", "#4CAF50", "#FF9800", "#F44336", "#009688", "#E91E63", "#3F51B5", "#795548", "#607D8B", "#00BCD4", "#FFC107"];
+}
+
+function ensureTrainingMenuAppSettings_(sheet, existingKeys, result) {
+  if (!sheet) return;
+  const colors = getTrainingMenuDefaultColors_();
+  for (let m = 1; m <= 12; m++) {
+    const rows = [
+      ["特訓メニュー" + m + "_表示名", ""],
+      ["特訓メニュー" + m + "_有効", "1"],
+      ["特訓メニュー" + m + "_色", colors[(m - 1) % colors.length]]
+    ];
+    rows.forEach(function (row) {
+      const key = row[0];
+      if (existingKeys[key]) return;
+      sheet.appendRow(row);
+      if (result && result.addedKeys) result.addedKeys.push(key);
+      existingKeys[key] = true;
+    });
+  }
+}
+
+function setAppSettingValue_(adminSs, key, value) {
+  ensureAppSettingsDefaults_(adminSs);
+  const sheet = adminSs.getSheetByName("アプリ設定");
+  if (!sheet) return;
+  const data = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]) === String(key)) {
+      sheet.getRange(i + 1, 2).setValue(value);
+      return;
+    }
+  }
+  sheet.appendRow([key, value]);
+}
+
+function parseTrainingMenuEnabled_(value) {
+  const v = String(value == null ? "" : value).trim().toLowerCase();
+  if (v === "0" || v === "false" || v === "off" || v === "いいえ" || v === "無効" || v === "否") return false;
+  return true;
+}
+
+function getTrainingRouteOptionLists_() {
+  return {
+    qFormats: [
+      "日本語→英単語", "日本語→英語（並び替え）", "英単語→日本語", "音声→日本語", "音声→英単語",
+      "英語→英語", "漢字→採点チャレンジ"
+    ],
+    aFormats: [
+      "4択", "タイピング", "音声", "穴埋め4択", "穴埋めタイピング",
+      "タイピング（イニシャル）", "タイピング（穴埋め）", "音声入力（イニシャル）", "音声入力（穴埋め）",
+      "すべて用いる", "不要語混入", "不足語補足", "採点"
+    ],
+    modes: ["ランダム", "順番"]
+  };
+}
+
+function readTrainingMenuRoutes_(sheet) {
+  const routes = [];
+  if (!sheet) return routes;
+  const data = sheet.getDataRange().getValues();
+  const header = data[0] || [];
+  const blankIdx = header.indexOf("隠す文字数");
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    if (!String(row[0] || "").trim() && !String(row[1] || "").trim() && !String(row[2] || "").trim()) continue;
+    routes.push({
+      rowIdx: i + 1,
+      stepIndex: i + 1,
+      targetUsers: String(row[0] || ""),
+      unitName: String(row[1] || ""),
+      qFormat: String(row[2] || ""),
+      aFormat: String(row[3] || ""),
+      mode: String(row[4] || ""),
+      blankCount: blankIdx >= 0 ? row[blankIdx] : ""
+    });
+  }
+  return routes;
 }
 
 function setupSystem() {
@@ -320,10 +403,9 @@ function setupSystem() {
     const asData = appSettingsTrain.getDataRange().getValues();
     const existing = {};
     for (let ri = 0; ri < asData.length; ri++) existing[String(asData[ri][0] || "")] = true;
-    for (let m = 1; m <= 12; m++) {
-      const k = "特訓メニュー" + m + "_表示名";
-      if (!existing[k]) appSettingsTrain.appendRow([k, ""]);
-    }
+    const trainMenuKeys = {};
+    for (let ri = 0; ri < asData.length; ri++) trainMenuKeys[String(asData[ri][0] || "")] = true;
+    ensureTrainingMenuAppSettings_(appSettingsTrain, trainMenuKeys, { addedKeys: [] });
   }
 
   console.log(logMessage);
@@ -436,6 +518,10 @@ function doPost(e) {
     
     // ★ 特訓ルート用のAPI
     else if (action === "get_training_route") return handleGetTrainingRoute(requestData);
+    else if (action === "get_training_menu_admin") return handleGetTrainingMenuAdmin(requestData);
+    else if (action === "save_training_menu_meta") return handleSaveTrainingMenuMeta(requestData);
+    else if (action === "save_training_menu_route") return handleSaveTrainingMenuRoute(requestData);
+    else if (action === "delete_training_menu_route") return handleDeleteTrainingMenuRoute(requestData);
     
     else return sendResponse({ status: "error", message: "無効なactionです" });
   } catch (error) {
@@ -608,6 +694,123 @@ function handleGetTrainingRoute(req) {
   }
 
   return sendResponse({ status: "success", route: route, progress: progressData, menuId: menuId });
+}
+
+function handleGetTrainingMenuAdmin(req) {
+  const adminSs = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty("ADMIN_SS_ID"));
+  const v = verifyExternalAdminPin_(adminSs, req.adminPin);
+  if (!v.ok) return sendResponse({ status: "error", message: v.message });
+
+  ensureAppSettingsDefaults_(adminSs);
+  const settings = getAppSettingsMap_(adminSs);
+  const defaultColors = getTrainingMenuDefaultColors_();
+  const menus = [];
+  for (let m = 1; m <= 12; m++) {
+    const sheet = getTrainingMenuSheet_(adminSs, m);
+    menus.push({
+      id: m,
+      displayName: String(settings["特訓メニュー" + m + "_表示名"] || "").trim(),
+      enabled: parseTrainingMenuEnabled_(settings["特訓メニュー" + m + "_有効"]),
+      color: String(settings["特訓メニュー" + m + "_色"] || "").trim() || defaultColors[(m - 1) % defaultColors.length],
+      routes: readTrainingMenuRoutes_(sheet)
+    });
+  }
+
+  const usersSheet = adminSs.getSheetByName("users");
+  const childUsers = [];
+  if (usersSheet) {
+    const udata = usersSheet.getDataRange().getValues();
+    for (let i = 1; i < udata.length; i++) {
+      if (udata[i][0]) childUsers.push({ id: String(udata[i][0]), name: String(udata[i][1] || "") });
+    }
+  }
+
+  const materials = getMaterialsList_();
+
+  const opts = getTrainingRouteOptionLists_();
+  return sendResponse({
+    status: "success",
+    menus: menus,
+    childUsers: childUsers,
+    materials: materials,
+    colorPresets: defaultColors.map(function (c, idx) { return { id: "c" + idx, color: c }; }),
+    qFormats: opts.qFormats,
+    aFormats: opts.aFormats,
+    modes: opts.modes
+  });
+}
+
+function handleSaveTrainingMenuMeta(req) {
+  const adminSs = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty("ADMIN_SS_ID"));
+  const v = verifyExternalAdminPin_(adminSs, req.adminPin);
+  if (!v.ok) return sendResponse({ status: "error", message: v.message });
+
+  let menuId = parseInt(req.menuId, 10);
+  if (isNaN(menuId) || menuId < 1 || menuId > 12) return sendResponse({ status: "error", message: "メニューIDが不正です" });
+
+  if (req.displayName != null) setAppSettingValue_(adminSs, "特訓メニュー" + menuId + "_表示名", String(req.displayName));
+  if (req.enabled != null) setAppSettingValue_(adminSs, "特訓メニュー" + menuId + "_有効", req.enabled ? "1" : "0");
+  if (req.color != null) setAppSettingValue_(adminSs, "特訓メニュー" + menuId + "_色", String(req.color));
+
+  return sendResponse({ status: "success", message: "メニュー設定を保存しました" });
+}
+
+function handleSaveTrainingMenuRoute(req) {
+  const adminSs = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty("ADMIN_SS_ID"));
+  const v = verifyExternalAdminPin_(adminSs, req.adminPin);
+  if (!v.ok) return sendResponse({ status: "error", message: v.message });
+
+  let menuId = parseInt(req.menuId, 10);
+  if (isNaN(menuId) || menuId < 1 || menuId > 12) return sendResponse({ status: "error", message: "メニューIDが不正です" });
+
+  const sheet = getTrainingMenuSheet_(adminSs, menuId);
+  if (!sheet) return sendResponse({ status: "error", message: "特訓メニューシートが見つかりません" });
+
+  const row = [
+    String(req.targetUsers || "全員"),
+    String(req.unitName || ""),
+    String(req.qFormat || ""),
+    String(req.aFormat || ""),
+    String(req.mode || "ランダム"),
+    req.blankCount != null && String(req.blankCount).trim() !== "" ? req.blankCount : ""
+  ];
+
+  let rowIdx = parseInt(req.rowIdx, 10);
+  if (!isNaN(rowIdx) && rowIdx >= 2) {
+    sheet.getRange(rowIdx, 1, rowIdx, 6).setValues([row]);
+  } else {
+    sheet.appendRow(row);
+    rowIdx = sheet.getLastRow();
+  }
+
+  return sendResponse({ status: "success", message: "ルートを保存しました", rowIdx: rowIdx, route: {
+    rowIdx: rowIdx,
+    stepIndex: rowIdx,
+    targetUsers: row[0],
+    unitName: row[1],
+    qFormat: row[2],
+    aFormat: row[3],
+    mode: row[4],
+    blankCount: row[5]
+  }});
+}
+
+function handleDeleteTrainingMenuRoute(req) {
+  const adminSs = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty("ADMIN_SS_ID"));
+  const v = verifyExternalAdminPin_(adminSs, req.adminPin);
+  if (!v.ok) return sendResponse({ status: "error", message: v.message });
+
+  let menuId = parseInt(req.menuId, 10);
+  if (isNaN(menuId) || menuId < 1 || menuId > 12) return sendResponse({ status: "error", message: "メニューIDが不正です" });
+
+  const rowIdx = parseInt(req.rowIdx, 10);
+  if (isNaN(rowIdx) || rowIdx < 2) return sendResponse({ status: "error", message: "削除する行が不正です" });
+
+  const sheet = getTrainingMenuSheet_(adminSs, menuId);
+  if (!sheet) return sendResponse({ status: "error", message: "特訓メニューシートが見つかりません" });
+
+  sheet.deleteRow(rowIdx);
+  return sendResponse({ status: "success", message: "ルートを削除しました" });
 }
 
 /** materials ブックのシート名が「単語A_40」のように末尾 _数字 なら、その数字を得点％として最後に乗算（未指定は100） */
@@ -1599,6 +1802,10 @@ function handleGetChildUsers(req) { const data = SpreadsheetApp.openById(Propert
 function handleVerifyKidPin(req) { const data = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('ADMIN_SS_ID')).getSheetByName("users").getDataRange().getValues(); for (let i = 1; i < data.length; i++) { if (data[i][0] === req.userId) { if (String(data[i][2]) === String(req.pin)) { return sendResponse({ status: "success", user: { id: data[i][0], name: data[i][1], points: data[i][3], lastStudyJson: JSON.parse(data[i][4] || "{}"), historyJson: JSON.parse(data[i][5] || "{}"), dailyPointsJson: JSON.parse(data[i][6] || "{}") }, message: "ログイン成功" }); } else return sendResponse({ status: "error", message: "PINがちがいます" }); } } return sendResponse({ status: "error", message: "ユーザーが見つかりません" }); }
 function handleChangePin(req) { const usersSheet = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('ADMIN_SS_ID')).getSheetByName("users"); const data = usersSheet.getDataRange().getValues(); for (let i = 1; i < data.length; i++) { if (data[i][0] === req.userId) { usersSheet.getRange(i + 1, 3).setValue(req.newPin); return sendResponse({ status: "success", message: "新しいPINをセットしました！" }); } } return sendResponse({ status: "error", message: "ユーザーが見つかりません" }); }
 function handleGetMaterialsList(req) {
+  return sendResponse({ status: "success", materials: getMaterialsList_() });
+}
+
+function getMaterialsList_() {
   const props = PropertiesService.getScriptProperties();
   const materials = [];
   const pushFolderFiles = (folderId, category) => {
@@ -1612,13 +1819,13 @@ function handleGetMaterialsList(req) {
         modeId: file.getId(),
         modeName: file.getName(),
         category: category,
-        units: SpreadsheetApp.open(file).getSheets().map(s => s.getName())
+        units: SpreadsheetApp.open(file).getSheets().map(function (s) { return s.getName(); })
       });
     }
   };
-  pushFolderFiles(props.getProperty('MATERIALS_FOLDER_ID'), "english");
-  pushFolderFiles(props.getProperty('KANJI_MATERIALS_FOLDER_ID'), "kanji");
-  return sendResponse({ status: "success", materials: materials });
+  pushFolderFiles(props.getProperty("MATERIALS_FOLDER_ID"), "english");
+  pushFolderFiles(props.getProperty("KANJI_MATERIALS_FOLDER_ID"), "kanji");
+  return materials;
 }
 function handleGetQuestions(req) { const data = SpreadsheetApp.openById(req.modeId).getSheetByName(req.unitName).getDataRange().getValues(); const headers = data[0]; const questions = []; for (let i = 1; i < data.length; i++) { let qObj = {}; for (let j = 0; j < headers.length; j++) qObj[headers[j]] = data[i][j]; if (qObj["通し番号"]) questions.push(qObj); } return sendResponse({ status: "success", questions: questions }); }
 function handleGetRewards(req) { const data = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('ADMIN_SS_ID')).getSheetByName("rewards").getDataRange().getValues(); const rewards = []; for (let i = 1; i < data.length; i++) { if (data[i][0] && i > 0) rewards.push({ id: data[i][0], name: data[i][1], points: Number(data[i][2]), desc: data[i][3] }); } return sendResponse({ status: "success", rewards: rewards }); }
