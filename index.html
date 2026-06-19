@@ -218,6 +218,7 @@
     .training-admin-tab.active { border-color: #9C27B0; background: #2a1a32; color: #CE93D8; }
     .training-admin-points-form { max-width: 420px; margin-top: 12px; padding: 14px; background: #222; border: 1px solid #444; border-radius: 12px; }
     .training-admin-points-key { font-size: 11px; color: #888; word-break: break-all; margin-top: 6px; }
+    .parent-admin-hub { max-width: 420px; margin: 16px auto 0; display: flex; flex-direction: column; gap: 12px; }
     #quiz-keyboard-settings-panel { margin-top: 16px; }
 
     /* 並び替え（表現練習） */
@@ -1940,8 +1941,7 @@
       <button type="button" class="menu-btn btn-gray" onclick="refreshMaterialsManualFromHome(this)" style="margin-top:6px;width:auto;padding:10px 18px;font-size:15px;">📚 英語・漢字の教材一覧を更新</button>
       <button class="menu-btn btn-purple" onclick="openTrainingMenu()">🎯 特訓メニューへ</button>
       <button class="menu-btn btn-blue" onclick="loadExternalLearning(this)">📚 アプリ以外の勉強を記録</button>
-      <button type="button" class="menu-btn btn-gray" style="margin-top:8px; font-size:15px; padding:12px 16px;" onclick="openExternalAdminApproval()">🔐 おうちの人：外部学習の承認</button>
-      <button type="button" class="menu-btn btn-purple" style="margin-top:8px; font-size:15px; padding:12px 16px;" onclick="openTrainingMenuAdmin()">🎯 おうちの人：特訓メニュー管理</button>
+      <button type="button" class="menu-btn btn-gray" style="margin-top:8px; font-size:15px; padding:12px 16px;" onclick="openParentAdminMenu()">⚙ おうちの人：管理メニュー</button>
       <hr style="border-color:#444; width: 90%; max-width:350px; margin: 15px 0;">
       <button class="menu-btn btn-orange" onclick="loadRewards(this)">🎁 けいひんを もらう</button>
       <button class="menu-btn btn-green" onclick="loadInventory(this)">🎒 もちもの（使う）</button>
@@ -2176,26 +2176,41 @@
         <button type="button" class="submit-btn btn-gray" style="flex:1; min-width:120px;" onclick="resetStopwatch('external')">リセット</button>
       </div>
     </div>
-    <p style="margin-top:16px;font-size:13px;color:#888;">おうちの人はホームの「外部学習の承認」から処理できます。</p>
+    <p style="margin-top:16px;font-size:13px;color:#888;">おうちの人はホームの「管理メニュー」から承認できます。</p>
     <button class="cancel-btn" style="margin-top:20px;" onclick="showHome(JSON.parse(localStorage.getItem('app_kid_user')))">もどる</button>
+  </div>
+
+  <div id="section-parent-admin" class="section">
+    <h1>⚙ おうちの人：管理メニュー</h1>
+    <p style="max-width:420px;margin:0 auto 12px;line-height:1.5;color:#ccc;">管理者PIN（<code style="color:#9C27B0;">アプリ設定</code>の「外部学習_管理者PIN」）を入力してください。</p>
+    <div id="parent-admin-pin-panel" style="max-width:400px;margin:0 auto;">
+      <input type="password" id="parent-admin-pin-input" inputmode="numeric" autocomplete="off" placeholder="管理者PIN" style="width:100%;max-width:280px;padding:14px;font-size:20px;border-radius:10px;border:2px solid #555;background:#222;color:#fff;box-sizing:border-box;">
+      <button type="button" class="submit-btn btn-purple" style="margin-top:12px;width:100%;max-width:280px;" onclick="loginParentAdmin()">ログイン</button>
+    </div>
+    <div id="parent-admin-message" style="color:#ff8a80;margin:12px auto;max-width:400px;min-height:1.2em;text-align:center;font-size:14px;"></div>
+    <div id="parent-admin-hub-panel" class="parent-admin-hub" style="display:none;">
+      <p style="color:#aaa;font-size:14px;text-align:center;margin:0 0 4px;">管理する項目を選んでください</p>
+      <button type="button" class="menu-btn btn-blue" onclick="enterParentAdminExternal()">🔐 外部学習の承認</button>
+      <button type="button" class="menu-btn btn-purple" onclick="enterParentAdminTraining()">🎯 特訓メニュー管理</button>
+      <button type="button" class="cancel-btn" style="margin-top:4px;" onclick="logoutParentAdmin()">ログアウト</button>
+    </div>
+    <button type="button" class="cancel-btn" style="margin-top:24px;" onclick="showHome(JSON.parse(localStorage.getItem('app_kid_user')))">ホームにもどる</button>
   </div>
 
   <div id="section-external-admin" class="section">
     <h1>🔐 外部学習の承認</h1>
-    <p style="max-width:400px;margin:0 auto 12px;line-height:1.5;color:#ccc;">管理者PIN（<code style="color:#9C27B0;">アプリ設定</code>シートの「外部学習_管理者PIN」）を入力して、申請一覧を表示します。</p>
-    <div id="external-admin-pin-panel" style="max-width:400px;margin:0 auto;">
+    <div id="external-admin-pin-panel" style="display:none;max-width:400px;margin:0 auto;">
       <input type="password" id="external-admin-pin-input" inputmode="numeric" autocomplete="off" placeholder="管理者PIN" style="width:100%;max-width:280px;padding:14px;font-size:20px;border-radius:10px;border:2px solid #555;background:#222;color:#fff;box-sizing:border-box;">
       <button type="button" class="submit-btn btn-purple" style="margin-top:12px;width:100%;max-width:280px;" onclick="loadExternalAdminPending()">一覧を表示</button>
     </div>
     <div id="external-admin-message" style="color:#ff8a80;margin:12px auto;max-width:400px;min-height:1.2em;"></div>
     <div id="external-admin-list" style="display:none;flex-direction:column;gap:12px;max-width:420px;margin:16px auto 0;"></div>
-    <button type="button" class="cancel-btn" style="margin-top:24px;" onclick="showHome(JSON.parse(localStorage.getItem('app_kid_user')))">ホームにもどる</button>
+    <button type="button" class="cancel-btn" style="margin-top:24px;" onclick="backToParentAdminHub()">管理メニューにもどる</button>
   </div>
 
   <div id="section-training-admin" class="section">
     <h1>🎯 特訓メニュー管理</h1>
-    <p style="max-width:520px;margin:0 auto 12px;line-height:1.5;color:#ccc;">管理者PIN（<code style="color:#9C27B0;">アプリ設定</code>の「外部学習_管理者PIN」）でログインし、表示するメニューの登録・色・学習ルートを編集できます。</p>
-    <div id="training-admin-pin-panel" style="max-width:400px;margin:0 auto;">
+    <div id="training-admin-pin-panel" style="display:none;max-width:400px;margin:0 auto;">
       <input type="password" id="training-admin-pin-input" inputmode="numeric" autocomplete="off" placeholder="管理者PIN" style="width:100%;max-width:280px;padding:14px;font-size:20px;border-radius:10px;border:2px solid #555;background:#222;color:#fff;box-sizing:border-box;">
       <button type="button" class="submit-btn btn-purple" style="margin-top:12px;width:100%;max-width:280px;" onclick="loadTrainingMenuAdmin()">ログインして編集</button>
     </div>
@@ -2227,9 +2242,9 @@
         <div id="training-admin-points-form" class="training-admin-points-form"></div>
         <button type="button" class="submit-btn btn-green" style="margin-top:12px;" onclick="saveTrainingAdminBasePoint()">この組み合わせの点数を保存</button>
       </div>
-      <button type="button" class="cancel-btn" style="margin:20px auto 0;display:block;" onclick="logoutTrainingMenuAdmin()">ログアウト</button>
+      <button type="button" class="cancel-btn" style="margin:20px auto 0;display:block;" onclick="backToParentAdminHub()">管理メニューにもどる</button>
     </div>
-    <button type="button" class="cancel-btn" style="margin-top:24px;" onclick="showHome(JSON.parse(localStorage.getItem('app_kid_user')))">ホームにもどる</button>
+    <button type="button" class="cancel-btn" style="margin-top:24px;" onclick="backToParentAdminHub()">管理メニューにもどる</button>
   </div>
   
   <div id="section-settings" class="section"><h2 id="settings-title">設定</h2>
@@ -4519,7 +4534,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         }
         html += "</div>";
         if (!shown) {
-          box.innerHTML = "<p style='text-align:center;color:#888;'>表示できる特訓メニューがありません。<br>おうちの人に「特訓メニュー管理」で登録してもらってね。</p>";
+          box.innerHTML = "<p style='text-align:center;color:#888;'>表示できる特訓メニューがありません。<br>おうちの人に「管理メニュー」で登録してもらってね。</p>";
         } else {
           box.innerHTML = html;
         }
@@ -5048,31 +5063,135 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       return out;
     }
 
+    // ====== おうちの人：統合管理メニュー ======
+    let parentAdminPinSession = "";
+
+    function syncAdminPinInputs(pin) {
+      const p = String(pin || "");
+      const ext = document.getElementById('external-admin-pin-input');
+      const train = document.getElementById('training-admin-pin-input');
+      if (ext) ext.value = p;
+      if (train) train.value = p;
+    }
+
+    function openParentAdminMenu() {
+      parentAdminPinSession = "";
+      syncAdminPinInputs("");
+      const pinPanel = document.getElementById('parent-admin-pin-panel');
+      const hubPanel = document.getElementById('parent-admin-hub-panel');
+      const msg = document.getElementById('parent-admin-message');
+      const pinInput = document.getElementById('parent-admin-pin-input');
+      if (pinInput) pinInput.value = "";
+      if (pinPanel) pinPanel.style.display = "block";
+      if (hubPanel) hubPanel.style.display = "none";
+      if (msg) msg.innerText = "";
+      switchSection('section-parent-admin');
+    }
+
+    function showParentAdminHub() {
+      const pinPanel = document.getElementById('parent-admin-pin-panel');
+      const hubPanel = document.getElementById('parent-admin-hub-panel');
+      const msg = document.getElementById('parent-admin-message');
+      if (pinPanel) pinPanel.style.display = "none";
+      if (hubPanel) hubPanel.style.display = "flex";
+      if (msg) msg.innerText = "";
+    }
+
+    function loginParentAdmin() {
+      const pinInput = document.getElementById('parent-admin-pin-input');
+      const msg = document.getElementById('parent-admin-message');
+      const pin = pinInput ? String(pinInput.value || "").trim() : "";
+      if (!pin) {
+        if (msg) msg.innerText = "PINを入力してください。";
+        return;
+      }
+      if (msg) { msg.innerText = "確認中..."; msg.style.color = "#aaa"; }
+      fetch(GAS_API_URL, { method: 'POST', body: JSON.stringify({ action: "get_training_menu_admin", adminPin: pin }) })
+      .then(r => r.json()).then(d => {
+        if (d.status !== "success") {
+          if (msg) { msg.innerText = d.message || "PINが正しくありません"; msg.style.color = "#ff8a80"; }
+          return;
+        }
+        parentAdminPinSession = pin;
+        syncAdminPinInputs(pin);
+        showParentAdminHub();
+      }).catch(function () {
+        if (msg) { msg.innerText = "通信エラー"; msg.style.color = "#ff8a80"; }
+      });
+    }
+
+    function backToParentAdminHub() {
+      if (!parentAdminPinSession) {
+        openParentAdminMenu();
+        return;
+      }
+      logoutTrainingMenuAdmin(true);
+      document.getElementById('external-admin-message').innerText = "";
+      document.getElementById('external-admin-list').style.display = "none";
+      document.getElementById('external-admin-list').innerHTML = "";
+      document.getElementById('external-admin-pin-panel').style.display = "none";
+      switchSection('section-parent-admin');
+      showParentAdminHub();
+    }
+
+    function logoutParentAdmin() {
+      parentAdminPinSession = "";
+      syncAdminPinInputs("");
+      logoutTrainingMenuAdmin(true);
+      document.getElementById('external-admin-message').innerText = "";
+      document.getElementById('external-admin-list').style.display = "none";
+      document.getElementById('external-admin-list').innerHTML = "";
+      const pinInput = document.getElementById('parent-admin-pin-input');
+      if (pinInput) pinInput.value = "";
+      openParentAdminMenu();
+    }
+
+    function enterParentAdminExternal() {
+      if (!parentAdminPinSession) { openParentAdminMenu(); return; }
+      syncAdminPinInputs(parentAdminPinSession);
+      document.getElementById('external-admin-pin-panel').style.display = "none";
+      document.getElementById('external-admin-message').innerText = "";
+      document.getElementById('external-admin-list').style.display = "none";
+      document.getElementById('external-admin-list').innerHTML = "";
+      switchSection('section-external-admin');
+      loadExternalAdminPending();
+    }
+
+    function enterParentAdminTraining() {
+      if (!parentAdminPinSession) { openParentAdminMenu(); return; }
+      syncAdminPinInputs(parentAdminPinSession);
+      document.getElementById('training-admin-pin-panel').style.display = "none";
+      document.getElementById('training-admin-main').style.display = "none";
+      closeTrainingAdminRoutePanel();
+      switchSection('section-training-admin');
+      loadTrainingMenuAdmin();
+    }
+
+    function openExternalAdminApproval() { openParentAdminMenu(); }
+    function openTrainingMenuAdmin() { openParentAdminMenu(); }
+
     // ====== 特訓メニュー管理（管理者） ======
     let trainingAdminData = null;
     let trainingAdminEditingMenuId = null;
     let trainingAdminEditingRouteRowIdx = null;
 
-    function openTrainingMenuAdmin() {
-      document.getElementById('training-admin-pin-input').value = "";
-      document.getElementById('training-admin-message').innerText = "";
-      document.getElementById('training-admin-main').style.display = "none";
-      document.getElementById('training-admin-pin-panel').style.display = "block";
-      closeTrainingAdminRoutePanel();
-      switchSection('section-training-admin');
-    }
-
     function getTrainingAdminPin() {
-      return (document.getElementById('training-admin-pin-input') && document.getElementById('training-admin-pin-input').value) || "";
+      const el = document.getElementById('training-admin-pin-input');
+      const v = el ? String(el.value || "").trim() : "";
+      return v || parentAdminPinSession || "";
     }
 
-    function logoutTrainingMenuAdmin() {
+    function logoutTrainingMenuAdmin(skipPinPanel) {
       trainingAdminData = null;
       trainingAdminEditingMenuId = null;
       trainingAdminEditingRouteRowIdx = null;
       document.getElementById('training-admin-main').style.display = "none";
-      document.getElementById('training-admin-pin-panel').style.display = "block";
-      document.getElementById('training-admin-pin-input').value = "";
+      if (!skipPinPanel) {
+        document.getElementById('training-admin-pin-panel').style.display = "block";
+        document.getElementById('training-admin-pin-input').value = "";
+      } else {
+        document.getElementById('training-admin-pin-panel').style.display = "none";
+      }
       closeTrainingAdminRoutePanel();
     }
 
@@ -5496,17 +5615,10 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       }).catch(function () { setTrainingAdminMessage("通信エラー", false); });
     }
 
-    function openExternalAdminApproval() {
-      document.getElementById('external-admin-pin-input').value = "";
-      document.getElementById('external-admin-message').innerText = "";
-      document.getElementById('external-admin-list').style.display = "none";
-      document.getElementById('external-admin-list').innerHTML = "";
-      document.getElementById('external-admin-pin-panel').style.display = "block";
-      switchSection('section-external-admin');
-    }
-
     function getExternalAdminPin() {
-      return (document.getElementById('external-admin-pin-input') && document.getElementById('external-admin-pin-input').value) || "";
+      const el = document.getElementById('external-admin-pin-input');
+      const v = el ? String(el.value || "").trim() : "";
+      return v || parentAdminPinSession || "";
     }
 
     function loadExternalAdminPending() {
@@ -5545,12 +5657,8 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         const retry = document.createElement('button');
         retry.type = "button";
         retry.className = "submit-btn btn-gray";
-        retry.innerText = "PINを入れ直す";
-        retry.onclick = () => {
-          document.getElementById('external-admin-pin-panel').style.display = "block";
-          listEl.style.display = "none";
-          listEl.innerHTML = "";
-        };
+        retry.innerText = "管理メニューにもどる";
+        retry.onclick = () => { backToParentAdminHub(); };
         listEl.appendChild(retry);
         return;
       }
@@ -5578,12 +5686,8 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       back.type = "button";
       back.className = "submit-btn btn-gray";
       back.style.marginTop = "8px";
-      back.innerText = "PINを入れ直して再読み込み";
-      back.onclick = () => {
-        document.getElementById('external-admin-pin-panel').style.display = "block";
-        listEl.style.display = "none";
-        listEl.innerHTML = "";
-      };
+      back.innerText = "管理メニューにもどる";
+      back.onclick = () => { backToParentAdminHub(); };
       listEl.appendChild(back);
     }
 
