@@ -172,7 +172,7 @@ function getTrainingRouteOptionLists_() {
   return {
     qFormats: [
       "日本語→英単語", "日本語→英語（並び替え）", "英単語→日本語", "音声→日本語", "音声→英単語",
-      "英語→英語", "漢字→採点チャレンジ"
+      "疑問文→英語", "英語読み上げ→英語", "英語→英語", "漢字→採点チャレンジ"
     ],
     aFormats: [
       "4択", "タイピング", "音声", "穴埋め4択", "穴埋めタイピング",
@@ -181,6 +181,99 @@ function getTrainingRouteOptionLists_() {
     ],
     modes: ["ランダム", "順番"]
   };
+}
+
+function findTrainingMaterialForUnit_(unitName, materials) {
+  const unit = String(unitName || "").trim();
+  if (!unit) return null;
+  for (let i = 0; i < materials.length; i++) {
+    const m = materials[i];
+    if ((m.units || []).some(function (u) { return String(u) === unit; })) return m;
+  }
+  return null;
+}
+
+function getLearnerFormatOptionsForTraining_(modeName, category) {
+  if (category === "kanji" || /漢字/.test(String(modeName || ""))) {
+    return [{ value: "kanji_hand", qFormat: "漢字→採点チャレンジ" }];
+  }
+  const isWord = String(modeName || "").indexOf("単語") >= 0;
+  if (isWord) {
+    return [
+      { value: "ja_to_en", qFormat: "日本語→英単語" },
+      { value: "en_to_ja", qFormat: "英単語→日本語" },
+      { value: "en_audio_to_ja", qFormat: "音声→日本語" },
+      { value: "en_audio_to_en", qFormat: "英語読み上げ→英語" },
+      { value: "en_to_en", qFormat: "英語→英語" }
+    ];
+  }
+  return [
+    { value: "ja_to_en", qFormat: "日本語→英単語" },
+    { value: "ja_to_en_sort", qFormat: "日本語→英語（並び替え）" },
+    { value: "en_to_ja", qFormat: "英単語→日本語" },
+    { value: "qtext_to_en", qFormat: "疑問文→英語" },
+    { value: "qaudio_to_en", qFormat: "音声→英単語" },
+    { value: "en_audio_to_en", qFormat: "英語読み上げ→英語" },
+    { value: "en_to_en", qFormat: "英語→英語" }
+  ];
+}
+
+function getLearnerAnswerOptionsForTraining_(format, modeName) {
+  const isWord = String(modeName || "").indexOf("単語") >= 0;
+  const out = [];
+  function add(value, aFormat) { out.push({ value: value, aFormat: aFormat }); }
+  if (format === "kanji_hand") { add("hand_grade", "採点"); return out; }
+  if (format === "ja_to_en_sort") {
+    add("sort_all", "すべて用いる"); add("sort_dummy", "不要語混入"); add("sort_missing", "不足語補足"); return out;
+  }
+  if (format === "ja_to_en") {
+    add("4choice", "4択"); add("typing", "タイピング"); add("voice", "音声");
+    if (isWord) { add("fill_4choice", "穴埋め4択"); add("fill_typing", "穴埋めタイピング"); }
+    return out;
+  }
+  if (format === "qtext_to_en" || format === "qaudio_to_en") {
+    if (format !== "qaudio_to_en") add("4choice", "4択");
+    add("typing", "タイピング"); add("voice", "音声");
+    return out;
+  }
+  if (format === "en_to_ja" || format === "en_audio_to_ja") { add("4choice", "4択"); return out; }
+  if (format === "en_audio_to_en") {
+    add("4choice", "4択"); add("typing", "タイピング"); add("voice", "音声");
+    if (isWord) { add("fill_4choice", "穴埋め4択"); add("fill_typing", "穴埋めタイピング"); }
+    return out;
+  }
+  if (format === "en_to_en") {
+    add("typing", "タイピング"); add("voice", "音声");
+    if (!isWord) {
+      add("initial_typing", "タイピング（イニシャル）"); add("sheet_fill_typing", "タイピング（穴埋め）");
+      add("initial_voice", "音声入力（イニシャル）"); add("sheet_fill_voice", "音声入力（穴埋め）");
+    }
+    return out;
+  }
+  return out;
+}
+
+function isValidTrainingRouteCombo_(unitName, qFormat, aFormat, materials) {
+  const q = String(qFormat || "").trim();
+  const a = String(aFormat || "").trim();
+  if (!q || !a) return false;
+  const mat = findTrainingMaterialForUnit_(unitName, materials);
+  if (!mat) return false;
+  const modeName = String(mat.modeName || "");
+  const category = (mat.category === "kanji" || /漢字/.test(modeName)) ? "kanji" : "english";
+  const formats = getLearnerFormatOptionsForTraining_(modeName, category);
+  const fmt = formats.find(function (f) { return f.qFormat === q; });
+  if (!fmt) return false;
+  const answers = getLearnerAnswerOptionsForTraining_(fmt.value, modeName);
+  return answers.some(function (x) { return x.aFormat === a; });
+}
+
+function getKnownBasePointSettingKeys_() {
+  const keys = {};
+  getDefaultAppSettingsRows_().forEach(function (row) {
+    if (String(row[0]).indexOf("基本Pt_") === 0) keys[String(row[0])] = true;
+  });
+  return keys;
 }
 
 function readTrainingMenuRoutes_(sheet) {
@@ -522,6 +615,7 @@ function doPost(e) {
     else if (action === "save_training_menu_meta") return handleSaveTrainingMenuMeta(requestData);
     else if (action === "save_training_menu_route") return handleSaveTrainingMenuRoute(requestData);
     else if (action === "delete_training_menu_route") return handleDeleteTrainingMenuRoute(requestData);
+    else if (action === "save_training_base_point") return handleSaveTrainingBasePoint(requestData);
     
     else return sendResponse({ status: "error", message: "無効なactionです" });
   } catch (error) {
@@ -728,6 +822,10 @@ function handleGetTrainingMenuAdmin(req) {
   const materials = getMaterialsList_();
 
   const opts = getTrainingRouteOptionLists_();
+  const basePointSettings = {};
+  Object.keys(settings).forEach(function (k) {
+    if (k.indexOf("基本Pt_") === 0) basePointSettings[k] = settings[k];
+  });
   return sendResponse({
     status: "success",
     menus: menus,
@@ -736,7 +834,8 @@ function handleGetTrainingMenuAdmin(req) {
     colorPresets: defaultColors.map(function (c, idx) { return { id: "c" + idx, color: c }; }),
     qFormats: opts.qFormats,
     aFormats: opts.aFormats,
-    modes: opts.modes
+    modes: opts.modes,
+    basePointSettings: basePointSettings
   });
 }
 
@@ -766,11 +865,19 @@ function handleSaveTrainingMenuRoute(req) {
   const sheet = getTrainingMenuSheet_(adminSs, menuId);
   if (!sheet) return sendResponse({ status: "error", message: "特訓メニューシートが見つかりません" });
 
+  const materials = getMaterialsList_();
+  const qFormat = String(req.qFormat || "");
+  const aFormat = String(req.aFormat || "");
+  const unitName = String(req.unitName || "");
+  if (!isValidTrainingRouteCombo_(unitName, qFormat, aFormat, materials)) {
+    return sendResponse({ status: "error", message: "選んだ問題形式とこたえ方の組み合わせは、この単元では使えません。" });
+  }
+
   const row = [
     String(req.targetUsers || "全員"),
-    String(req.unitName || ""),
-    String(req.qFormat || ""),
-    String(req.aFormat || ""),
+    unitName,
+    qFormat,
+    aFormat,
     String(req.mode || "ランダム"),
     req.blankCount != null && String(req.blankCount).trim() !== "" ? req.blankCount : ""
   ];
@@ -793,6 +900,22 @@ function handleSaveTrainingMenuRoute(req) {
     mode: row[4],
     blankCount: row[5]
   }});
+}
+
+function handleSaveTrainingBasePoint(req) {
+  const adminSs = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty("ADMIN_SS_ID"));
+  const v = verifyExternalAdminPin_(adminSs, req.adminPin);
+  if (!v.ok) return sendResponse({ status: "error", message: v.message });
+
+  const settingKey = String(req.settingKey || "").trim();
+  const known = getKnownBasePointSettingKeys_();
+  if (!known[settingKey]) return sendResponse({ status: "error", message: "無効な設定キーです" });
+
+  const num = Number(req.value);
+  if (isNaN(num) || num < 0) return sendResponse({ status: "error", message: "0以上の数値を入力してください" });
+
+  setAppSettingValue_(adminSs, settingKey, num);
+  return sendResponse({ status: "success", message: "点数を保存しました", settingKey: settingKey, value: num });
 }
 
 function handleDeleteTrainingMenuRoute(req) {

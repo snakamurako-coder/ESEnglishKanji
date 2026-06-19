@@ -213,6 +213,11 @@
     .training-admin-route-table th { color: #bbb; font-weight: normal; text-align: left; }
     .training-admin-route-form { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; margin-top: 12px; }
     .training-admin-msg { min-height: 1.2em; margin: 10px auto; max-width: 720px; text-align: center; font-size: 14px; }
+    .training-admin-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0 16px; }
+    .training-admin-tab { flex: 1 1 140px; padding: 10px 12px; border-radius: 10px; border: 2px solid #555; background: #1a1a1a; color: #ccc; font-weight: bold; cursor: pointer; }
+    .training-admin-tab.active { border-color: #9C27B0; background: #2a1a32; color: #CE93D8; }
+    .training-admin-points-form { max-width: 420px; margin-top: 12px; padding: 14px; background: #222; border: 1px solid #444; border-radius: 12px; }
+    .training-admin-points-key { font-size: 11px; color: #888; word-break: break-all; margin-top: 6px; }
     #quiz-keyboard-settings-panel { margin-top: 16px; }
 
     /* 並び替え（表現練習） */
@@ -2196,6 +2201,11 @@
     </div>
     <div id="training-admin-message" class="training-admin-msg" style="color:#ff8a80;"></div>
     <div id="training-admin-main" class="training-admin-wrap" style="display:none;">
+      <div class="training-admin-tabs">
+        <button type="button" id="training-admin-tab-menus" class="training-admin-tab active" onclick="switchTrainingAdminTab('menus')">メニュー・ルート</button>
+        <button type="button" id="training-admin-tab-points" class="training-admin-tab" onclick="switchTrainingAdminTab('points')">問題形式の点数</button>
+      </div>
+      <div id="training-admin-panel-menus">
       <p style="color:#aaa;font-size:14px;line-height:1.5;">「表示する」にチェックを入れたメニューだけ、子ども画面の特訓メニューに出ます。ボタンの色もここで設定できます。</p>
       <div id="training-admin-menu-grid" class="training-admin-menu-grid"></div>
       <div id="training-admin-route-panel" class="training-admin-route-panel" style="display:none;">
@@ -2210,6 +2220,12 @@
           <button type="button" id="training-admin-route-save-btn" class="submit-btn btn-green" style="margin:0;" onclick="saveTrainingAdminRoute()">ルートを保存</button>
           <button type="button" class="cancel-btn" style="margin:0;" onclick="resetTrainingAdminRouteForm()">入力をクリア</button>
         </div>
+      </div>
+      </div>
+      <div id="training-admin-panel-points" style="display:none;">
+        <p style="color:#aaa;font-size:14px;line-height:1.5;">学習者が選ぶのと同じプルダウンで、問題形式ごとの基本ポイント（1問あたり）を設定できます。値は <code style="color:#9C27B0;">アプリ設定</code> シートに保存されます。</p>
+        <div id="training-admin-points-form" class="training-admin-points-form"></div>
+        <button type="button" class="submit-btn btn-green" style="margin-top:12px;" onclick="saveTrainingAdminBasePoint()">この組み合わせの点数を保存</button>
       </div>
       <button type="button" class="cancel-btn" style="margin:20px auto 0;display:block;" onclick="logoutTrainingMenuAdmin()">ログアウト</button>
     </div>
@@ -4490,6 +4506,8 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         else if (route.qFormat === "英単語→日本語") mappedFormat = "en_to_ja";
         else if (route.qFormat === "音声→日本語") mappedFormat = "en_audio_to_ja";
         else if (route.qFormat === "音声→英単語") mappedFormat = "qaudio_to_en";
+        else if (route.qFormat === "疑問文→英語") mappedFormat = "qtext_to_en";
+        else if (route.qFormat === "英語読み上げ→英語") mappedFormat = "en_audio_to_en";
         else if (route.qFormat === "英語→英語" || route.qFormat === "英単語→英単語") mappedFormat = "en_to_en";
         
         if (route.aFormat === "タイピング") mappedAnsType = "typing";
@@ -4813,6 +4831,178 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       }).catch(() => alert("通信エラーが発生しました。"));
     }
 
+    // ====== 学習形式・こたえ方（学習者UIと特訓管理で共通） ======
+    const TRAINING_QFORMAT_TO_INTERNAL = {
+      "日本語→英単語": "ja_to_en",
+      "日本語→英語（並び替え）": "ja_to_en_sort",
+      "並び替え（日本語付き）": "ja_to_en_sort",
+      "英単語→日本語": "en_to_ja",
+      "音声→日本語": "en_audio_to_ja",
+      "音声→英単語": "qaudio_to_en",
+      "疑問文→英語": "qtext_to_en",
+      "英語→英語": "en_to_en",
+      "英単語→英単語": "en_to_en",
+      "英語読み上げ→英語": "en_audio_to_en",
+      "漢字→採点チャレンジ": "kanji_hand"
+    };
+    const TRAINING_AFORMAT_TO_INTERNAL = {
+      "4択": "4choice",
+      "タイピング": "typing",
+      "音声": "voice",
+      "穴埋め4択": "fill_4choice",
+      "穴埋めタイピング": "fill_typing",
+      "タイピング（イニシャル）": "initial_typing",
+      "タイピング（穴埋め）": "sheet_fill_typing",
+      "音声入力（イニシャル）": "initial_voice",
+      "音声入力（穴埋め）": "sheet_fill_voice",
+      "すべて用いる": "sort_all",
+      "不要語混入": "sort_dummy",
+      "不足語補足": "sort_missing",
+      "採点": "hand_grade"
+    };
+
+    function trainingRouteLabelsToInternal(qFormat, aFormat) {
+      const format = TRAINING_QFORMAT_TO_INTERNAL[String(qFormat || "").trim()] || "";
+      let ansType = TRAINING_AFORMAT_TO_INTERNAL[String(aFormat || "").trim()] || "";
+      if (format === "en_to_ja" || format === "en_audio_to_ja") ansType = "4choice";
+      return { format: format, ansType: ansType };
+    }
+
+    function findTrainingMaterialForUnit(unitName, materials) {
+      const unit = String(unitName || "").trim();
+      if (!unit) return null;
+      const mats = materials || (trainingAdminData && trainingAdminData.materials) || materialsData || [];
+      for (let i = 0; i < mats.length; i++) {
+        const m = mats[i];
+        if ((m.units || []).some(function (u) { return String(u) === unit; })) return m;
+      }
+      return null;
+    }
+
+    function getTrainingModeNameForUnit(unitName, materials) {
+      const m = findTrainingMaterialForUnit(unitName, materials);
+      return m ? String(m.modeName || "") : "";
+    }
+
+    function getTrainingCategoryForUnit(unitName, materials) {
+      const m = findTrainingMaterialForUnit(unitName, materials);
+      if (!m) return "english";
+      if (m.category === "kanji" || /漢字/.test(String(m.modeName || ""))) return "kanji";
+      return "english";
+    }
+
+    function getLearnerFormatOptions(modeName, category) {
+      if (category === "kanji" || /漢字/.test(String(modeName || ""))) {
+        return [{ value: "kanji_hand", label: "漢字 → 採点チャレンジ", qFormat: "漢字→採点チャレンジ" }];
+      }
+      const isWord = String(modeName || "").includes("単語");
+      if (isWord) {
+        return [
+          { value: "ja_to_en", label: "日本語 ➔ 英語にする", qFormat: "日本語→英単語" },
+          { value: "en_to_ja", label: "英語 ➔ 日本語にする", qFormat: "英単語→日本語" },
+          { value: "en_audio_to_ja", label: "英語読み上げ ➔ 日本語にする", qFormat: "音声→日本語" },
+          { value: "en_audio_to_en", label: "英語読み上げ ➔ 英語にする", qFormat: "英語読み上げ→英語" },
+          { value: "en_to_en", label: "英語 ➔ 英語にする", qFormat: "英語→英語" }
+        ];
+      }
+      return [
+        { value: "ja_to_en", label: "日本語 ➔ 英語にする", qFormat: "日本語→英単語" },
+        { value: "ja_to_en_sort", label: "並び替え（日本語付き）", qFormat: "日本語→英語（並び替え）" },
+        { value: "en_to_ja", label: "英語 ➔ 日本語にする", qFormat: "英単語→日本語" },
+        { value: "qtext_to_en", label: "疑問文 ➔ 英語にする", qFormat: "疑問文→英語" },
+        { value: "qaudio_to_en", label: "疑問文(読み上げ) ➔ 英語にする", qFormat: "音声→英単語" },
+        { value: "en_audio_to_en", label: "英語読み上げ ➔ 英語にする", qFormat: "英語読み上げ→英語" },
+        { value: "en_to_en", label: "英語 ➔ 英語にする", qFormat: "英語→英語" }
+      ];
+    }
+
+    function getLearnerAnswerOptions(format, modeName) {
+      const isWord = String(modeName || "").includes("単語");
+      const opts = [];
+      function add(value, label, aFormat) { opts.push({ value: value, label: label, aFormat: aFormat }); }
+      if (format === "kanji_hand") {
+        add("hand_grade", "採点", "採点");
+        return opts;
+      }
+      if (format === "ja_to_en_sort") {
+        add("sort_all", "すべて用いる", "すべて用いる");
+        add("sort_dummy", "不要語混入", "不要語混入");
+        add("sort_missing", "不足語補足", "不足語補足");
+        return opts;
+      }
+      if (format === "ja_to_en") {
+        add("4choice", "４択（えらぶ）", "4択");
+        add("typing", "タイピング（入力する）", "タイピング");
+        add("voice", "🎙️ 音声入力（マイク）", "音声");
+        if (isWord) {
+          add("fill_4choice", "🔠 穴埋め（４択）", "穴埋め4択");
+          add("fill_typing", "⌨️ 穴埋め（タイピング）", "穴埋めタイピング");
+        }
+        return opts;
+      }
+      if (format === "qtext_to_en" || format === "qaudio_to_en") {
+        if (format !== "qaudio_to_en") add("4choice", "４択（えらぶ）", "4択");
+        add("typing", "タイピング（入力する）", "タイピング");
+        add("voice", "🎙️ 音声入力（マイク）", "音声");
+        return opts;
+      }
+      if (format === "en_to_ja" || format === "en_audio_to_ja") {
+        add("4choice", "４択（えらぶ）", "4択");
+        return opts;
+      }
+      if (format === "en_audio_to_en") {
+        add("4choice", "４択（えらぶ）", "4択");
+        add("typing", "タイピング（入力する）", "タイピング");
+        add("voice", "🎙️ 音声入力（マイク）", "音声");
+        if (isWord) {
+          add("fill_4choice", "🔠 穴埋め（４択）", "穴埋め4択");
+          add("fill_typing", "⌨️ 穴埋め（タイピング）", "穴埋めタイピング");
+        }
+        return opts;
+      }
+      if (format === "en_to_en") {
+        add("typing", "タイピング（入力する）", "タイピング");
+        add("voice", "🎙️ 音声入力（マイク）", "音声");
+        if (!isWord) {
+          add("initial_typing", "タイピング（イニシャル）", "タイピング（イニシャル）");
+          add("sheet_fill_typing", "タイピング（穴埋め）", "タイピング（穴埋め）");
+          add("initial_voice", "🎙️ 音声入力（イニシャル）", "音声入力（イニシャル）");
+          add("sheet_fill_voice", "🎙️ 音声入力（穴埋め）", "音声入力（穴埋め）");
+        }
+        return opts;
+      }
+      return opts;
+    }
+
+    function isValidTrainingRouteCombo(unitName, qFormat, aFormat, materials) {
+      const parsed = trainingRouteLabelsToInternal(qFormat, aFormat);
+      if (!parsed.format || !parsed.ansType) return false;
+      const modeName = getTrainingModeNameForUnit(unitName, materials);
+      const category = getTrainingCategoryForUnit(unitName, materials);
+      if (!modeName && category !== "kanji") return false;
+      const formats = getLearnerFormatOptions(modeName, category);
+      const fmt = formats.find(function (f) { return f.qFormat === String(qFormat || "").trim(); });
+      if (!fmt) return false;
+      const answers = getLearnerAnswerOptions(fmt.value, modeName);
+      return answers.some(function (a) { return a.aFormat === String(aFormat || "").trim(); });
+    }
+
+    function getAllEnglishBasePointCombos() {
+      const seen = {};
+      const out = [];
+      ["単語モード", "表現モード"].forEach(function (modeName) {
+        getLearnerFormatOptions(modeName, "english").forEach(function (f) {
+          getLearnerAnswerOptions(f.value, modeName).forEach(function (a) {
+            const key = "基本Pt_" + f.value + "_" + a.value;
+            if (seen[key]) return;
+            seen[key] = true;
+            out.push({ format: f.value, formatLabel: f.label, ansType: a.value, ansLabel: a.label, settingKey: key });
+          });
+        });
+      });
+      return out;
+    }
+
     // ====== 特訓メニュー管理（管理者） ======
     let trainingAdminData = null;
     let trainingAdminEditingMenuId = null;
@@ -4860,9 +5050,23 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         trainingAdminData = d;
         document.getElementById('training-admin-pin-panel').style.display = "none";
         document.getElementById('training-admin-main').style.display = "block";
+        switchTrainingAdminTab('menus');
         renderTrainingAdminMenuGrid();
         setTrainingAdminMessage("", true);
       }).catch(() => setTrainingAdminMessage("通信エラー", false));
+    }
+
+    function switchTrainingAdminTab(tab) {
+      const isMenus = tab === "menus";
+      const tabMenus = document.getElementById('training-admin-tab-menus');
+      const tabPoints = document.getElementById('training-admin-tab-points');
+      const panelMenus = document.getElementById('training-admin-panel-menus');
+      const panelPoints = document.getElementById('training-admin-panel-points');
+      if (tabMenus) tabMenus.classList.toggle('active', isMenus);
+      if (tabPoints) tabPoints.classList.toggle('active', !isMenus);
+      if (panelMenus) panelMenus.style.display = isMenus ? "block" : "none";
+      if (panelPoints) panelPoints.style.display = isMenus ? "none" : "block";
+      if (!isMenus) renderTrainingAdminPointsForm();
     }
 
     function renderTrainingAdminMenuGrid() {
@@ -4982,12 +5186,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       const form = document.getElementById('training-admin-route-form');
       if (!form || !trainingAdminData) return;
       const r = route || {};
-      const qOpts = (trainingAdminData.qFormats || []).map(function (q) {
-        return `<option value="${escapeHtml(q)}"${q === r.qFormat ? " selected" : ""}>${escapeHtml(q)}</option>`;
-      }).join("");
-      const aOpts = (trainingAdminData.aFormats || []).map(function (a) {
-        return `<option value="${escapeHtml(a)}"${a === r.aFormat ? " selected" : ""}>${escapeHtml(a)}</option>`;
-      }).join("");
+      const parsed = trainingRouteLabelsToInternal(r.qFormat, r.aFormat);
       const mOpts = (trainingAdminData.modes || ["ランダム", "順番"]).map(function (m) {
         return `<option value="${escapeHtml(m)}"${m === (r.mode || "ランダム") ? " selected" : ""}>${escapeHtml(m)}</option>`;
       }).join("");
@@ -4999,10 +5198,146 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       form.innerHTML =
         `<div class="training-admin-field"><label>対象ユーザー</label><select id="train-admin-route-users">${userOpts}</select></div>` +
         `<div class="training-admin-field"><label>単元</label><select id="train-admin-route-unit">${buildTrainingAdminUnitOptionsHtml(r.unitName)}</select></div>` +
-        `<div class="training-admin-field"><label>問題の形式</label><select id="train-admin-route-q">${qOpts}</select></div>` +
-        `<div class="training-admin-field"><label>こたえ方</label><select id="train-admin-route-a">${aOpts}</select></div>` +
-        `<div class="training-admin-field"><label>出し方</label><select id="train-admin-route-mode">${mOpts}</select></div>` +
-        `<div class="training-admin-field"><label>隠す文字数</label><input type="number" id="train-admin-route-blank" min="0" max="20" value="${escapeHtml(r.blankCount != null ? String(r.blankCount) : "")}" placeholder="穴埋め時のみ"></div>`;
+        `<div class="training-admin-field" style="grid-column:1/-1;"><label>1. もんだいの形式</label><select id="train-admin-route-format" class="large-select"></select></div>` +
+        `<div class="training-admin-field" style="grid-column:1/-1;"><label>2. こたえ方</label><select id="train-admin-route-a" class="large-select"></select></div>` +
+        `<div class="training-admin-field"><label>3. 出し方</label><select id="train-admin-route-mode">${mOpts}</select></div>` +
+        `<div class="training-admin-field" id="train-admin-route-blank-wrap" style="display:none;"><label>4. 隠す文字数（穴埋め）</label><input type="number" id="train-admin-route-blank" min="1" max="20" value="${escapeHtml(r.blankCount != null ? String(r.blankCount) : "1")}" placeholder="1以上"></div>`;
+      bindTrainingAdminRouteFormEvents(parsed.format, parsed.ansType);
+    }
+
+    function bindTrainingAdminRouteFormEvents(initialFormat, initialAnsType) {
+      const unitEl = document.getElementById('train-admin-route-unit');
+      const formatEl = document.getElementById('train-admin-route-format');
+      const ansEl = document.getElementById('train-admin-route-a');
+      const blankWrap = document.getElementById('train-admin-route-blank-wrap');
+      if (!unitEl || !formatEl || !ansEl) return;
+
+      function refreshFormatOptions(preferredFormat, preferredAns) {
+        const unit = unitEl.value;
+        const modeName = getTrainingModeNameForUnit(unit, trainingAdminData.materials);
+        const category = getTrainingCategoryForUnit(unit, trainingAdminData.materials);
+        const formats = unit ? getLearnerFormatOptions(modeName, category) : [];
+        if (!formats.length) {
+          formatEl.innerHTML = `<option value="">（先に単元を選んでください）</option>`;
+          ansEl.innerHTML = `<option value="">—</option>`;
+          if (blankWrap) blankWrap.style.display = "none";
+          return;
+        }
+        let selFormat = preferredFormat || formatEl.value;
+        if (!formats.some(function (f) { return f.value === selFormat; })) selFormat = formats[0].value;
+        formatEl.innerHTML = formats.map(function (f) {
+          const sel = f.value === selFormat ? " selected" : "";
+          return `<option value="${escapeHtml(f.value)}" data-qformat="${escapeHtml(f.qFormat)}"${sel}>${escapeHtml(f.label)}</option>`;
+        }).join("");
+        refreshAnswerOptions(preferredAns || "");
+      }
+
+      function refreshAnswerOptions(preferredAns) {
+        const unit = unitEl.value;
+        const format = formatEl.value;
+        const modeName = getTrainingModeNameForUnit(unit, trainingAdminData.materials);
+        const answers = format ? getLearnerAnswerOptions(format, modeName) : [];
+        if (!answers.length) {
+          ansEl.innerHTML = `<option value="">—</option>`;
+          updateBlankFieldVisibility();
+          return;
+        }
+        let selAns = preferredAns || ansEl.value;
+        if (!answers.some(function (a) { return a.value === selAns; })) selAns = answers[0].value;
+        ansEl.innerHTML = answers.map(function (a) {
+          const sel = a.value === selAns ? " selected" : "";
+          return `<option value="${escapeHtml(a.value)}" data-aformat="${escapeHtml(a.aFormat)}"${sel}>${escapeHtml(a.label)}</option>`;
+        }).join("");
+        updateBlankFieldVisibility();
+      }
+
+      function updateBlankFieldVisibility() {
+        const ansType = ansEl.value;
+        const show = isLegacyFillBlankAnswerType(ansType);
+        if (blankWrap) blankWrap.style.display = show ? "block" : "none";
+      }
+
+      unitEl.onchange = function () { refreshFormatOptions("", ""); };
+      formatEl.onchange = function () { refreshAnswerOptions(""); };
+      ansEl.onchange = updateBlankFieldVisibility;
+      refreshFormatOptions(initialFormat || "", initialAnsType || "");
+    }
+
+    function renderTrainingAdminPointsForm() {
+      const form = document.getElementById('training-admin-points-form');
+      if (!form) return;
+      const combos = getAllEnglishBasePointCombos();
+      const formatMap = {};
+      combos.forEach(function (c) {
+        if (!formatMap[c.format]) formatMap[c.format] = c.formatLabel;
+      });
+      const formatItems = Object.keys(formatMap).map(function (k) { return { value: k, label: formatMap[k] }; });
+      form.innerHTML =
+        `<div class="training-admin-field"><label>1. もんだいの形式</label><select id="train-admin-point-format" class="large-select"></select></div>` +
+        `<div class="training-admin-field"><label>2. こたえ方</label><select id="train-admin-point-answer" class="large-select"></select></div>` +
+        `<div class="training-admin-field"><label>基本ポイント（1問あたり）</label><input type="number" id="train-admin-point-value" min="0" max="999" step="1" value="20"></div>` +
+        `<div id="train-admin-point-key" class="training-admin-points-key"></div>`;
+      const formatEl = document.getElementById('train-admin-point-format');
+      const ansEl = document.getElementById('train-admin-point-answer');
+      const valueEl = document.getElementById('train-admin-point-value');
+      const keyEl = document.getElementById('train-admin-point-key');
+      const settings = (trainingAdminData && trainingAdminData.basePointSettings) || {};
+
+      function refreshAnswerOptions() {
+        const format = formatEl.value;
+        const answers = combos.filter(function (c) { return c.format === format; });
+        ansEl.innerHTML = answers.map(function (a, idx) {
+          return `<option value="${escapeHtml(a.ansType)}" data-key="${escapeHtml(a.settingKey)}"${idx === 0 ? " selected" : ""}>${escapeHtml(a.ansLabel)}</option>`;
+        }).join("");
+        syncPointValueFromSelection();
+      }
+
+      function syncPointValueFromSelection() {
+        const opt = ansEl.options[ansEl.selectedIndex];
+        const key = opt ? opt.getAttribute('data-key') : "";
+        if (keyEl) keyEl.innerText = key ? ("設定キー: " + key) : "";
+        if (key && valueEl && settings[key] != null && String(settings[key]).trim() !== "") {
+          valueEl.value = String(settings[key]);
+        }
+      }
+
+      formatEl.innerHTML = formatItems.map(function (f, idx) {
+        return `<option value="${escapeHtml(f.value)}"${idx === 0 ? " selected" : ""}>${escapeHtml(f.label)}</option>`;
+      }).join("");
+      formatEl.onchange = refreshAnswerOptions;
+      ansEl.onchange = syncPointValueFromSelection;
+      refreshAnswerOptions();
+    }
+
+    function saveTrainingAdminBasePoint() {
+      const formatEl = document.getElementById('train-admin-point-format');
+      const ansEl = document.getElementById('train-admin-point-answer');
+      const valueEl = document.getElementById('train-admin-point-value');
+      if (!formatEl || !ansEl || !valueEl) return;
+      const opt = ansEl.options[ansEl.selectedIndex];
+      const settingKey = opt ? opt.getAttribute('data-key') : "";
+      const pointValue = valueEl.value;
+      if (!settingKey) {
+        setTrainingAdminMessage("形式とこたえ方を選んでください", false);
+        return;
+      }
+      const pin = getTrainingAdminPin();
+      fetch(GAS_API_URL, { method: 'POST', body: JSON.stringify({
+        action: "save_training_base_point",
+        adminPin: pin,
+        settingKey: settingKey,
+        value: pointValue
+      }) })
+      .then(r => r.json()).then(d => {
+        if (d.status !== "success") {
+          setTrainingAdminMessage(d.message || "保存に失敗しました", false);
+          return;
+        }
+        if (!trainingAdminData.basePointSettings) trainingAdminData.basePointSettings = {};
+        trainingAdminData.basePointSettings[settingKey] = pointValue;
+        invalidateAppSettingsCache();
+        setTrainingAdminMessage("点数を保存しました（" + settingKey + " = " + pointValue + "）", true);
+      }).catch(function () { setTrainingAdminMessage("通信エラー", false); });
     }
 
     function openTrainingAdminRouteEditor(menuId) {
@@ -5057,20 +5392,35 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       if (!trainingAdminEditingMenuId) return;
       const menuId = trainingAdminEditingMenuId;
       const pin = getTrainingAdminPin();
+      const unitName = (document.getElementById('train-admin-route-unit') || {}).value || "";
+      const formatEl = document.getElementById('train-admin-route-format');
+      const ansEl = document.getElementById('train-admin-route-a');
+      const formatOpt = formatEl && formatEl.options[formatEl.selectedIndex];
+      const ansOpt = ansEl && ansEl.options[ansEl.selectedIndex];
+      const qFormat = formatOpt ? (formatOpt.getAttribute('data-qformat') || "") : "";
+      const aFormat = ansOpt ? (ansOpt.getAttribute('data-aformat') || "") : "";
       const payload = {
         action: "save_training_menu_route",
         adminPin: pin,
         menuId: menuId,
         rowIdx: trainingAdminEditingRouteRowIdx || undefined,
         targetUsers: (document.getElementById('train-admin-route-users') || {}).value || "全員",
-        unitName: (document.getElementById('train-admin-route-unit') || {}).value || "",
-        qFormat: (document.getElementById('train-admin-route-q') || {}).value || "",
-        aFormat: (document.getElementById('train-admin-route-a') || {}).value || "",
+        unitName: unitName,
+        qFormat: qFormat,
+        aFormat: aFormat,
         mode: (document.getElementById('train-admin-route-mode') || {}).value || "ランダム",
         blankCount: (document.getElementById('train-admin-route-blank') || {}).value || ""
       };
       if (!payload.unitName || !payload.qFormat || !payload.aFormat) {
-        setTrainingAdminMessage("単元・問題形式・こたえ方は必須です", false);
+        setTrainingAdminMessage("単元・問題形式・こたえ方を選んでください", false);
+        return;
+      }
+      if (!isValidTrainingRouteCombo(payload.unitName, payload.qFormat, payload.aFormat, trainingAdminData.materials)) {
+        setTrainingAdminMessage("選んだ組み合わせはこの単元では使えません。形式とこたえ方を確認してください", false);
+        return;
+      }
+      if (isLegacyFillBlankAnswerType(ansEl.value) && (!payload.blankCount || Number(payload.blankCount) < 1)) {
+        setTrainingAdminMessage("穴埋めのときは「隠す文字数」を1以上で入力してください", false);
         return;
       }
       fetch(GAS_API_URL, { method: 'POST', body: JSON.stringify(payload) })
@@ -9034,55 +9384,33 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       switchSection('section-settings'); 
       document.getElementById('settings-title').innerText=`【${currentModeName}】${formatUnitSheetDisplayLabel(currentUnitName)}`;
       const fSelect = document.getElementById('setting-format');
-      if (currentModeName.includes("単語")) { fSelect.innerHTML = `<option value="ja_to_en">日本語 ➔ 英語にする</option><option value="en_to_ja">英語 ➔ 日本語にする</option><option value="en_audio_to_ja">英語読み上げ ➔ 日本語にする</option><option value="en_audio_to_en">英語読み上げ ➔ 英語にする</option><option value="en_to_en">英語 ➔ 英語にする</option>`; } 
-      else { fSelect.innerHTML = `<option value="ja_to_en">日本語 ➔ 英語にする</option><option value="ja_to_en_sort">並び替え（日本語付き）</option><option value="en_to_ja">英語 ➔ 日本語にする</option><option value="qtext_to_en">疑問文 ➔ 英語にする</option><option value="qaudio_to_en">疑問文(読み上げ) ➔ 英語にする</option><option value="en_audio_to_en">英語読み上げ ➔ 英語にする</option><option value="en_to_en">英語 ➔ 英語にする</option>`; }
+      const category = getTrainingCategoryForUnit(currentUnitName, materialsData);
+      const formats = getLearnerFormatOptions(currentModeName, category);
+      fSelect.innerHTML = formats.map(function (f) {
+        return `<option value="${f.value}">${f.label}</option>`;
+      }).join('');
       updateAnswerTypeUI();
     }
 
     function updateAnswerTypeUI() {
       const format = document.getElementById('setting-format').value;
       const aSelect = document.getElementById('setting-answer-type');
-      aSelect.innerHTML = "";
-      const isWord = currentModeName.includes("単語");
-
-      if (format === "ja_to_en_sort") {
-        aSelect.innerHTML += `<option value="sort_all" selected>すべて用いる</option>`;
-        aSelect.innerHTML += `<option value="sort_dummy">不要語混入</option>`;
-        aSelect.innerHTML += `<option value="sort_missing">不足語補足</option>`;
-        toggleBlankSetting();
-        return;
-      }
-
-      if (format === "ja_to_en") {
-        aSelect.innerHTML += `<option value="4choice">４択（えらぶ）</option>`;
-        aSelect.innerHTML += `<option value="typing" selected>タイピング（入力する）</option>`;
-        aSelect.innerHTML += `<option value="voice">🎙️ 音声入力（マイク）</option>`;
-        if (isWord) {
-          aSelect.innerHTML += `<option value="fill_4choice">🔠 穴埋め（４択）</option>`;
-          aSelect.innerHTML += `<option value="fill_typing">⌨️ 穴埋め（タイピング）</option>`;
-        }
-      } else if (format === "qtext_to_en" || format === "qaudio_to_en") {
-        if(format !== "qaudio_to_en") aSelect.innerHTML += `<option value="4choice">４択（えらぶ）</option>`;
-        aSelect.innerHTML += `<option value="typing" selected>タイピング（入力する）</option><option value="voice">🎙️ 音声入力（マイク）</option>`;
-      } else if (format === "en_to_ja" || format === "en_audio_to_ja") {
-        aSelect.innerHTML += `<option value="4choice" selected>４択（えらぶ）</option>`;
-      } else if (format === "en_audio_to_en") {
-        aSelect.innerHTML += `<option value="4choice">４択（えらぶ）</option>`;
-        aSelect.innerHTML += `<option value="typing" selected>タイピング（入力する）</option>`;
-        aSelect.innerHTML += `<option value="voice">🎙️ 音声入力（マイク）</option>`;
-        if (isWord) {
-          aSelect.innerHTML += `<option value="fill_4choice">🔠 穴埋め（４択）</option>`;
-          aSelect.innerHTML += `<option value="fill_typing">⌨️ 穴埋め（タイピング）</option>`;
-        }
-      } else if (format === "en_to_en") {
-        aSelect.innerHTML += `<option value="typing" selected>タイピング（入力する）</option>`;
-        aSelect.innerHTML += `<option value="voice">🎙️ 音声入力（マイク）</option>`;
-        if (!isWord) {
-          aSelect.innerHTML += `<option value="initial_typing">タイピング（イニシャル）</option>`;
-          aSelect.innerHTML += `<option value="sheet_fill_typing">タイピング（穴埋め）</option>`;
-          aSelect.innerHTML += `<option value="initial_voice">🎙️ 音声入力（イニシャル）</option>`;
-          aSelect.innerHTML += `<option value="sheet_fill_voice">🎙️ 音声入力（穴埋め）</option>`;
-        }
+      const answers = getLearnerAnswerOptions(format, currentModeName);
+      aSelect.innerHTML = answers.map(function (a) {
+        return `<option value="${a.value}">${a.label}</option>`;
+      }).join('');
+      const defaultAns = {
+        ja_to_en_sort: "sort_all",
+        ja_to_en: "typing",
+        qtext_to_en: "typing",
+        qaudio_to_en: "typing",
+        en_to_ja: "4choice",
+        en_audio_to_ja: "4choice",
+        en_audio_to_en: "typing",
+        en_to_en: "typing"
+      }[format] || (answers[0] ? answers[0].value : "");
+      if (defaultAns && Array.from(aSelect.options).some(function (o) { return o.value === defaultAns; })) {
+        aSelect.value = defaultAns;
       }
       toggleBlankSetting();
     }
