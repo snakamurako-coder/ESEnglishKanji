@@ -375,6 +375,9 @@ function setupSystem() {
     usersSheet.appendRow(["ID", "名前", "PIN", "合計ポイント", "最終学習日時_JSON", "履歴_JSON", "日別ポイント_JSON", "特訓進捗_JSON"]);
     usersSheet.appendRow(["user_1", "テスト太郎", "1234", 100, "{}", "{}", "{}", "{}"]);
 
+    const englishHistSheet = adminSs.insertSheet("english_unit_history");
+    englishHistSheet.appendRow(["userId", "unitId", "unitHistoryJson", "updatedAt"]);
+
     const rewardsSheet = adminSs.insertSheet("rewards");
     rewardsSheet.appendRow(["ID", "名前", "必要ポイント", "説明"]);
     rewardsSheet.appendRow(["r_1", "YouTube視聴1時間延長券", 50, "管理者に提示して使ってね。"]);
@@ -586,6 +589,7 @@ function doPost(e) {
     const action = requestData.action;
 
     if (action === "save_learning_session") return handleSaveLearningSession(requestData);
+    else if (action === "get_english_unit_history") return handleGetEnglishUnitHistory(requestData);
     else if (action === "get_child_users") return handleGetChildUsers(requestData);
     else if (action === "verify_kid_pin") return handleVerifyKidPin(requestData);
     else if (action === "get_materials_list") return handleGetMaterialsList(requestData);
@@ -1305,6 +1309,129 @@ function buildHistoryUnitPatchForSession_(unitHistory, resultsList) {
   return patch;
 }
 
+var ENGLISH_UNIT_HISTORY_SHEET_NAME_ = "english_unit_history";
+var ENGLISH_UNIT_HISTORY_JSON_MAX_CHARS_ = 40000;
+
+function ensureEnglishUnitHistorySheet_(adminSs) {
+  let sheet = adminSs.getSheetByName(ENGLISH_UNIT_HISTORY_SHEET_NAME_);
+  if (!sheet) {
+    sheet = adminSs.insertSheet(ENGLISH_UNIT_HISTORY_SHEET_NAME_);
+    sheet.appendRow(["userId", "unitId", "unitHistoryJson", "updatedAt"]);
+  }
+  return sheet;
+}
+
+function findEnglishUnitHistoryRowIndex_(sheet, userId, unitId) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return -1;
+  const uid = String(userId || "");
+  const uId = String(unitId || "");
+  const data = sheet.getRange(2, 1, lastRow, 2).getValues();
+  for (let i = 0; i < data.length; i++) {
+    if (String(data[i][0]) === uid && String(data[i][1]) === uId) return i + 2;
+  }
+  return -1;
+}
+
+function loadEnglishUnitHistory_(adminSs, userId, unitId) {
+  const sheet = ensureEnglishUnitHistorySheet_(adminSs);
+  const rowIdx = findEnglishUnitHistoryRowIndex_(sheet, userId, unitId);
+  if (rowIdx < 0) return {};
+  return safeParseUserJsonCell_(sheet.getRange(rowIdx, 3).getValue(), {});
+}
+
+function saveEnglishUnitHistory_(adminSs, userId, unitId, unitHistoryMap, nowIso) {
+  const sheet = ensureEnglishUnitHistorySheet_(adminSs);
+  const map = unitHistoryMap || {};
+  pruneUnitHistoryQuestions_(map, UNIT_HISTORY_MAX_QUESTION_KEYS_);
+  let serialized = JSON.stringify(map);
+  if (serialized.length > ENGLISH_UNIT_HISTORY_JSON_MAX_CHARS_) {
+    pruneUnitHistoryQuestions_(map, Math.max(40, Math.floor(UNIT_HISTORY_MAX_QUESTION_KEYS_ / 2)));
+    serialized = JSON.stringify(map);
+  }
+  const rowValues = [String(userId || ""), String(unitId || ""), serialized, nowIso || new Date().toISOString()];
+  const rowIdx = findEnglishUnitHistoryRowIndex_(sheet, userId, unitId);
+  if (rowIdx >= 0) {
+    sheet.getRange(rowIdx, 1, rowIdx, 4).setValues([rowValues]);
+  } else {
+    sheet.appendRow(rowValues);
+  }
+  return map;
+}
+
+function mergeSessionResultsIntoUnitHistory_(unitHistory, resultsList) {
+  const map = unitHistory || {};
+  (Array.isArray(resultsList) ? resultsList : []).forEach(function (res, idx) {
+    const qId = normalizeQuestionIdForHistory_(res && res.questionId, idx);
+    if (!map[qId]) map[qId] = { results: [], times: [] };
+    map[qId].results.push(res && res.isCorrect ? 1 : 0);
+    if (map[qId].results.length > 10) map[qId].results.shift();
+    const timeSec = Number(res && res.timeSec);
+    map[qId].times.push(!isNaN(timeSec) ? timeSec : 0);
+    if (map[qId].times.length > 10) map[qId].times.shift();
+  });
+  return map;
+}
+
+function loadEnglishUnitHistoryWithMigration_(adminSs, userId, unitId, legacyJsonUnit) {
+  let map = loadEnglishUnitHistory_(adminSs, userId, unitId);
+  if ((!map || Object.keys(map).length === 0) && legacyJsonUnit && typeof legacyJsonUnit === "object") {
+    map = legacyJsonUnit;
+  }
+  return map || {};
+}
+
+function stripEnglishUnitKeysFromHistoryJson_(historyJson) {
+  const root = historyJson || {};
+  Object.keys(root).forEach(function (k) {
+    if (k && !String(k).startsWith("__")) delete root[k];
+  });
+  return root;
+}
+
+function usesEnglishUnitHistorySheet_(req, unitId) {
+  if (req.learningCategory === "kanji" && req.challengeType === "score" && req.kanjiChar) return false;
+  const uid = String(unitId || "");
+  return !!uid && !uid.startsWith("__");
+}
+
+function migrateEnglishUnitHistoryFromUserJson_(adminSs, usersSheet, userId, unitId) {
+  const data = usersSheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] !== userId) continue;
+    const hist = safeParseUserJsonCell_(data[i][5], {});
+    const legacy = hist[unitId];
+    if (!legacy || typeof legacy !== "object") return loadEnglishUnitHistory_(adminSs, userId, unitId);
+    const merged = loadEnglishUnitHistoryWithMigration_(adminSs, userId, unitId, legacy);
+    saveEnglishUnitHistory_(adminSs, userId, unitId, merged, new Date().toISOString());
+    delete hist[unitId];
+    const userData = {
+      historyJson: hist,
+      lastStudyJson: safeParseUserJsonCell_(data[i][4], {}),
+      dailyPointsJson: safeParseUserJsonCell_(data[i][6], {}),
+      trainingProgressJson: safeParseUserJsonCell_(data[i][7], {})
+    };
+    normalizeUserJsonBeforeSave_(userData);
+    usersSheet.getRange(i + 1, 6).setValue(JSON.stringify(userData.historyJson));
+    return merged;
+  }
+  return loadEnglishUnitHistory_(adminSs, userId, unitId);
+}
+
+function handleGetEnglishUnitHistory(req) {
+  const userId = String(req.userId || "");
+  const unitId = String(req.unitId || "");
+  if (!userId || !unitId) return sendResponse({ status: "error", message: "userId と unitId が必要です" });
+  const props = PropertiesService.getScriptProperties();
+  const adminSs = SpreadsheetApp.openById(props.getProperty("ADMIN_SS_ID"));
+  const usersSheet = adminSs.getSheetByName("users");
+  let map = loadEnglishUnitHistory_(adminSs, userId, unitId);
+  if (!map || Object.keys(map).length === 0) {
+    map = migrateEnglishUnitHistoryFromUserJson_(adminSs, usersSheet, userId, unitId);
+  }
+  return sendResponse({ status: "success", unitId: unitId, historyUnit: map || {} });
+}
+
 function writeUserLearningRow_(usersSheet, targetRowIdx, userData, newTotalPoints) {
   normalizeUserJsonBeforeSave_(userData);
   const rowValues = [
@@ -1382,9 +1509,16 @@ function handleSaveLearningSession(req) {
   if (targetRowIdx === -1) return sendResponse({ status: "error", message: "ユーザーが見つかりません" });
 
   const priorLock = getSessionSubmitLock_(userData, req.sessionSubmitId);
+  const unitId = String(req.unitId || "");
+  const useEnglishHistorySheet = usesEnglishUnitHistorySheet_(req, unitId);
   if (priorLock) {
     const sheetPointPercent = parseUnitSheetPointPercent_(req.unitSheetName);
-    const unitId = String(req.unitId || "");
+    let patchSource = {};
+    if (useEnglishHistorySheet) {
+      patchSource = loadEnglishUnitHistory_(adminSs, req.userId, unitId);
+    } else if (userData.historyJson[unitId]) {
+      patchSource = userData.historyJson[unitId];
+    }
     const resp = {
       status: "success",
       earnedPoints: priorLock.earnedPoints,
@@ -1393,7 +1527,7 @@ function handleSaveLearningSession(req) {
       bonusApplied: req.isRandom,
       sheetPointPercent: sheetPointPercent,
       historyUnitId: unitId,
-      historyUnitPatch: buildHistoryUnitPatchForSession_(userData.historyJson[unitId], req.results),
+      historyUnitPatch: buildHistoryUnitPatchForSession_(patchSource, req.results),
       dailyPointsJson: userData.dailyPointsJson
     };
     if (req.trainingStepIndex) {
@@ -1421,12 +1555,19 @@ function handleSaveLearningSession(req) {
   if (req.isRandom) multiplier += 0.1;
 
   let sessionRawPoints = 0;
-  const unitId = String(req.unitId || "");
-  if (!userData.historyJson[unitId]) userData.historyJson[unitId] = {};
-  const unitHistory = userData.historyJson[unitId];
   const resultsList = Array.isArray(req.results) ? req.results : [];
+  let unitHistory = {};
+  const isKanjiScoreSession = req.learningCategory === "kanji" && req.challengeType === "score" && req.kanjiChar;
 
-  if (req.learningCategory === "kanji" && req.challengeType === "score" && req.kanjiChar) {
+  if (useEnglishHistorySheet) {
+    unitHistory = loadEnglishUnitHistoryWithMigration_(adminSs, req.userId, unitId, userData.historyJson[unitId]);
+    if (userData.historyJson[unitId]) delete userData.historyJson[unitId];
+  } else {
+    if (!userData.historyJson[unitId]) userData.historyJson[unitId] = {};
+    unitHistory = userData.historyJson[unitId];
+  }
+
+  if (isKanjiScoreSession) {
     const settings = getAppSettingsMap_(adminSs);
     const charKey = String(req.kanjiChar);
     const score = Number(req.score) || 0;
@@ -1458,16 +1599,15 @@ function handleSaveLearningSession(req) {
         let qPoint = Math.max(1, (Number(res.basePoint) || 2) - (Number(res.maxDeduction) || 0));
         sessionRawPoints += qPoint;
       }
-      const qId = normalizeQuestionIdForHistory_(res && res.questionId, idx);
-      if (!unitHistory[qId]) unitHistory[qId] = { results: [], times: [] };
-      
-      unitHistory[qId].results.push(res && res.isCorrect ? 1 : 0);
-      if (unitHistory[qId].results.length > 10) unitHistory[qId].results.shift();
-      const timeSec = Number(res && res.timeSec);
-      unitHistory[qId].times.push(!isNaN(timeSec) ? timeSec : 0);
-      if (unitHistory[qId].times.length > 10) unitHistory[qId].times.shift();
     });
+    unitHistory = mergeSessionResultsIntoUnitHistory_(unitHistory, resultsList);
   }
+
+  if (useEnglishHistorySheet) {
+    saveEnglishUnitHistory_(adminSs, req.userId, unitId, unitHistory, now.toISOString());
+  }
+
+  stripEnglishUnitKeysFromHistoryJson_(userData.historyJson);
 
   let earnedPoints = Math.round((sessionRawPoints * multiplier) * 100) / 100;
   const sheetPointPercent = parseUnitSheetPointPercent_(req.unitSheetName);
@@ -2181,7 +2321,7 @@ function handleGetMyExternalLearningRequests(req) {
 }
 function handleGetPointsMultiplier(req) { const data = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('ADMIN_SS_ID')).getSheetByName("users").getDataRange().getValues(); let multiplier = 1.0; for (let i = 1; i < data.length; i++) { if (data[i][0] === req.userId) { const lastStudyTimeStr = JSON.parse(data[i][4] || "{}")[req.unitId]; if (lastStudyTimeStr) { const diffHours = (new Date() - new Date(lastStudyTimeStr)) / (1000 * 60 * 60); let basePercent = 10 + Math.floor(diffHours / 2) * 10; if (basePercent > 100) basePercent = 100; multiplier = basePercent / 100; } break; } } return sendResponse({ status: "success", multiplier: multiplier }); }
 function handleGetChildUsers(req) { const data = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('ADMIN_SS_ID')).getSheetByName("users").getDataRange().getValues(); const users = []; for (let i = 1; i < data.length; i++) { if (data[i][0] && i > 0) users.push({ id: data[i][0], name: data[i][1] }); } return sendResponse({ status: "success", users: users }); }
-function handleVerifyKidPin(req) { const data = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('ADMIN_SS_ID')).getSheetByName("users").getDataRange().getValues(); for (let i = 1; i < data.length; i++) { if (data[i][0] === req.userId) { if (String(data[i][2]) === String(req.pin)) { return sendResponse({ status: "success", user: { id: data[i][0], name: data[i][1], points: data[i][3], lastStudyJson: JSON.parse(data[i][4] || "{}"), historyJson: JSON.parse(data[i][5] || "{}"), dailyPointsJson: JSON.parse(data[i][6] || "{}") }, message: "ログイン成功" }); } else return sendResponse({ status: "error", message: "PINがちがいます" }); } } return sendResponse({ status: "error", message: "ユーザーが見つかりません" }); }
+function handleVerifyKidPin(req) { const data = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('ADMIN_SS_ID')).getSheetByName("users").getDataRange().getValues(); for (let i = 1; i < data.length; i++) { if (data[i][0] === req.userId) { if (String(data[i][2]) === String(req.pin)) { return sendResponse({ status: "success", user: { id: data[i][0], name: data[i][1], points: data[i][3], lastStudyJson: JSON.parse(data[i][4] || "{}"), historyJson: stripEnglishUnitKeysFromHistoryJson_(JSON.parse(data[i][5] || "{}")), dailyPointsJson: JSON.parse(data[i][6] || "{}") }, message: "ログイン成功" }); } else return sendResponse({ status: "error", message: "PINがちがいます" }); } } return sendResponse({ status: "error", message: "ユーザーが見つかりません" }); }
 function handleChangePin(req) { const usersSheet = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('ADMIN_SS_ID')).getSheetByName("users"); const data = usersSheet.getDataRange().getValues(); for (let i = 1; i < data.length; i++) { if (data[i][0] === req.userId) { usersSheet.getRange(i + 1, 3).setValue(req.newPin); return sendResponse({ status: "success", message: "新しいPINをセットしました！" }); } } return sendResponse({ status: "error", message: "ユーザーが見つかりません" }); }
 function handleGetMaterialsList(req) {
   return sendResponse({ status: "success", materials: getMaterialsList_() });

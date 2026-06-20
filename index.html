@@ -2583,6 +2583,63 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
     let currentQuestions = []; let filteredQuestions = []; let currentQuestionIndex = 0; 
     let quizResults = []; let questionStartTime = 0; let currentIsReviewMode = false;
     let englishQuizSessionMeta = null;
+    let englishUnitHistoryCache = {};
+
+    function isEnglishUnitHistoryId(unitId) {
+      const id = String(unitId || "");
+      return !!id && !id.startsWith("__");
+    }
+
+    function getEnglishUnitHistoryCache(unitId) {
+      const key = String(unitId || "");
+      if (!key || !Object.prototype.hasOwnProperty.call(englishUnitHistoryCache, key)) return null;
+      return englishUnitHistoryCache[key];
+    }
+
+    function setEnglishUnitHistoryCache(unitId, map) {
+      const key = String(unitId || "");
+      if (!key) return;
+      englishUnitHistoryCache[key] = map || {};
+    }
+
+    function mergeEnglishUnitHistoryPatch(unitId, patch) {
+      if (!unitId || !patch || typeof patch !== "object") return;
+      const key = String(unitId);
+      if (!englishUnitHistoryCache[key]) englishUnitHistoryCache[key] = {};
+      Object.keys(patch).forEach(function (k) {
+        englishUnitHistoryCache[key][k] = patch[k];
+      });
+    }
+
+    function fetchEnglishUnitHistory(unitId) {
+      const uid = String(unitId || "");
+      if (!uid) return Promise.resolve({});
+      const cached = getEnglishUnitHistoryCache(uid);
+      if (cached) return Promise.resolve(cached);
+      const user = JSON.parse(localStorage.getItem("app_kid_user") || "null");
+      if (!user || !user.id) return Promise.resolve({});
+      return fetch(GAS_API_URL, {
+        method: "POST",
+        body: JSON.stringify({ action: "get_english_unit_history", userId: user.id, unitId: uid })
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (d && d.status === "success" && d.historyUnit) {
+            setEnglishUnitHistoryCache(uid, d.historyUnit);
+            return d.historyUnit;
+          }
+          return {};
+        })
+        .catch(function () { return {}; });
+    }
+
+    function stripEnglishUnitKeysFromHistoryJsonClient(historyJson) {
+      const root = historyJson || {};
+      Object.keys(root).forEach(function (k) {
+        if (k && !String(k).startsWith("__")) delete root[k];
+      });
+      return root;
+    }
     let userInventoryData = []; let showAllInventory = false;
     function getUserIdForPref() {
       try {
@@ -3586,6 +3643,10 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
     }
 
     function mergeHistoryUnitPatchClient(user, unitId, patch) {
+      if (isEnglishUnitHistoryId(unitId)) {
+        mergeEnglishUnitHistoryPatch(unitId, patch);
+        return;
+      }
       if (!user || !unitId || !patch || typeof patch !== "object") return;
       if (!user.historyJson) user.historyJson = {};
       if (!user.historyJson[unitId]) user.historyJson[unitId] = {};
@@ -3746,6 +3807,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       user.historyJson = user.historyJson || {};
       user.dailyPointsJson = user.dailyPointsJson || {};
       user.trainingProgressJson = user.trainingProgressJson || {};
+      stripEnglishUnitKeysFromHistoryJsonClient(user.historyJson);
       clientPruneDateKeyedJson(user.dailyPointsJson, CLIENT_DAILY_JSON_MAX_DAYS_);
       clientPruneDateKeyedJson(user.trainingProgressJson, CLIENT_TRAINING_PROGRESS_MAX_DAYS_);
       user.historyJson = clientPruneHistoryJsonToFit(user.historyJson, user.lastStudyJson);
@@ -4725,7 +4787,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
     function verifyPin() { document.getElementById('message').innerText = "かくにん中..."; fetch(GAS_API_URL, { method: 'POST', body: JSON.stringify({ action: "verify_kid_pin", userId: selectedUserId, pin: currentPin }) }).then(r=>r.json()).then(d=>{ if(d.status==="success"){ saveAppKidUserToLocal(d.user); showHome(d.user); } else { document.getElementById('message').innerText = d.message; currentPin=""; updatePinDisplay(); } }); }
     function preparePinReset() { const user = JSON.parse(localStorage.getItem('app_kid_user')); showPinScreen(user.id, user.name, true); }
     function executePinReset() { document.getElementById('message').innerText = "へんこう中..."; fetch(GAS_API_URL, { method: 'POST', body: JSON.stringify({ action: "change_pin", userId: selectedUserId, newPin: currentPin }) }).then(r=>r.json()).then(d=>{ if(d.status==="success") { alert(d.message); showHome(JSON.parse(localStorage.getItem('app_kid_user'))); } else { document.getElementById('message').innerText = d.message; currentPin=""; updatePinDisplay(); } }); }
-    function logout() { localStorage.removeItem('app_kid_user'); document.body.classList.remove('kanji-study-mode'); document.getElementById('global-header').style.display = 'none'; switchSection('section-users'); }
+    function logout() { englishUnitHistoryCache = {}; localStorage.removeItem('app_kid_user'); document.body.classList.remove('kanji-study-mode'); document.getElementById('global-header').style.display = 'none'; switchSection('section-users'); }
 
     // ★ 特訓ルートの読み込み処理を追加
     function showHome(user) {
@@ -11500,6 +11562,13 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       recognitionJa.start();
     }
 
+    function startQuizAfterFilters(order) {
+      if (order === 'random') filteredQuestions.sort(() => Math.random() - 0.5);
+      currentQuestionIndex = 0; quizResults = [];
+      captureEnglishQuizSessionMeta();
+      switchSection('section-quiz'); saveQuizRecoveryDraft(0); showQuestion();
+    }
+
     function prepareQuiz() {
       currentIsReviewMode = document.getElementById('setting-play-mode').value === 'review';
       const order = document.getElementById('setting-order').value; 
@@ -11528,21 +11597,22 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       }
 
       if (currentIsReviewMode) {
-        const user = JSON.parse(localStorage.getItem('app_kid_user')); 
-        const unitKey = getDetailedUnitId(); 
-        const history = user.historyJson[unitKey] || {};
-        filteredQuestions = filteredQuestions.filter(q => checkIsNigate(history[q["通し番号"]]));
-        if (filteredQuestions.length === 0) {
-          alert("ニガテな問題はありません！通常モードでスタートします。");
-          currentIsReviewMode = false;
-          document.getElementById('setting-play-mode').value = 'normal';
-          filteredQuestions = applyQuizQuestionFilters([...currentQuestions], format, ansType);
-        }
+        const unitKey = getDetailedUnitId();
+        fetchEnglishUnitHistory(unitKey).then(function (history) {
+          filteredQuestions = filteredQuestions.filter(function (q) {
+            return checkIsNigate(history[q["通し番号"]]);
+          });
+          if (filteredQuestions.length === 0) {
+            alert("ニガテな問題はありません！通常モードでスタートします。");
+            currentIsReviewMode = false;
+            document.getElementById('setting-play-mode').value = 'normal';
+            filteredQuestions = applyQuizQuestionFilters([...currentQuestions], format, ansType);
+          }
+          startQuizAfterFilters(order);
+        });
+        return;
       }
-      if (order === 'random') filteredQuestions.sort(() => Math.random() - 0.5);
-      currentQuestionIndex = 0; quizResults = [];
-      captureEnglishQuizSessionMeta();
-      switchSection('section-quiz'); saveQuizRecoveryDraft(0); showQuestion();
+      startQuizAfterFilters(order);
     }
 
     /** 正誤表示を「つぎへ」ボタンの直前の定位置へ戻す（answerArea を空にする前に必須） */
