@@ -2584,6 +2584,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
     let quizResults = []; let questionStartTime = 0; let currentIsReviewMode = false;
     let englishQuizSessionMeta = null;
     let englishUnitHistoryCache = {};
+    let kanjiHistoryCache = {};
 
     function isEnglishUnitHistoryId(unitId) {
       const id = String(unitId || "");
@@ -2633,6 +2634,56 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         .catch(function () { return {}; });
     }
 
+    function getKanjiHistoryCacheBucket(bucket) {
+      const b = String(bucket || "__kanjiChallenge");
+      if (!Object.prototype.hasOwnProperty.call(kanjiHistoryCache, b)) return null;
+      return kanjiHistoryCache[b];
+    }
+
+    function setKanjiHistoryCacheBucket(bucket, data) {
+      kanjiHistoryCache[String(bucket || "__kanjiChallenge")] = data || {};
+    }
+
+    function mergeKanjiChallengePatchClient(charKey, patch) {
+      const key = String(charKey || "");
+      if (!key || !patch) return;
+      if (!kanjiHistoryCache["__kanjiChallenge"]) kanjiHistoryCache["__kanjiChallenge"] = {};
+      kanjiHistoryCache["__kanjiChallenge"][key] = patch;
+    }
+
+    var kanjiChallengeCachePromise = null;
+    function ensureKanjiChallengeCacheLoaded() {
+      if (getKanjiHistoryCacheBucket("__kanjiChallenge")) {
+        return Promise.resolve(kanjiHistoryCache["__kanjiChallenge"]);
+      }
+      if (kanjiChallengeCachePromise) return kanjiChallengeCachePromise;
+      kanjiChallengeCachePromise = fetchKanjiHistoryBucket("__kanjiChallenge").finally(function () {
+        kanjiChallengeCachePromise = null;
+      });
+      return kanjiChallengeCachePromise;
+    }
+
+    function fetchKanjiHistoryBucket(bucket) {
+      const b = String(bucket || "__kanjiChallenge");
+      const cached = getKanjiHistoryCacheBucket(b);
+      if (cached) return Promise.resolve(cached);
+      const user = JSON.parse(localStorage.getItem("app_kid_user") || "null");
+      if (!user || !user.id) return Promise.resolve({});
+      return fetch(GAS_API_URL, {
+        method: "POST",
+        body: JSON.stringify({ action: "get_kanji_history_bucket", userId: user.id, bucket: b })
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (d && d.status === "success" && d.historyBucket) {
+            setKanjiHistoryCacheBucket(b, d.historyBucket);
+            return d.historyBucket;
+          }
+          return {};
+        })
+        .catch(function () { return {}; });
+    }
+
     function stripEnglishUnitKeysFromHistoryJsonClient(historyJson) {
       const root = historyJson || {};
       Object.keys(root).forEach(function (k) {
@@ -2640,6 +2691,21 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       });
       return root;
     }
+
+    function stripKanjiKeysFromHistoryJsonClient(historyJson) {
+      const root = historyJson || {};
+      delete root.__kanjiChallenge;
+      delete root.__kanjiWeak;
+      delete root.__kanjiNigatePass;
+      return root;
+    }
+
+    function stripKanjiAndEnglishFromHistoryJsonClient(historyJson) {
+      stripEnglishUnitKeysFromHistoryJsonClient(historyJson);
+      stripKanjiKeysFromHistoryJsonClient(historyJson);
+      return historyJson;
+    }
+
     let userInventoryData = []; let showAllInventory = false;
     function getUserIdForPref() {
       try {
@@ -3296,9 +3362,14 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       return Math.min(1, overRate + recoverPerDay * days);
     }
 
-    /** localStorage の app_kid_user.historyJson.__kanjiChallenge[char].highScoreDates を取り出す。 */
+    /** kanji_history シート（API キャッシュ）または legacy localStorage から highScoreDates を取り出す。 */
     function readKanjiChallengeHighScoreDatesClient_(kanjiChar) {
       try {
+        const cached = getKanjiHistoryCacheBucket("__kanjiChallenge");
+        if (cached) {
+          const rec = cached[String(kanjiChar || "")];
+          return rec && Array.isArray(rec.highScoreDates) ? rec.highScoreDates : [];
+        }
         const user = JSON.parse(localStorage.getItem("app_kid_user") || "{}");
         const root = (user.historyJson && user.historyJson.__kanjiChallenge) || {};
         const rec = root[String(kanjiChar || "")];
@@ -3659,8 +3730,8 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
     var CLIENT_UNIT_HISTORY_MAX_Q_KEYS_ = 120;
     var CLIENT_KANJI_CHALLENGE_MAX_CHARS_ = 300;
     var CLIENT_KANJI_NIGATE_PASS_MAX_KEYS_ = 150;
-    var CLIENT_DAILY_JSON_MAX_DAYS_ = 366;
-    var CLIENT_TRAINING_PROGRESS_MAX_DAYS_ = 90;
+    var CLIENT_DAILY_JSON_MAX_DAYS_ = 14;
+    var CLIENT_TRAINING_PROGRESS_MAX_DAYS_ = 2;
     var CLIENT_LAST_STUDY_MAX_KEYS_ = 400;
     var CLIENT_SESSION_SUBMIT_MAX_KEYS_ = 80;
     var CLIENT_KANJI_WEAK_MAX_KEYS_ = 200;
@@ -3772,9 +3843,6 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
           clientPruneUnitHistoryQuestions(root[unitKey], CLIENT_UNIT_HISTORY_MAX_Q_KEYS_);
         }
       });
-      if (root.__kanjiChallenge) clientPruneKanjiChallenge(root.__kanjiChallenge, CLIENT_KANJI_CHALLENGE_MAX_CHARS_);
-      if (root.__kanjiNigatePass) clientPruneKanjiNigatePass(root.__kanjiNigatePass, CLIENT_KANJI_NIGATE_PASS_MAX_KEYS_);
-      if (root.__kanjiWeak) clientPruneKanjiWeak(root.__kanjiWeak);
       if (root.__sessionSubmits) clientPruneSessionSubmitLocks(root.__sessionSubmits);
       return root;
     }
@@ -3807,7 +3875,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       user.historyJson = user.historyJson || {};
       user.dailyPointsJson = user.dailyPointsJson || {};
       user.trainingProgressJson = user.trainingProgressJson || {};
-      stripEnglishUnitKeysFromHistoryJsonClient(user.historyJson);
+      stripKanjiAndEnglishFromHistoryJsonClient(user.historyJson);
       clientPruneDateKeyedJson(user.dailyPointsJson, CLIENT_DAILY_JSON_MAX_DAYS_);
       clientPruneDateKeyedJson(user.trainingProgressJson, CLIENT_TRAINING_PROGRESS_MAX_DAYS_);
       user.historyJson = clientPruneHistoryJsonToFit(user.historyJson, user.lastStudyJson);
@@ -4787,7 +4855,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
     function verifyPin() { document.getElementById('message').innerText = "かくにん中..."; fetch(GAS_API_URL, { method: 'POST', body: JSON.stringify({ action: "verify_kid_pin", userId: selectedUserId, pin: currentPin }) }).then(r=>r.json()).then(d=>{ if(d.status==="success"){ saveAppKidUserToLocal(d.user); showHome(d.user); } else { document.getElementById('message').innerText = d.message; currentPin=""; updatePinDisplay(); } }); }
     function preparePinReset() { const user = JSON.parse(localStorage.getItem('app_kid_user')); showPinScreen(user.id, user.name, true); }
     function executePinReset() { document.getElementById('message').innerText = "へんこう中..."; fetch(GAS_API_URL, { method: 'POST', body: JSON.stringify({ action: "change_pin", userId: selectedUserId, newPin: currentPin }) }).then(r=>r.json()).then(d=>{ if(d.status==="success") { alert(d.message); showHome(JSON.parse(localStorage.getItem('app_kid_user'))); } else { document.getElementById('message').innerText = d.message; currentPin=""; updatePinDisplay(); } }); }
-    function logout() { englishUnitHistoryCache = {}; localStorage.removeItem('app_kid_user'); document.body.classList.remove('kanji-study-mode'); document.getElementById('global-header').style.display = 'none'; switchSection('section-users'); }
+    function logout() { englishUnitHistoryCache = {}; kanjiHistoryCache = {}; localStorage.removeItem('app_kid_user'); document.body.classList.remove('kanji-study-mode'); document.getElementById('global-header').style.display = 'none'; switchSection('section-users'); }
 
     // ★ 特訓ルートの読み込み処理を追加
     function showHome(user) {
@@ -8790,6 +8858,9 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
               showKanjiHandScoreToast(score, kanjiChar, d.earnedPoints);
             } catch (ePt) {}
             if (typeof d.newTotal === "number") {
+              if (d.kanjiChallengeChar && d.kanjiChallengePatch) {
+                mergeKanjiChallengePatchClient(d.kanjiChallengeChar, d.kanjiChallengePatch);
+              }
               kidUser.points = d.newTotal;
               saveAppKidUserToLocal(kidUser);
               var pts = document.getElementById("user-points");
@@ -9569,18 +9640,22 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         alert("このセットには問題がありません。");
         return;
       }
-      if (
-        !confirmKanjiQuizIfReducedSheetPoints(
-          ctx.unitName,
-          ctx.modeName,
-          ctx.setId,
-          questions
-        )
-      ) {
-        return;
-      }
-      const proceed = function () {
-        kanjiQuizSession = {
+      ensureKanjiChallengeCacheLoaded().then(function () {
+        if (
+          !confirmKanjiQuizIfReducedSheetPoints(
+            ctx.unitName,
+            ctx.modeName,
+            ctx.setId,
+            questions
+          )
+        ) {
+          return;
+        }
+        startKanjiQuizPlayAfterConfirm(ctx, questions, allQuestionsStored, mode);
+      });
+    }
+    function startKanjiQuizPlayAfterConfirm(ctx, questions, allQuestionsStored, mode) {
+      kanjiQuizSession = {
           modeId: ctx.modeId,
           modeName: ctx.modeName,
           unitName: ctx.unitName,
@@ -9617,8 +9692,6 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         switchSection("section-kanji-quiz-play");
         saveKanjiQuizRecoveryDraft();
         renderKanjiQuizQuestion();
-      };
-      proceed();
     }
     function restartLastKanjiQuizSet() {
       const ctx = lastKanjiQuizContext;
@@ -9984,6 +10057,9 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
           isCorrect: isCorrect,
           qType: q.type
         });
+        if (d.kanjiChallengeChar && d.kanjiChallengePatch) {
+          mergeKanjiChallengePatchClient(d.kanjiChallengeChar, d.kanjiChallengePatch);
+        }
         user.points = d.newTotal;
         saveAppKidUserToLocal(user);
         const ptsEl = document.getElementById("user-points");
@@ -12173,8 +12249,13 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
           user.historyJson = d.historyJson;
         }
         if (d.kanjiChallengeChar && d.kanjiChallengePatch) {
-          if (!user.historyJson.__kanjiChallenge) user.historyJson.__kanjiChallenge = {};
-          user.historyJson.__kanjiChallenge[d.kanjiChallengeChar] = d.kanjiChallengePatch;
+          mergeKanjiChallengePatchClient(d.kanjiChallengeChar, d.kanjiChallengePatch);
+          if (user.historyJson && user.historyJson.__kanjiChallenge) {
+            delete user.historyJson.__kanjiChallenge[d.kanjiChallengeChar];
+            if (Object.keys(user.historyJson.__kanjiChallenge).length === 0) {
+              delete user.historyJson.__kanjiChallenge;
+            }
+          }
         }
         if (d.lastStudyKey && d.lastStudyAt) {
           if (!user.lastStudyJson) user.lastStudyJson = {};
