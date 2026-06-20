@@ -1345,6 +1345,19 @@ function ensureSheetHeaderRow_(sheet, expectedHeaders) {
   return result;
 }
 
+/** 結合セルでも行数不一致にならないよう、1セルずつ書き込む */
+function setRowValuesSafe_(sheet, rowIdx, startCol, values) {
+  const row = parseInt(rowIdx, 10);
+  const col = parseInt(startCol, 10);
+  if (!sheet || isNaN(row) || row < 1 || isNaN(col) || col < 1) {
+    throw new Error("シート書き込み位置が不正です");
+  }
+  const list = Array.isArray(values) ? values : [];
+  for (let i = 0; i < list.length; i++) {
+    sheet.getRange(row, col + i).setValue(list[i]);
+  }
+}
+
 function ensureEnglishUnitHistorySheetStructure_(adminSs) {
   const result = { sheet: null, created: false, headerFixed: false };
   if (!adminSs) return result;
@@ -1370,6 +1383,7 @@ function findEnglishUnitHistoryRowIndex_(sheet, userId, unitId) {
   const uId = String(unitId || "");
   const data = sheet.getRange(2, 1, lastRow, 2).getValues();
   for (let i = 0; i < data.length; i++) {
+    if (String(data[i][0] || "").trim() === ENGLISH_UNIT_HISTORY_HEADERS_[0]) continue;
     if (String(data[i][0]) === uid && String(data[i][1]) === uId) return i + 2;
   }
   return -1;
@@ -1394,7 +1408,7 @@ function saveEnglishUnitHistory_(adminSs, userId, unitId, unitHistoryMap, nowIso
   const rowValues = [String(userId || ""), String(unitId || ""), serialized, nowIso || new Date().toISOString()];
   const rowIdx = findEnglishUnitHistoryRowIndex_(sheet, userId, unitId);
   if (rowIdx >= 0) {
-    sheet.getRange(rowIdx, 1, rowIdx, 4).setValues([rowValues]);
+    setRowValuesSafe_(sheet, rowIdx, 1, rowValues);
   } else {
     sheet.appendRow(rowValues);
   }
@@ -1504,6 +1518,7 @@ function findKanjiHistoryRowIndex_(sheet, userId, bucket) {
   const b = String(bucket || "");
   const data = sheet.getRange(2, 1, lastRow, 2).getValues();
   for (let i = 0; i < data.length; i++) {
+    if (String(data[i][0] || "").trim() === KANJI_HISTORY_HEADERS_[0]) continue;
     if (String(data[i][0]) === uid && String(data[i][1]) === b) return i + 2;
   }
   return -1;
@@ -1535,7 +1550,7 @@ function saveKanjiHistoryBucket_(adminSs, userId, bucket, dataObj, nowIso) {
   const rowValues = [String(userId || ""), String(bucket || ""), serialized, nowIso || new Date().toISOString()];
   const rowIdx = findKanjiHistoryRowIndex_(sheet, userId, bucket);
   if (rowIdx >= 0) {
-    sheet.getRange(rowIdx, 1, rowIdx, 4).setValues([rowValues]);
+    setRowValuesSafe_(sheet, rowIdx, 1, rowValues);
   } else {
     sheet.appendRow(rowValues);
   }
@@ -1627,7 +1642,7 @@ function writeUserLearningRow_(usersSheet, targetRowIdx, userData, newTotalPoint
   if (rowValues[2].length > HISTORY_JSON_CELL_MAX_CHARS_) {
     throw new Error("履歴データが大きすぎて保存できません。管理者に連絡してください。");
   }
-  usersSheet.getRange(targetRowIdx, 4, targetRowIdx, 8).setValues([rowValues]);
+  setRowValuesSafe_(usersSheet, targetRowIdx, 4, rowValues);
 }
 
 function pruneSessionSubmitLocks_(locksRoot) {
