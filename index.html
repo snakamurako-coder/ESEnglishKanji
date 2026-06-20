@@ -46,6 +46,7 @@
     .route-item:last-child { border-bottom: none; }
     .route-item.locked { opacity: 0.5; }
     .route-item.cleared { color: #4CAF50; }
+    .route-item.route-item-next { box-shadow: inset 0 0 0 2px #CE93D8; background: rgba(156, 39, 176, 0.12); border-radius: 6px; }
     .checkbox { width: 24px; height: 24px; border: 2px solid #fff; border-radius: 4px; display: inline-flex; align-items: center; justify-content: center; font-size: 18px; font-weight: bold;}
     .cleared .checkbox { background: #4CAF50; border-color: #4CAF50; }
     
@@ -3932,8 +3933,9 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
     function checkIsNigate(historyObj) { if(!historyObj || !historyObj.results || historyObj.results.length === 0) return false; const rMissLimit = Number(appSettings["苦手_直近ミス判定"]) || 1; const timeLimit = Number(appSettings["苦手_時間判定_秒"]) || 15; const rateLimit = Number(appSettings["苦手_全体正答率_未満"]) || 80; const recentResults = historyObj.results.slice(-3); if (recentResults.filter(r => r === 0).length >= rMissLimit) return true; if (((historyObj.results.filter(r => r === 1).length / historyObj.results.length) * 100) < rateLimit) return true; if (historyObj.times && historyObj.times.length > 0 && (historyObj.times.reduce((a,b)=>a+b, 0) / historyObj.times.length) >= timeLimit) return true; return false; }
     
     // ★ 特訓ルート用の変数
-    let dailyRouteData = []; 
-    let currentProgressData = {}; 
+    let dailyRouteData = [];
+    let currentProgressData = {};
+    let trainingRouteReturnTimer = null;
     let currentTrainingStepIndex = null;
     let currentTrainingMenuId = 1;
     let isTrainingMode = false;
@@ -4859,6 +4861,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
 
     // ★ 特訓ルートの読み込み処理を追加
     function showHome(user) {
+      cancelTrainingRouteAutoReturn();
       document.body.classList.remove('kanji-study-mode');
       resetResultScreenActionButtons();
       switchSection('section-home');
@@ -4935,6 +4938,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
             
             const div = document.createElement('div');
             div.className = `route-item ${isCleared ? 'cleared' : ''} ${isLocked ? 'locked' : ''}`;
+            div.setAttribute('data-step-index', String(route.stepIndex));
             
             const checkboxHtml = `<div class="checkbox">${isCleared ? '✔' : ''}</div>`;
             const infoHtml = `<div style="flex-grow:1; margin-left:10px;">
@@ -4968,6 +4972,25 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         } else {
             nextBtn.style.display = 'block';
         }
+        highlightNextTrainingRouteItem_();
+    }
+
+    function highlightNextTrainingRouteItem_() {
+        const container = document.getElementById('route-container');
+        if (!container) return;
+        container.querySelectorAll('.route-item-next').forEach(function (el) {
+            el.classList.remove('route-item-next');
+        });
+        const nextRoute = dailyRouteData.find(function (r) {
+            return !currentProgressData[r.stepIndex];
+        });
+        if (!nextRoute) return;
+        const target = container.querySelector('.route-item[data-step-index="' + String(nextRoute.stepIndex) + '"]');
+        if (!target || target.classList.contains('locked')) return;
+        target.classList.add('route-item-next');
+        try {
+            target.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        } catch (_) {}
     }
 
     // 「次の内容に取り組む」ボタンを押したとき
@@ -4982,17 +5005,23 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
     function openTrainingMenu() {
       const user = JSON.parse(localStorage.getItem('app_kid_user'));
       if (!user) { alert("ログインし直してください"); return; }
+      cancelTrainingRouteAutoReturn();
       switchSection('section-training');
       document.getElementById('training-menu-picker').style.display = 'block';
       document.getElementById('route-container').style.display = 'none';
       document.getElementById('next-route-btn').style.display = 'none';
+      const titleHint = document.querySelector("#section-training > p");
+      if (titleHint) titleHint.textContent = "メニューをえらんでね";
       renderTrainingMenuPicker();
     }
 
     function backToTrainingMenuPicker() {
+      cancelTrainingRouteAutoReturn();
       document.getElementById('training-menu-picker').style.display = 'block';
       document.getElementById('route-container').style.display = 'none';
       document.getElementById('next-route-btn').style.display = 'none';
+      const titleHint = document.querySelector("#section-training > p");
+      if (titleHint) titleHint.textContent = "メニューをえらんでね";
       renderTrainingMenuPicker();
     }
 
@@ -5035,6 +5064,85 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       } catch (_) {}
     }
 
+    function cancelTrainingRouteAutoReturn() {
+      if (trainingRouteReturnTimer) {
+        clearTimeout(trainingRouteReturnTimer);
+        trainingRouteReturnTimer = null;
+      }
+    }
+
+    function getTodayTrainingProgressBlock(trainingProgressJson, menuId) {
+      const json = trainingProgressJson || {};
+      const todayStr = new Date().toISOString().split("T")[0];
+      const todayBlock = json[todayStr] || {};
+      const mid = String(menuId != null ? menuId : currentTrainingMenuId || 1);
+      if (todayBlock[mid] && typeof todayBlock[mid] === "object" && !Array.isArray(todayBlock[mid])) {
+        return todayBlock[mid];
+      }
+      if (mid === "1") {
+        const out = {};
+        let hasLegacy = false;
+        Object.keys(todayBlock).forEach(function (k) {
+          if (todayBlock[k] === true) {
+            hasLegacy = true;
+            out[k] = true;
+          }
+        });
+        if (hasLegacy) return out;
+      }
+      return {};
+    }
+
+    function applyLocalTrainingProgress(trainingProgressJson, menuId) {
+      currentProgressData = getTodayTrainingProgressBlock(trainingProgressJson, menuId);
+      if (dailyRouteData && dailyRouteData.length) renderTrainingRoute();
+    }
+
+    function returnToCurrentTrainingMenuRoute(options) {
+      options = options || {};
+      cancelTrainingRouteAutoReturn();
+      const user = JSON.parse(localStorage.getItem("app_kid_user") || "null");
+      if (!user || !user.id) {
+        alert("ログインし直してください");
+        return;
+      }
+      let menuId = parseInt(options.menuId != null ? options.menuId : currentTrainingMenuId, 10);
+      if (isNaN(menuId) || menuId < 1 || menuId > 12) menuId = 1;
+      currentTrainingMenuId = menuId;
+      isTrainingMode = false;
+      currentTrainingStepIndex = null;
+      resetResultScreenActionButtons();
+      switchSection("section-training");
+      const picker = document.getElementById("training-menu-picker");
+      const routeBox = document.getElementById("route-container");
+      const nextBtn = document.getElementById("next-route-btn");
+      const titleHint = document.querySelector("#section-training > p");
+      if (picker) picker.style.display = "none";
+      if (routeBox) {
+        routeBox.style.display = "block";
+        routeBox.innerHTML = "<p>ルートを確認中...</p>";
+      }
+      if (nextBtn) nextBtn.style.display = "none";
+      if (titleHint) titleHint.textContent = "つぎに取り組むセットをえらんでね";
+      if (options.invalidateCache !== false) {
+        invalidateTrainingRouteCache(menuId);
+      }
+      if (user.trainingProgressJson) {
+        applyLocalTrainingProgress(user.trainingProgressJson, menuId);
+      }
+      fetchTrainingRoute(user.id);
+    }
+
+    function scheduleTrainingRouteAutoReturn(delayMs, menuId) {
+      cancelTrainingRouteAutoReturn();
+      const mid = menuId != null ? menuId : currentTrainingMenuId;
+      if (!mid) return;
+      trainingRouteReturnTimer = setTimeout(function () {
+        trainingRouteReturnTimer = null;
+        returnToCurrentTrainingMenuRoute({ menuId: mid, invalidateCache: false });
+      }, delayMs || 2200);
+    }
+
     function renderTrainingMenuPicker() {
       const box = document.getElementById('training-menu-picker');
       if (!box) return;
@@ -5065,6 +5173,8 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       document.getElementById('training-menu-picker').style.display = 'none';
       document.getElementById('route-container').style.display = 'block';
       document.getElementById('route-container').innerHTML = "<p>ルートを確認中...</p>";
+      const titleHint = document.querySelector("#section-training > p");
+      if (titleHint) titleHint.textContent = "つぎに取り組むセットをえらんでね";
       fetchTrainingRoute(user.id);
     }
 
@@ -8403,6 +8513,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       }
       if (homeBtn) {
         homeBtn.onclick = opts.homeOnclick || function () {
+          cancelTrainingRouteAutoReturn();
           showHome(JSON.parse(localStorage.getItem("app_kid_user")));
         };
       }
@@ -9828,9 +9939,21 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         restartLastKanjiQuizSet();
       });
       if (isTrainingMode) {
+        if (lastKanjiQuizContext && lastKanjiQuizContext.trainingMenuId) {
+          currentTrainingMenuId = lastKanjiQuizContext.trainingMenuId;
+        }
         settingsBtn.style.display = "block";
-        settingsBtn.innerText = "🎯 特訓メニューにもどる";
-        settingsBtn.onclick = wrapResultBtnAction("ひらいています", function () { openTrainingMenu(); });
+        settingsBtn.innerText = "🎯 特訓ルートにもどる";
+        settingsBtn.onclick = wrapResultBtnAction("ひらいています", function () {
+          returnToCurrentTrainingMenuRoute({
+            menuId: (lastKanjiQuizContext && lastKanjiQuizContext.trainingMenuId) || currentTrainingMenuId,
+            invalidateCache: false
+          });
+        });
+        scheduleTrainingRouteAutoReturn(
+          2200,
+          (lastKanjiQuizContext && lastKanjiQuizContext.trainingMenuId) || currentTrainingMenuId
+        );
       } else if (lastKanjiQuizContext && lastKanjiQuizContext.nigateTraining) {
         settingsBtn.style.display = "block";
         settingsBtn.innerText = "🎯 ニガテ特訓にもどる";
@@ -9843,6 +9966,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       homeBtn.style.display = "block";
       homeBtn.innerText = "🏠 ホームにもどる";
       homeBtn.onclick = wrapResultBtnAction("もどっています", function () {
+        cancelTrainingRouteAutoReturn();
         showHome(JSON.parse(localStorage.getItem('app_kid_user')));
       });
       var ctxNav = lastKanjiQuizContext;
@@ -10060,6 +10184,12 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         if (d.kanjiChallengeChar && d.kanjiChallengePatch) {
           mergeKanjiChallengePatchClient(d.kanjiChallengeChar, d.kanjiChallengePatch);
         }
+        if (d.trainingProgressJson) {
+          user.trainingProgressJson = d.trainingProgressJson;
+          const trainMenuId = (kanjiQuizSession && kanjiQuizSession.trainingMenuId) || currentTrainingMenuId;
+          invalidateTrainingRouteCache(trainMenuId);
+          applyLocalTrainingProgress(d.trainingProgressJson, trainMenuId);
+        }
         user.points = d.newTotal;
         saveAppKidUserToLocal(user);
         const ptsEl = document.getElementById("user-points");
@@ -10082,6 +10212,12 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
               lastKanjiQuizContext.nigateFeedbackSnapshot = nFb;
             }
             if (kanjiQuizSession.isTrainingMode) {
+              const trainMenuId = kanjiQuizSession.trainingMenuId || currentTrainingMenuId;
+              if (trainMenuId) currentTrainingMenuId = trainMenuId;
+              invalidateTrainingRouteCache(trainMenuId);
+              if (user.trainingProgressJson) {
+                applyLocalTrainingProgress(user.trainingProgressJson, trainMenuId);
+              }
               fetchTrainingRoute(user.id);
             }
             kanjiQuizSession = null;
@@ -10124,6 +10260,12 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
             lastKanjiQuizContext.nigateFeedbackSnapshot = nFb;
           }
           if (kanjiQuizSession.isTrainingMode) {
+            const trainMenuId = kanjiQuizSession.trainingMenuId || currentTrainingMenuId;
+            if (trainMenuId) currentTrainingMenuId = trainMenuId;
+            invalidateTrainingRouteCache(trainMenuId);
+            if (user.trainingProgressJson) {
+              applyLocalTrainingProgress(user.trainingProgressJson, trainMenuId);
+            }
             fetchTrainingRoute(user.id);
           }
           kanjiQuizSession = null;
@@ -12262,7 +12404,13 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
           user.lastStudyJson[d.lastStudyKey] = d.lastStudyAt;
         }
         if (d.dailyPointsJson) user.dailyPointsJson = d.dailyPointsJson;
-        if (d.trainingProgressJson) user.trainingProgressJson = d.trainingProgressJson;
+        if (d.trainingProgressJson) {
+          user.trainingProgressJson = d.trainingProgressJson;
+          if (isTrainingMode || currentTrainingMenuId) {
+            invalidateTrainingRouteCache(currentTrainingMenuId);
+            applyLocalTrainingProgress(d.trainingProgressJson, currentTrainingMenuId);
+          }
+        }
         try {
           saveAppKidUserToLocal(user);
         } catch (eUserSave) {
@@ -12275,6 +12423,8 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       function applySuccessResult(d) {
         submitSucceeded = true;
         lastSuccessData = d;
+        const wasTrainingMode = isTrainingMode;
+        const trainingReturnMenuId = currentTrainingMenuId;
         const resultEl = document.getElementById('result-content');
         if (resultEl) resultEl.innerHTML = renderFinishQuizSuccessHtml(d);
         mergeFinishQuizUserCache(d);
@@ -12288,22 +12438,31 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         })();
 
         const retryBtn = document.getElementById('result-retry-btn');
-        if (!isTrainingMode) {
+        const settingsBtn = document.getElementById('result-settings-btn');
+        if (!wasTrainingMode) {
           if (retryBtn) {
             retryBtn.style.display = "block";
             retryBtn.innerText = "🔄 もう一度やる";
           }
-          const settingsBtn = document.getElementById('result-settings-btn');
           if (settingsBtn) settingsBtn.style.display = "block";
           bindEnglishResultButtonHandlers();
-        } else if (retryBtn) {
-          retryBtn.style.display = "none";
+        } else {
+          if (retryBtn) retryBtn.style.display = "none";
+          if (settingsBtn) {
+            settingsBtn.style.display = "block";
+            settingsBtn.innerText = "🎯 特訓ルートにもどる";
+          }
           bindEnglishResultButtonHandlers({
             retryOnclick: null,
-            settingsOnclick: function () { openTrainingMenu(); }
+            settingsOnclick: function () {
+              returnToCurrentTrainingMenuRoute({ menuId: trainingReturnMenuId, invalidateCache: false });
+            },
+            homeOnclick: function () {
+              cancelTrainingRouteAutoReturn();
+              showHome(JSON.parse(localStorage.getItem("app_kid_user")));
+            }
           });
-        } else {
-          bindEnglishResultButtonHandlers();
+          scheduleTrainingRouteAutoReturn(2200, trainingReturnMenuId);
         }
         const homeBtn = document.getElementById('result-home-btn');
         if (homeBtn) homeBtn.style.display = "block";
