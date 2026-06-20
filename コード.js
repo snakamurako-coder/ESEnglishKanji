@@ -1106,12 +1106,141 @@ function calcKanjiCharRecoveryRate_(highScoreDates, now, settings) {
 /** users シートの履歴_JSON 列（1セル約5万文字上限）に収める */
 var HISTORY_JSON_CELL_MAX_CHARS_ = 45000;
 var SESSION_SUBMIT_MAX_KEYS_ = 80;
+var UNIT_HISTORY_MAX_QUESTION_KEYS_ = 120;
+var KANJI_CHALLENGE_MAX_CHARS_ = 300;
+var KANJI_NIGATE_PASS_MAX_KEYS_ = 150;
+var DAILY_JSON_MAX_DAYS_ = 366;
+var TRAINING_PROGRESS_MAX_DAYS_ = 90;
+var LAST_STUDY_MAX_KEYS_ = 400;
+
+function isDateKeyString_(key) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(key || ""));
+}
+
+function pruneDateKeyedJson_(obj, maxDays, nowDate) {
+  if (!obj || typeof obj !== "object") return;
+  const now = nowDate || new Date();
+  const today = now.toISOString().split("T")[0];
+  const minMs = now.getTime() - Math.max(1, maxDays) * 24 * 60 * 60 * 1000;
+  Object.keys(obj).forEach(function (k) {
+    if (!isDateKeyString_(k)) return;
+    const d = new Date(k + "T12:00:00");
+    if (isNaN(d.getTime()) || d.getTime() < minMs) delete obj[k];
+  });
+  if (obj[today] == null && maxDays > 0) {
+    /* 今日分が無くてもキー削除のみ（新規日は save 側で追加） */
+  }
+}
+
+function pruneLastStudyJsonOrphans_(lastStudyJson, historyJson) {
+  if (!lastStudyJson || typeof lastStudyJson !== "object") return;
+  const hist = historyJson || {};
+  Object.keys(lastStudyJson).forEach(function (k) {
+    if (!k || String(k).startsWith("__")) return;
+    if (!hist[k]) delete lastStudyJson[k];
+  });
+  const keys = Object.keys(lastStudyJson);
+  if (keys.length <= LAST_STUDY_MAX_KEYS_) return;
+  keys.sort(function (a, b) {
+    return String(lastStudyJson[a] || "").localeCompare(String(lastStudyJson[b] || ""));
+  });
+  const drop = keys.length - LAST_STUDY_MAX_KEYS_;
+  for (let i = 0; i < drop; i++) delete lastStudyJson[keys[i]];
+}
+
+function scoreUnitQuestionHistoryKey_(hist) {
+  const h = hist || {};
+  const rLen = Array.isArray(h.results) ? h.results.length : 0;
+  const tLen = Array.isArray(h.times) ? h.times.length : 0;
+  return rLen + tLen;
+}
+
+function pruneUnitHistoryQuestions_(unitHistory, maxKeys) {
+  if (!unitHistory || typeof unitHistory !== "object") return;
+  const qKeys = Object.keys(unitHistory);
+  if (qKeys.length <= maxKeys) return;
+  const scored = qKeys.map(function (k) {
+    return { k: k, score: scoreUnitQuestionHistoryKey_(unitHistory[k]) };
+  });
+  scored.sort(function (a, b) {
+    return a.score - b.score || String(a.k).localeCompare(String(b.k));
+  });
+  const drop = scored.length - maxKeys;
+  for (let i = 0; i < drop; i++) delete unitHistory[scored[i].k];
+}
+
+function pruneKanjiChallengeIfNeeded_(challengeRoot, maxChars) {
+  if (!challengeRoot || typeof challengeRoot !== "object") return;
+  let keys = Object.keys(challengeRoot);
+  if (keys.length <= maxChars) return;
+  const scored = keys.map(function (k) {
+    const rec = challengeRoot[k] || {};
+    const dates = Array.isArray(rec.highScoreDates) ? rec.highScoreDates : [];
+    const latest = dates.length ? String(dates[dates.length - 1]) : "";
+    return { k: k, t: latest };
+  });
+  scored.sort(function (a, b) {
+    return a.t.localeCompare(b.t);
+  });
+  const drop = scored.length - maxChars;
+  for (let i = 0; i < drop; i++) delete challengeRoot[scored[i].k];
+}
+
+function pruneKanjiNigatePassIfNeeded_(passRoot, maxKeys) {
+  if (!passRoot || typeof passRoot !== "object") return;
+  const keys = Object.keys(passRoot);
+  if (keys.length <= maxKeys) return;
+  const scored = keys.map(function (k) {
+    const rec = passRoot[k] || {};
+    return { k: k, t: String(rec.updatedAt || "") };
+  });
+  scored.sort(function (a, b) {
+    return a.t.localeCompare(b.t);
+  });
+  const drop = scored.length - maxKeys;
+  for (let i = 0; i < drop; i++) delete passRoot[scored[i].k];
+}
+
+function pruneHistoryJsonStructure_(historyJson) {
+  const root = historyJson || {};
+  Object.keys(root).forEach(function (unitKey) {
+    if (!unitKey || String(unitKey).startsWith("__")) return;
+    if (root[unitKey] && typeof root[unitKey] === "object") {
+      pruneUnitHistoryQuestions_(root[unitKey], UNIT_HISTORY_MAX_QUESTION_KEYS_);
+    }
+  });
+  if (root.__kanjiChallenge) pruneKanjiChallengeIfNeeded_(root.__kanjiChallenge, KANJI_CHALLENGE_MAX_CHARS_);
+  if (root.__kanjiNigatePass) pruneKanjiNigatePassIfNeeded_(root.__kanjiNigatePass, KANJI_NIGATE_PASS_MAX_KEYS_);
+  if (root.__kanjiWeak) pruneKanjiWeakIfNeeded_(root.__kanjiWeak);
+  if (root.__sessionSubmits) pruneSessionSubmitLocks_(root.__sessionSubmits);
+  return root;
+}
+
+function normalizeUserJsonBeforeSave_(userData) {
+  if (!userData) return userData;
+  userData.lastStudyJson = userData.lastStudyJson || {};
+  userData.historyJson = userData.historyJson || {};
+  userData.dailyPointsJson = userData.dailyPointsJson || {};
+  userData.trainingProgressJson = userData.trainingProgressJson || {};
+  const now = new Date();
+  pruneDateKeyedJson_(userData.dailyPointsJson, DAILY_JSON_MAX_DAYS_, now);
+  pruneDateKeyedJson_(userData.trainingProgressJson, TRAINING_PROGRESS_MAX_DAYS_, now);
+  pruneHistoryJsonStructure_(userData.historyJson);
+  userData.historyJson = pruneHistoryJsonToFit_(userData.historyJson, userData.lastStudyJson);
+  pruneLastStudyJsonOrphans_(userData.lastStudyJson, userData.historyJson);
+  return userData;
+}
 
 function pruneHistoryJsonToFit_(historyJson, lastStudyJson, maxChars) {
   const max = maxChars || HISTORY_JSON_CELL_MAX_CHARS_;
   const root = historyJson || {};
   let serialized = JSON.stringify(root);
   if (serialized.length <= max) return root;
+
+  pruneHistoryJsonStructure_(root);
+  serialized = JSON.stringify(root);
+  if (serialized.length <= max) return root;
+
   const unitKeys = Object.keys(root).filter(function (k) {
     return k && !String(k).startsWith("__");
   });
@@ -1124,6 +1253,29 @@ function pruneHistoryJsonToFit_(historyJson, lastStudyJson, maxChars) {
     delete root[unitKeys[i]];
     serialized = JSON.stringify(root);
     if (serialized.length <= max) return root;
+  }
+
+  if (root.__kanjiChallenge) {
+    pruneKanjiChallengeIfNeeded_(root.__kanjiChallenge, Math.max(50, Math.floor(KANJI_CHALLENGE_MAX_CHARS_ / 2)));
+    serialized = JSON.stringify(root);
+    if (serialized.length <= max) return root;
+  }
+  if (root.__kanjiNigatePass) {
+    pruneKanjiNigatePassIfNeeded_(root.__kanjiNigatePass, Math.max(40, Math.floor(KANJI_NIGATE_PASS_MAX_KEYS_ / 2)));
+    serialized = JSON.stringify(root);
+    if (serialized.length <= max) return root;
+  }
+  if (root.__sessionSubmits) {
+    const locks = root.__sessionSubmits;
+    const lk = Object.keys(locks);
+    lk.sort(function (a, b) {
+      const ta = (locks[a] && locks[a].at) ? String(locks[a].at) : "";
+      const tb = (locks[b] && locks[b].at) ? String(locks[b].at) : "";
+      return ta.localeCompare(tb);
+    });
+    while (lk.length > 20 && JSON.stringify(root).length > max) {
+      delete locks[lk.shift()];
+    }
   }
   return root;
 }
@@ -1154,7 +1306,7 @@ function buildHistoryUnitPatchForSession_(unitHistory, resultsList) {
 }
 
 function writeUserLearningRow_(usersSheet, targetRowIdx, userData, newTotalPoints) {
-  userData.historyJson = pruneHistoryJsonToFit_(userData.historyJson, userData.lastStudyJson);
+  normalizeUserJsonBeforeSave_(userData);
   const rowValues = [
     newTotalPoints,
     JSON.stringify(userData.lastStudyJson),
@@ -1519,7 +1671,7 @@ function handleAppendKanjiWeakSignals(req) {
     else lastErr = r.message || lastErr;
   });
   if (!merged) return sendResponse({ status: "error", message: lastErr || "マージ対象がありません" });
-  userData.historyJson = pruneHistoryJsonToFit_(userData.historyJson, userData.lastStudyJson);
+  normalizeUserJsonBeforeSave_(userData);
   usersSheet.getRange(targetRowIdx, 6).setValue(JSON.stringify(userData.historyJson));
   return sendResponse({ status: "success", merged: merged });
 }
@@ -1603,7 +1755,7 @@ function handleRecordKanjiNigatePass(req) {
     nowIso,
     passRequired
   );
-  userData.historyJson = pruneHistoryJsonToFit_(userData.historyJson, userData.lastStudyJson);
+  normalizeUserJsonBeforeSave_(userData);
   usersSheet.getRange(targetRowIdx, 6).setValue(JSON.stringify(userData.historyJson));
   return sendResponse({ status: "success", kanji: kanji, passCount: result.passCount, passRequired: result.passRequired, graduated: result.graduated });
 }

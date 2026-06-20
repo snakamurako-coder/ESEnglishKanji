@@ -2498,7 +2498,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         }
         if (d.dailyPointsJson) user.dailyPointsJson = d.dailyPointsJson;
         if (d.trainingProgressJson) user.trainingProgressJson = d.trainingProgressJson;
-        localStorage.setItem("app_kid_user", JSON.stringify(user));
+        saveAppKidUserToLocal(user);
         const ptsEl = document.getElementById("user-points");
         if (ptsEl && d.newTotal != null) ptsEl.innerText = String(d.newTotal);
       } catch (_) {}
@@ -3594,6 +3594,192 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       });
     }
 
+    var CLIENT_HISTORY_JSON_MAX_CHARS_ = 45000;
+    var CLIENT_UNIT_HISTORY_MAX_Q_KEYS_ = 120;
+    var CLIENT_KANJI_CHALLENGE_MAX_CHARS_ = 300;
+    var CLIENT_KANJI_NIGATE_PASS_MAX_KEYS_ = 150;
+    var CLIENT_DAILY_JSON_MAX_DAYS_ = 366;
+    var CLIENT_TRAINING_PROGRESS_MAX_DAYS_ = 90;
+    var CLIENT_LAST_STUDY_MAX_KEYS_ = 400;
+    var CLIENT_SESSION_SUBMIT_MAX_KEYS_ = 80;
+    var CLIENT_KANJI_WEAK_MAX_KEYS_ = 200;
+
+    function clientIsDateKeyString(k) {
+      return /^\d{4}-\d{2}-\d{2}$/.test(String(k || ""));
+    }
+
+    function clientPruneDateKeyedJson(obj, maxDays) {
+      if (!obj || typeof obj !== "object") return;
+      const minMs = Date.now() - Math.max(1, maxDays) * 24 * 60 * 60 * 1000;
+      Object.keys(obj).forEach(function (k) {
+        if (!clientIsDateKeyString(k)) return;
+        const d = new Date(k + "T12:00:00");
+        if (isNaN(d.getTime()) || d.getTime() < minMs) delete obj[k];
+      });
+    }
+
+    function clientPruneSessionSubmitLocks(locksRoot) {
+      if (!locksRoot || typeof locksRoot !== "object") return;
+      const keys = Object.keys(locksRoot);
+      if (keys.length <= CLIENT_SESSION_SUBMIT_MAX_KEYS_) return;
+      keys.sort(function (a, b) {
+        const ta = (locksRoot[a] && locksRoot[a].at) ? String(locksRoot[a].at) : "";
+        const tb = (locksRoot[b] && locksRoot[b].at) ? String(locksRoot[b].at) : "";
+        return ta.localeCompare(tb);
+      });
+      const drop = keys.length - CLIENT_SESSION_SUBMIT_MAX_KEYS_;
+      for (let i = 0; i < drop; i++) delete locksRoot[keys[i]];
+    }
+
+    function clientPruneKanjiWeak(weakRoot) {
+      if (!weakRoot || typeof weakRoot !== "object") return;
+      const keys = Object.keys(weakRoot);
+      if (keys.length <= CLIENT_KANJI_WEAK_MAX_KEYS_) return;
+      const scored = keys.map(function (k) {
+        return { k: k, t: String((weakRoot[k] || {}).updatedAt || "") };
+      });
+      scored.sort(function (a, b) { return a.t.localeCompare(b.t); });
+      const drop = scored.length - CLIENT_KANJI_WEAK_MAX_KEYS_;
+      for (let i = 0; i < drop; i++) delete weakRoot[scored[i].k];
+    }
+
+    function clientPruneUnitHistoryQuestions(unitHistory, maxKeys) {
+      if (!unitHistory || typeof unitHistory !== "object") return;
+      const qKeys = Object.keys(unitHistory);
+      if (qKeys.length <= maxKeys) return;
+      const scored = qKeys.map(function (k) {
+        const h = unitHistory[k] || {};
+        const rLen = Array.isArray(h.results) ? h.results.length : 0;
+        const tLen = Array.isArray(h.times) ? h.times.length : 0;
+        return { k: k, score: rLen + tLen };
+      });
+      scored.sort(function (a, b) {
+        return a.score - b.score || String(a.k).localeCompare(String(b.k));
+      });
+      const drop = scored.length - maxKeys;
+      for (let i = 0; i < drop; i++) delete unitHistory[scored[i].k];
+    }
+
+    function clientPruneKanjiChallenge(challengeRoot, maxChars) {
+      if (!challengeRoot || typeof challengeRoot !== "object") return;
+      const keys = Object.keys(challengeRoot);
+      if (keys.length <= maxChars) return;
+      const scored = keys.map(function (k) {
+        const rec = challengeRoot[k] || {};
+        const dates = Array.isArray(rec.highScoreDates) ? rec.highScoreDates : [];
+        const latest = dates.length ? String(dates[dates.length - 1]) : "";
+        return { k: k, t: latest };
+      });
+      scored.sort(function (a, b) { return a.t.localeCompare(b.t); });
+      const drop = scored.length - maxChars;
+      for (let i = 0; i < drop; i++) delete challengeRoot[scored[i].k];
+    }
+
+    function clientPruneKanjiNigatePass(passRoot, maxKeys) {
+      if (!passRoot || typeof passRoot !== "object") return;
+      const keys = Object.keys(passRoot);
+      if (keys.length <= maxKeys) return;
+      const scored = keys.map(function (k) {
+        return { k: k, t: String((passRoot[k] || {}).updatedAt || "") };
+      });
+      scored.sort(function (a, b) { return a.t.localeCompare(b.t); });
+      const drop = scored.length - maxKeys;
+      for (let i = 0; i < drop; i++) delete passRoot[scored[i].k];
+    }
+
+    function clientPruneLastStudyOrphans(lastStudyJson, historyJson) {
+      if (!lastStudyJson || typeof lastStudyJson !== "object") return;
+      const hist = historyJson || {};
+      Object.keys(lastStudyJson).forEach(function (k) {
+        if (!k || String(k).startsWith("__")) return;
+        if (!hist[k]) delete lastStudyJson[k];
+      });
+      const keys = Object.keys(lastStudyJson);
+      if (keys.length <= CLIENT_LAST_STUDY_MAX_KEYS_) return;
+      keys.sort(function (a, b) {
+        return String(lastStudyJson[a] || "").localeCompare(String(lastStudyJson[b] || ""));
+      });
+      const drop = keys.length - CLIENT_LAST_STUDY_MAX_KEYS_;
+      for (let i = 0; i < drop; i++) delete lastStudyJson[keys[i]];
+    }
+
+    function clientPruneHistoryJsonStructure(historyJson) {
+      const root = historyJson || {};
+      Object.keys(root).forEach(function (unitKey) {
+        if (!unitKey || String(unitKey).startsWith("__")) return;
+        if (root[unitKey] && typeof root[unitKey] === "object") {
+          clientPruneUnitHistoryQuestions(root[unitKey], CLIENT_UNIT_HISTORY_MAX_Q_KEYS_);
+        }
+      });
+      if (root.__kanjiChallenge) clientPruneKanjiChallenge(root.__kanjiChallenge, CLIENT_KANJI_CHALLENGE_MAX_CHARS_);
+      if (root.__kanjiNigatePass) clientPruneKanjiNigatePass(root.__kanjiNigatePass, CLIENT_KANJI_NIGATE_PASS_MAX_KEYS_);
+      if (root.__kanjiWeak) clientPruneKanjiWeak(root.__kanjiWeak);
+      if (root.__sessionSubmits) clientPruneSessionSubmitLocks(root.__sessionSubmits);
+      return root;
+    }
+
+    function clientPruneHistoryJsonToFit(historyJson, lastStudyJson) {
+      const max = CLIENT_HISTORY_JSON_MAX_CHARS_;
+      const root = historyJson || {};
+      clientPruneHistoryJsonStructure(root);
+      let serialized = JSON.stringify(root);
+      if (serialized.length <= max) return root;
+      const unitKeys = Object.keys(root).filter(function (k) {
+        return k && !String(k).startsWith("__");
+      });
+      unitKeys.sort(function (a, b) {
+        const ta = (lastStudyJson && lastStudyJson[a]) ? String(lastStudyJson[a]) : "";
+        const tb = (lastStudyJson && lastStudyJson[b]) ? String(lastStudyJson[b]) : "";
+        return ta.localeCompare(tb);
+      });
+      for (let i = 0; i < unitKeys.length; i++) {
+        delete root[unitKeys[i]];
+        serialized = JSON.stringify(root);
+        if (serialized.length <= max) return root;
+      }
+      return root;
+    }
+
+    function pruneAppKidUserClient(user) {
+      if (!user || typeof user !== "object") return user;
+      user.lastStudyJson = user.lastStudyJson || {};
+      user.historyJson = user.historyJson || {};
+      user.dailyPointsJson = user.dailyPointsJson || {};
+      user.trainingProgressJson = user.trainingProgressJson || {};
+      clientPruneDateKeyedJson(user.dailyPointsJson, CLIENT_DAILY_JSON_MAX_DAYS_);
+      clientPruneDateKeyedJson(user.trainingProgressJson, CLIENT_TRAINING_PROGRESS_MAX_DAYS_);
+      user.historyJson = clientPruneHistoryJsonToFit(user.historyJson, user.lastStudyJson);
+      clientPruneLastStudyOrphans(user.lastStudyJson, user.historyJson);
+      return user;
+    }
+
+    function saveAppKidUserToLocal(user) {
+      if (!user) return false;
+      try {
+        pruneAppKidUserClient(user);
+        localStorage.setItem("app_kid_user", JSON.stringify(user));
+        return true;
+      } catch (e) {
+        console.warn("app_kid_user save failed, retry after aggressive prune:", e);
+        try {
+          if (user.historyJson) {
+            const root = user.historyJson;
+            Object.keys(root).filter(function (k) { return k && !String(k).startsWith("__"); }).forEach(function (k) {
+              delete root[k];
+            });
+            clientPruneHistoryJsonStructure(root);
+            user.historyJson = clientPruneHistoryJsonToFit(root, user.lastStudyJson || {});
+          }
+          clientPruneLastStudyOrphans(user.lastStudyJson, user.historyJson);
+          localStorage.setItem("app_kid_user", JSON.stringify(user));
+          return true;
+        } catch (e2) {
+          console.error("app_kid_user save failed after aggressive prune:", e2);
+          return false;
+        }
+      }
+    }
+
     function getDetailedUnitId() {
       const meta = getEnglishQuizSessionMeta();
       if (meta && meta.detailedUnitId) return meta.detailedUnitId;
@@ -4163,15 +4349,76 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       }
     }
 
+    function getRecoveryDraftQuestionCount(draft) {
+      if (!draft) return 0;
+      if (draft.version >= 2 && Array.isArray(draft.filteredQuestionIds)) return draft.filteredQuestionIds.length;
+      if (Array.isArray(draft.filteredQuestions)) return draft.filteredQuestions.length;
+      return 0;
+    }
+
     function isRecoveryDraftValidForUser(draft, userId) {
       if (!draft || !userId) return false;
       if (String(draft.userId) !== String(userId)) return false;
-      if (!Array.isArray(draft.filteredQuestions) || draft.filteredQuestions.length === 0) return false;
-      if (!Array.isArray(draft.currentQuestions) || draft.currentQuestions.length === 0) return false;
+      const total = getRecoveryDraftQuestionCount(draft);
+      if (total <= 0) return false;
+      if (draft.version >= 2) {
+        if (!Array.isArray(draft.filteredQuestionIds) || draft.filteredQuestionIds.length === 0) return false;
+      } else {
+        if (!Array.isArray(draft.filteredQuestions) || draft.filteredQuestions.length === 0) return false;
+        if (!Array.isArray(draft.currentQuestions) || draft.currentQuestions.length === 0) return false;
+      }
       if (!Array.isArray(draft.quizResults)) return false;
       if (typeof draft.currentQuestionIndex !== 'number') return false;
-      if (draft.currentQuestionIndex < 0 || draft.currentQuestionIndex > draft.filteredQuestions.length) return false;
+      if (draft.currentQuestionIndex < 0 || draft.currentQuestionIndex > total) return false;
       return true;
+    }
+
+    function pickQuizQuestionsBySerialIds(allQuestions, serialIds) {
+      const map = {};
+      (allQuestions || []).forEach(function (q) {
+        if (q && q["通し番号"] != null) map[String(q["通し番号"])] = q;
+      });
+      return (serialIds || []).map(function (id) { return map[String(id)]; }).filter(Boolean);
+    }
+
+    function loadQuestionsForQuizDraft(draft) {
+      const modeId = draft.currentModeId;
+      const unitName = draft.currentUnitName;
+      const cacheKey = "app_cached_questions_" + modeId + "_" + unitName;
+      function resolveFromAll(allQuestions) {
+        if (draft.version >= 2 && Array.isArray(draft.filteredQuestionIds)) {
+          const picked = pickQuizQuestionsBySerialIds(allQuestions, draft.filteredQuestionIds);
+          if (picked.length !== draft.filteredQuestionIds.length) return null;
+          return { currentQuestions: allQuestions, filteredQuestions: picked };
+        }
+        return {
+          currentQuestions: Array.isArray(draft.currentQuestions) ? draft.currentQuestions : allQuestions,
+          filteredQuestions: Array.isArray(draft.filteredQuestions) ? draft.filteredQuestions : []
+        };
+      }
+      try {
+        const raw = localStorage.getItem(cacheKey);
+        if (raw) {
+          const cached = JSON.parse(raw);
+          if (cached && cached.status === "success" && Array.isArray(cached.questions)) {
+            const resolved = resolveFromAll(cached.questions);
+            if (resolved && resolved.filteredQuestions.length > 0) return Promise.resolve(resolved);
+          }
+        }
+      } catch (_) {}
+      return fetch(GAS_API_URL, {
+        method: "POST",
+        body: JSON.stringify({ action: "get_questions", modeId: modeId, unitName: unitName })
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (d && d.status === "success" && Array.isArray(d.questions)) {
+            try { localStorage.setItem(cacheKey, JSON.stringify(d)); } catch (_) {}
+            const resolved = resolveFromAll(d.questions);
+            if (resolved && resolved.filteredQuestions.length > 0) return resolved;
+          }
+          throw new Error((d && d.message) || "問題データの取得に失敗しました");
+        });
     }
 
     function saveQuizRecoveryDraft(nextQuestionIndex) {
@@ -4181,16 +4428,15 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         if (!Array.isArray(filteredQuestions) || filteredQuestions.length === 0) return;
         const idx = typeof nextQuestionIndex === 'number' ? nextQuestionIndex : currentQuestionIndex;
         const draft = {
-          version: 1,
+          version: 2,
           savedAt: Date.now(),
           userId: user.id,
           currentModeId,
           currentModeName,
           currentUnitName,
           currentQuestionIndex: idx,
-          quizResults: Array.isArray(quizResults) ? quizResults : [],
-          currentQuestions: Array.isArray(currentQuestions) ? currentQuestions : [],
-          filteredQuestions: Array.isArray(filteredQuestions) ? filteredQuestions : [],
+          quizResults: slimQuizResultsForSave(quizResults),
+          filteredQuestionIds: filteredQuestions.map(function (q) { return q["通し番号"]; }),
           currentIsReviewMode: !!currentIsReviewMode,
           isTrainingMode: !!isTrainingMode,
           currentTrainingStepIndex,
@@ -4231,7 +4477,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         textEl.innerText = "";
         return;
       }
-      const total = draft.filteredQuestions.length;
+      const total = getRecoveryDraftQuestionCount(draft);
       const done = Math.max(0, Math.min(total, draft.currentQuestionIndex));
       const savedAt = new Date(draft.savedAt || Date.now());
       const stamp = isNaN(savedAt.getTime()) ? "さきほど" : savedAt.toLocaleString('ja-JP');
@@ -4239,22 +4485,12 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       panel.style.display = 'block';
     }
 
-    function resumeQuizFromDraft(opts = {}) {
-      const askConfirm = opts && opts.askConfirm === false ? false : true;
-      const user = JSON.parse(localStorage.getItem('app_kid_user') || 'null');
-      const draft = getQuizRecoveryDraft();
-      if (!user || !isRecoveryDraftValidForUser(draft, user.id)) {
-        alert("復帰できる学習データがありません。");
-        renderHomeResumePanel();
-        return false;
-      }
-      if (askConfirm && !confirm("途中の学習がありました。再開しますか？")) return false;
-
+    function applyQuizDraftSessionState(draft, cQuestions, fQuestions) {
       currentModeId = draft.currentModeId || currentModeId;
       currentModeName = draft.currentModeName || currentModeName;
       currentUnitName = draft.currentUnitName || currentUnitName;
-      currentQuestions = Array.isArray(draft.currentQuestions) ? draft.currentQuestions : [];
-      filteredQuestions = Array.isArray(draft.filteredQuestions) ? draft.filteredQuestions : [];
+      currentQuestions = Array.isArray(cQuestions) ? cQuestions : [];
+      filteredQuestions = Array.isArray(fQuestions) ? fQuestions : [];
       quizResults = Array.isArray(draft.quizResults) ? draft.quizResults : [];
       currentQuestionIndex = Math.max(0, Math.min(filteredQuestions.length, Number(draft.currentQuestionIndex) || 0));
       currentIsReviewMode = !!draft.currentIsReviewMode;
@@ -4285,6 +4521,32 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       captureEnglishQuizSessionMeta();
       switchSection('section-quiz');
       showQuestion();
+    }
+
+    function resumeQuizFromDraft(opts = {}) {
+      const askConfirm = opts && opts.askConfirm === false ? false : true;
+      const user = JSON.parse(localStorage.getItem('app_kid_user') || 'null');
+      const draft = getQuizRecoveryDraft();
+      if (!user || !isRecoveryDraftValidForUser(draft, user.id)) {
+        alert("復帰できる学習データがありません。");
+        renderHomeResumePanel();
+        return false;
+      }
+      if (askConfirm && !confirm("途中の学習がありました。再開しますか？")) return false;
+
+      if (draft.version >= 2 || !(Array.isArray(draft.currentQuestions) && draft.currentQuestions.length && Array.isArray(draft.filteredQuestions) && draft.filteredQuestions.length)) {
+        loadQuestionsForQuizDraft(draft)
+          .then(function (data) {
+            applyQuizDraftSessionState(draft, data.currentQuestions, data.filteredQuestions);
+          })
+          .catch(function (e) {
+            alert("問題データの復元に失敗しました: " + (e && e.message ? e.message : e));
+            renderHomeResumePanel();
+          });
+        return true;
+      }
+
+      applyQuizDraftSessionState(draft, draft.currentQuestions, draft.filteredQuestions);
       return true;
     }
 
@@ -4460,7 +4722,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
     function clearPin() { currentPin = ""; updatePinDisplay(); }
     function updatePinDisplay() { let d=""; for(let i=0;i<4;i++) d+=(i<currentPin.length)?"● ":"_ "; document.getElementById('pin-dots').innerText=d.trim(); }
     function cancelPin() { if(isPinResetMode) showHome(JSON.parse(localStorage.getItem('app_kid_user'))); else switchSection('section-users'); }
-    function verifyPin() { document.getElementById('message').innerText = "かくにん中..."; fetch(GAS_API_URL, { method: 'POST', body: JSON.stringify({ action: "verify_kid_pin", userId: selectedUserId, pin: currentPin }) }).then(r=>r.json()).then(d=>{ if(d.status==="success"){ localStorage.setItem('app_kid_user', JSON.stringify(d.user)); showHome(d.user); } else { document.getElementById('message').innerText = d.message; currentPin=""; updatePinDisplay(); } }); }
+    function verifyPin() { document.getElementById('message').innerText = "かくにん中..."; fetch(GAS_API_URL, { method: 'POST', body: JSON.stringify({ action: "verify_kid_pin", userId: selectedUserId, pin: currentPin }) }).then(r=>r.json()).then(d=>{ if(d.status==="success"){ saveAppKidUserToLocal(d.user); showHome(d.user); } else { document.getElementById('message').innerText = d.message; currentPin=""; updatePinDisplay(); } }); }
     function preparePinReset() { const user = JSON.parse(localStorage.getItem('app_kid_user')); showPinScreen(user.id, user.name, true); }
     function executePinReset() { document.getElementById('message').innerText = "へんこう中..."; fetch(GAS_API_URL, { method: 'POST', body: JSON.stringify({ action: "change_pin", userId: selectedUserId, newPin: currentPin }) }).then(r=>r.json()).then(d=>{ if(d.status==="success") { alert(d.message); showHome(JSON.parse(localStorage.getItem('app_kid_user'))); } else { document.getElementById('message').innerText = d.message; currentPin=""; updatePinDisplay(); } }); }
     function logout() { localStorage.removeItem('app_kid_user'); document.body.classList.remove('kanji-study-mode'); document.getElementById('global-header').style.display = 'none'; switchSection('section-users'); }
@@ -4850,7 +5112,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
             toggleBtnLoading(btn, false, origText); 
             if(d.status==="success") { 
                 alert(d.message); 
-                user.points = d.newPoints; localStorage.setItem('app_kid_user', JSON.stringify(user)); 
+                user.points = d.newPoints; saveAppKidUserToLocal(user); 
                 showHome(user); 
             } else { alert(d.message); } 
         }).catch(e => { alert("通信エラーが発生しました。"); toggleBtnLoading(btn, false, origText); }); 
@@ -5960,7 +6222,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         const user = JSON.parse(localStorage.getItem('app_kid_user') || "{}");
         if (approve && d.userId && user.id === d.userId && typeof d.newTotal === "number") {
           user.points = d.newTotal;
-          localStorage.setItem('app_kid_user', JSON.stringify(user));
+          saveAppKidUserToLocal(user);
           const pts = document.getElementById('user-points');
           if (pts) pts.innerText = user.points;
         }
@@ -8467,7 +8729,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
             } catch (ePt) {}
             if (typeof d.newTotal === "number") {
               kidUser.points = d.newTotal;
-              localStorage.setItem("app_kid_user", JSON.stringify(kidUser));
+              saveAppKidUserToLocal(kidUser);
               var pts = document.getElementById("user-points");
               if (pts) pts.innerText = String(d.newTotal);
             }
@@ -9661,7 +9923,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
           qType: q.type
         });
         user.points = d.newTotal;
-        localStorage.setItem('app_kid_user', JSON.stringify(user));
+        saveAppKidUserToLocal(user);
         const ptsEl = document.getElementById("user-points");
         if (ptsEl) ptsEl.innerText = String(d.newTotal);
         function advanceKanjiQuizAfterScore() {
@@ -11851,7 +12113,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         if (d.dailyPointsJson) user.dailyPointsJson = d.dailyPointsJson;
         if (d.trainingProgressJson) user.trainingProgressJson = d.trainingProgressJson;
         try {
-          localStorage.setItem('app_kid_user', JSON.stringify(user));
+          saveAppKidUserToLocal(user);
         } catch (eUserSave) {
           console.warn("user info update failed (points were saved on server):", eUserSave);
         }
