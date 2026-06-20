@@ -3595,14 +3595,68 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       return /[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]/.test(String(text || ""));
     }
     if ('speechSynthesis' in window) { window.speechSynthesis.onvoiceschanged = loadVoices; loadVoices(); }
+
+    let quizEnglishAudioPlaying = false;
+    let quizVoiceListening = false;
+    let activeQuizSpeechUtterance = null;
+
+    function isQuizSectionActive_() {
+      const sec = document.getElementById('section-quiz');
+      return !!(sec && sec.classList.contains('active'));
+    }
+    function shouldQuizAudioVoiceMutex_() {
+      return isQuizSectionActive_() && isQuizVoiceAnswerType(getActiveQuizAnswerType());
+    }
+    function setQuizEnglishAudioPlaying_(playing) {
+      quizEnglishAudioPlaying = !!playing;
+      syncQuizAudioVoiceControls_();
+    }
+    function stopQuizVoiceListening_() {
+      if (!quizVoiceListening) return;
+      quizVoiceListening = false;
+      syncQuizAudioVoiceControls_();
+    }
+    function startQuizVoiceListening_() {
+      quizVoiceListening = true;
+      syncQuizAudioVoiceControls_();
+    }
+    function resetQuizAudioVoiceMutex_() {
+      quizVoiceListening = false;
+      quizEnglishAudioPlaying = false;
+      activeQuizSpeechUtterance = null;
+      syncQuizAudioVoiceControls_();
+    }
+    function syncQuizAudioVoiceControls_() {
+      if (!shouldQuizAudioVoiceMutex_()) return;
+      const listenBtn = document.getElementById('quiz-listen-btn');
+      const voiceBtn = document.getElementById('voice-btn');
+      if (listenBtn) listenBtn.disabled = quizVoiceListening;
+      if (voiceBtn) voiceBtn.disabled = quizEnglishAudioPlaying;
+    }
+    function speakQuizEnglishAudio(text, rate) {
+      if (quizVoiceListening) return;
+      speakText(text, rate == null ? 0.9 : rate, 'en');
+    }
+
     /** langHint: 'ja' | 'en' | undefined（undefined は文字から自動判定） */
     function speakText(text, rate = 0.9, langHint) {
-      if (!('speechSynthesis' in window)) return;
-      if (text == null || (typeof text !== 'string' && typeof text !== 'number')) return;
+      if (!('speechSynthesis' in window)) {
+        if (shouldQuizAudioVoiceMutex_()) setQuizEnglishAudioPlaying_(false);
+        return;
+      }
+      if (text == null || (typeof text !== 'string' && typeof text !== 'number')) {
+        if (shouldQuizAudioVoiceMutex_()) setQuizEnglishAudioPlaying_(false);
+        return;
+      }
       const t = String(text).trim();
-      if (!t) return;
+      if (!t) {
+        if (shouldQuizAudioVoiceMutex_()) setQuizEnglishAudioPlaying_(false);
+        return;
+      }
       loadVoices();
       try { window.speechSynthesis.resume(); } catch (_) {}
+      const mutex = shouldQuizAudioVoiceMutex_();
+      if (mutex) activeQuizSpeechUtterance = null;
       window.speechSynthesis.cancel();
       const uttr = new SpeechSynthesisUtterance(t);
       const useJa = langHint === 'ja' || (langHint !== 'en' && textLooksJapanese(t));
@@ -3618,6 +3672,16 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         uttr.lang = 'en-US';
         uttr.rate = rate;
         if (preferredVoice) uttr.voice = preferredVoice;
+      }
+      if (mutex) {
+        activeQuizSpeechUtterance = uttr;
+        uttr.onstart = function () { setQuizEnglishAudioPlaying_(true); };
+        uttr.onend = uttr.onerror = function () {
+          if (activeQuizSpeechUtterance === uttr) {
+            activeQuizSpeechUtterance = null;
+            setQuizEnglishAudioPlaying_(false);
+          }
+        };
       }
       window.speechSynthesis.speak(uttr);
     }
@@ -11724,8 +11788,10 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
 
     function startVoiceInput() {
       if(!recognition) { alert("お使いのブラウザは音声入力に対応していません。SafariかChromeを使ってね！"); return; }
+      if (quizEnglishAudioPlaying || quizVoiceListening) return;
       const feedback = document.getElementById('voice-feedback'); const btn = document.getElementById('voice-btn'); const displayField = document.getElementById('voice-recognized-text');
       displayField.value = ""; btn.innerText = "🎙️ 聞き取り中..."; btn.style.background = "#e50914"; feedback.innerHTML = "英語ではなしてください...";
+      startQuizVoiceListening_();
       recognition.onresult = (event) => {
         let interimTranscript = ''; let finalTranscript = '';
         for (let i = event.resultIndex; i < event.results.length; ++i) { if (event.results[i].isFinal) finalTranscript += event.results[i][0].transcript; else interimTranscript += event.results[i][0].transcript; }
@@ -11751,8 +11817,11 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
           }
         }
       };
-      recognition.onerror = () => { feedback.innerText = "聞き取れませんでした。もう一度おしてね。"; btn.innerText = "🎙️ マイクでこたえる"; btn.style.background = "#2196F3"; };
-      recognition.onend = () => { if(btn.innerText.includes("聞き取り中")) { btn.innerText = "🎙️ マイクでこたえる"; btn.style.background = "#2196F3"; } };
+      recognition.onerror = () => { stopQuizVoiceListening_(); feedback.innerText = "聞き取れませんでした。もう一度おしてね。"; btn.innerText = "🎙️ マイクでこたえる"; btn.style.background = "#2196F3"; };
+      recognition.onend = () => {
+        stopQuizVoiceListening_();
+        if(btn.innerText.includes("聞き取り中")) { btn.innerText = "🎙️ マイクでこたえる"; btn.style.background = "#2196F3"; }
+      };
       recognition.start();
     }
 
@@ -11873,6 +11942,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       setPenTypingSubmitBusy(false);
       maxDeduction = 0;
       voiceFailCount = 0;
+      resetQuizAudioVoiceMutex_();
       clearTimeout(autoNextTimer); 
       destroySortQuizIfAny();
       
@@ -11912,8 +11982,9 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         const refEn = String(q["並び替え用英文"] || "").trim();
         document.getElementById('quiz-q-text').innerHTML = `<div style="font-size:36px;font-weight:bold;margin-bottom:8px;">${escapeHtml(ja)}</div>${refEn ? `<div style="font-size:22px;color:#aaa;line-height:1.4;">${escapeHtml(refEn)}</div>` : ''}`;
       } else if (format.includes("audio")) {
-        document.getElementById('quiz-q-text').innerHTML = `<button onclick="speakText('${engTextForAudio.replace(/'/g, "\\'")}')" class="submit-btn btn-blue" style="border-radius:50px;">🔊 英語をきく</button>`;
-        setTimeout(() => speakText(engTextForAudio), 500); 
+        document.getElementById('quiz-q-text').innerHTML = `<button id="quiz-listen-btn" onclick="speakQuizEnglishAudio('${engTextForAudio.replace(/'/g, "\\'")}')" class="submit-btn btn-blue" style="border-radius:50px;">🔊 英語をきく</button>`;
+        if (isQuizVoiceAnswerType(answerType) && ('speechSynthesis' in window)) setQuizEnglishAudioPlaying_(true);
+        setTimeout(() => speakText(engTextForAudio), 500);
       } else if (format === "en_to_en") {
         const safeText = qText || "";
         const clueLabel = (answerType === "initial_typing" || answerType === "initial_voice")
@@ -11936,7 +12007,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
             : "";
           document.getElementById('quiz-q-text').innerHTML = clueBadge +
             `<div style="margin-bottom:8px;font-size:clamp(22px,5vw,36px);font-weight:bold;letter-spacing:0.06em;line-height:1.45;">${escapeHtml(safeText)}</div>` +
-            `<button onclick="speakText('${(correctA || "").replace(/'/g, "\\'")}')" class="submit-btn btn-blue" style="border-radius:50px;">🔊 英語をきく</button>`;
+            `<button id="quiz-listen-btn" onclick="speakQuizEnglishAudio('${(correctA || "").replace(/'/g, "\\'")}')" class="submit-btn btn-blue" style="border-radius:50px;">🔊 英語をきく</button>`;
         }
       } else {
         document.getElementById('quiz-q-text').innerText = qText; 
@@ -11994,6 +12065,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       else if (isLegacyFillBlankAnswerType(answerType)) {
         setupFillBlankQuiz(correctA, answerType);
       }
+      syncQuizAudioVoiceControls_();
       updateSessionScoreDisplay();
     }
 
@@ -12260,8 +12332,26 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       }
     }
 
-    function nextQuestion() { clearTimeout(autoNextTimer); window.speechSynthesis.cancel(); resetHandwritingInputState(); currentQuestionIndex++; showQuestion(); }
-    function quitQuiz() { clearTimeout(autoNextTimer); window.speechSynthesis.cancel(); resetHandwritingInputState(); document.body.classList.remove('quiz-answer-submitting'); document.getElementById('section-quiz')?.classList.remove('pen-mode-active'); document.getElementById('quiz-answer-area')?.classList.remove('pen-mode-active'); openSettingsScreen(); }
+    function nextQuestion() {
+      clearTimeout(autoNextTimer);
+      if (recognition) { try { recognition.stop(); } catch (_) {} }
+      window.speechSynthesis.cancel();
+      resetQuizAudioVoiceMutex_();
+      resetHandwritingInputState();
+      currentQuestionIndex++;
+      showQuestion();
+    }
+    function quitQuiz() {
+      clearTimeout(autoNextTimer);
+      if (recognition) { try { recognition.stop(); } catch (_) {} }
+      window.speechSynthesis.cancel();
+      resetQuizAudioVoiceMutex_();
+      resetHandwritingInputState();
+      document.body.classList.remove('quiz-answer-submitting');
+      document.getElementById('section-quiz')?.classList.remove('pen-mode-active');
+      document.getElementById('quiz-answer-area')?.classList.remove('pen-mode-active');
+      openSettingsScreen();
+    }
     
     function finishQuiz() {
       resetResultScreenActionButtons();
