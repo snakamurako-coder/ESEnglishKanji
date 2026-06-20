@@ -1128,6 +1128,46 @@ function pruneHistoryJsonToFit_(historyJson, lastStudyJson, maxChars) {
   return root;
 }
 
+function safeParseUserJsonCell_(raw, fallback) {
+  try {
+    if (raw == null || String(raw).trim() === "") return fallback || {};
+    return JSON.parse(raw);
+  } catch (_) {
+    return fallback || {};
+  }
+}
+
+function normalizeQuestionIdForHistory_(questionId, fallbackIndex) {
+  const id = String(questionId != null ? questionId : "").trim();
+  if (id) return id;
+  return "q_" + String(fallbackIndex != null ? fallbackIndex : 0);
+}
+
+function buildHistoryUnitPatchForSession_(unitHistory, resultsList) {
+  const patch = {};
+  if (!unitHistory || !Array.isArray(resultsList)) return patch;
+  resultsList.forEach(function (res, idx) {
+    const qId = normalizeQuestionIdForHistory_(res && res.questionId, idx);
+    if (unitHistory[qId]) patch[qId] = unitHistory[qId];
+  });
+  return patch;
+}
+
+function writeUserLearningRow_(usersSheet, targetRowIdx, userData, newTotalPoints) {
+  userData.historyJson = pruneHistoryJsonToFit_(userData.historyJson, userData.lastStudyJson);
+  const rowValues = [
+    newTotalPoints,
+    JSON.stringify(userData.lastStudyJson),
+    JSON.stringify(userData.historyJson),
+    JSON.stringify(userData.dailyPointsJson),
+    JSON.stringify(userData.trainingProgressJson)
+  ];
+  if (rowValues[2].length > HISTORY_JSON_CELL_MAX_CHARS_) {
+    throw new Error("履歴データが大きすぎて保存できません。管理者に連絡してください。");
+  }
+  usersSheet.getRange(targetRowIdx, 4, targetRowIdx, 8).setValues([rowValues]);
+}
+
 function pruneSessionSubmitLocks_(locksRoot) {
   if (!locksRoot || typeof locksRoot !== "object") return;
   const keys = Object.keys(locksRoot);
@@ -1165,6 +1205,7 @@ function rememberSessionSubmitLock_(userData, sessionSubmitId, earnedPoints, new
 
 // 学習結果の保存（進捗チェックの更新を追加）
 function handleSaveLearningSession(req) {
+  try {
   const props = PropertiesService.getScriptProperties();
   const adminSs = SpreadsheetApp.openById(props.getProperty('ADMIN_SS_ID'));
   const usersSheet = adminSs.getSheetByName("users");
@@ -1178,10 +1219,10 @@ function handleSaveLearningSession(req) {
       targetRowIdx = i + 1;
       userData = {
         points: Number(data[i][3]) || 0,
-        lastStudyJson: JSON.parse(data[i][4] || "{}"),
-        historyJson: JSON.parse(data[i][5] || "{}"),
-        dailyPointsJson: JSON.parse(data[i][6] || "{}"),
-        trainingProgressJson: JSON.parse(data[i][7] || "{}") // ★ 進捗データ
+        lastStudyJson: safeParseUserJsonCell_(data[i][4], {}),
+        historyJson: safeParseUserJsonCell_(data[i][5], {}),
+        dailyPointsJson: safeParseUserJsonCell_(data[i][6], {}),
+        trainingProgressJson: safeParseUserJsonCell_(data[i][7], {})
       };
       break;
     }
@@ -1191,6 +1232,7 @@ function handleSaveLearningSession(req) {
   const priorLock = getSessionSubmitLock_(userData, req.sessionSubmitId);
   if (priorLock) {
     const sheetPointPercent = parseUnitSheetPointPercent_(req.unitSheetName);
+    const unitId = String(req.unitId || "");
     const resp = {
       status: "success",
       earnedPoints: priorLock.earnedPoints,
@@ -1198,8 +1240,8 @@ function handleSaveLearningSession(req) {
       alreadyProcessed: true,
       bonusApplied: req.isRandom,
       sheetPointPercent: sheetPointPercent,
-      historyUnitId: String(req.unitId || ""),
-      historyUnitPatch: userData.historyJson[req.unitId] || {},
+      historyUnitId: unitId,
+      historyUnitPatch: buildHistoryUnitPatchForSession_(userData.historyJson[unitId], req.results),
       dailyPointsJson: userData.dailyPointsJson
     };
     if (req.trainingStepIndex) {
@@ -1211,12 +1253,10 @@ function handleSaveLearningSession(req) {
   const now = new Date();
   const todayStr = now.toISOString().split('T')[0];
   let multiplier = 1.0;
-  // 漢字セットは教材＋セット単位で前回学習を参照。同一プレイ中の2問目以降は短間隔扱いにせず、直前の1問内の減衰を防ぐ
   const lastStudyKey = String(req.kanjiSetScopeId || req.unitId || "");
   let lastStudyTimeStr = lastStudyKey ? userData.lastStudyJson[lastStudyKey] : undefined;
   if (req.kanjiSetContinuation) lastStudyTimeStr = null;
 
-  // 時間経過による緩和（通常ポイント計算）
   if (lastStudyTimeStr) {
     const lastTime = new Date(lastStudyTimeStr);
     const diffHours = (now - lastTime) / (1000 * 60 * 60);
@@ -1225,15 +1265,15 @@ function handleSaveLearningSession(req) {
     multiplier = basePercent / 100;
   }
   
-  // ボーナスの適用
   if (req.isReviewMode) multiplier += 0.4;
   if (req.isRandom) multiplier += 0.1;
 
   let sessionRawPoints = 0;
-  if (!userData.historyJson[req.unitId]) userData.historyJson[req.unitId] = {};
-  const unitHistory = userData.historyJson[req.unitId];
+  const unitId = String(req.unitId || "");
+  if (!userData.historyJson[unitId]) userData.historyJson[unitId] = {};
+  const unitHistory = userData.historyJson[unitId];
+  const resultsList = Array.isArray(req.results) ? req.results : [];
 
-  // 漢字採点チャレンジ専用（score と char を受け取り、文字単位の回数制限＋日次回復を適用）
   if (req.learningCategory === "kanji" && req.challengeType === "score" && req.kanjiChar) {
     const settings = getAppSettingsMap_(adminSs);
     const charKey = String(req.kanjiChar);
@@ -1261,18 +1301,18 @@ function handleSaveLearningSession(req) {
       if (unitHistory[qHistId].times.length > 10) unitHistory[qHistId].times.shift();
     }
   } else {
-    const resultsList = Array.isArray(req.results) ? req.results : [];
-    resultsList.forEach(res => {
-      if (res.isCorrect) {
+    resultsList.forEach(function (res, idx) {
+      if (res && res.isCorrect) {
         let qPoint = Math.max(1, (Number(res.basePoint) || 2) - (Number(res.maxDeduction) || 0));
         sessionRawPoints += qPoint;
       }
-      const qId = res.questionId;
+      const qId = normalizeQuestionIdForHistory_(res && res.questionId, idx);
       if (!unitHistory[qId]) unitHistory[qId] = { results: [], times: [] };
       
-      unitHistory[qId].results.push(res.isCorrect ? 1 : 0);
+      unitHistory[qId].results.push(res && res.isCorrect ? 1 : 0);
       if (unitHistory[qId].results.length > 10) unitHistory[qId].results.shift();
-      unitHistory[qId].times.push(res.timeSec);
+      const timeSec = Number(res && res.timeSec);
+      unitHistory[qId].times.push(!isNaN(timeSec) ? timeSec : 0);
       if (unitHistory[qId].times.length > 10) unitHistory[qId].times.shift();
     });
   }
@@ -1300,20 +1340,16 @@ function handleSaveLearningSession(req) {
   }
 
   rememberSessionSubmitLock_(userData, req.sessionSubmitId, earnedPoints, newTotalPoints, now.toISOString());
-  userData.historyJson = pruneHistoryJsonToFit_(userData.historyJson, userData.lastStudyJson);
 
-  usersSheet.getRange(targetRowIdx, 4).setValue(newTotalPoints);
-  usersSheet.getRange(targetRowIdx, 5).setValue(JSON.stringify(userData.lastStudyJson));
-  usersSheet.getRange(targetRowIdx, 6).setValue(JSON.stringify(userData.historyJson));
-  usersSheet.getRange(targetRowIdx, 7).setValue(JSON.stringify(userData.dailyPointsJson));
-  usersSheet.getRange(targetRowIdx, 8).setValue(JSON.stringify(userData.trainingProgressJson)); // ★ 保存
+  writeUserLearningRow_(usersSheet, targetRowIdx, userData, newTotalPoints);
 
+  const sessionPatch = buildHistoryUnitPatchForSession_(unitHistory, resultsList);
   const resp = {
     status: "success",
     earnedPoints: earnedPoints,
     newTotal: newTotalPoints,
-    historyUnitId: String(req.unitId || ""),
-    historyUnitPatch: unitHistory,
+    historyUnitId: unitId,
+    historyUnitPatch: sessionPatch,
     dailyPointsJson: userData.dailyPointsJson,
     bonusApplied: req.isRandom,
     sheetPointPercent: sheetPointPercent
@@ -1334,6 +1370,9 @@ function handleSaveLearningSession(req) {
     }
   }
   return sendResponse(resp);
+  } catch (err) {
+    return sendResponse({ status: "error", message: "保存処理エラー: " + String(err && err.message ? err.message : err) });
+  }
 }
 
 /** 漢字ニガテ：historyJson.__kanjiWeak へ薄いシグナルだけマージ（キー数・recent 上限あり） */

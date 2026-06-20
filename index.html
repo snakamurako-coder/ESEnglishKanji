@@ -2488,7 +2488,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         if (d.newTotal != null) user.points = d.newTotal;
         if (!user.historyJson) user.historyJson = {};
         if (d.historyUnitId && d.historyUnitPatch) {
-          user.historyJson[d.historyUnitId] = d.historyUnitPatch;
+          mergeHistoryUnitPatchClient(user, d.historyUnitId, d.historyUnitPatch);
         } else if (d.historyJson) {
           user.historyJson = d.historyJson;
         }
@@ -2548,7 +2548,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
           rec.lastFlushAt = Date.now();
           localStorage.setItem(LS_PENDING_FINISH_SAVE, JSON.stringify(rec));
         } catch (_) {}
-        return gasApiFetchText(rec.payload, { retries: 1, timeoutMs: 60000, xhrFallback: true })
+        return gasApiFetchText(rec.payload, { retries: 1, timeoutMs: 120000, xhrFallback: true })
           .then(function (res) {
             const d = gasApiParseJsonResponse(res);
             if (d && d.status === "success") {
@@ -2582,6 +2582,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
     let currentModeId = ""; let currentModeName = ""; let currentUnitName = "";
     let currentQuestions = []; let filteredQuestions = []; let currentQuestionIndex = 0; 
     let quizResults = []; let questionStartTime = 0; let currentIsReviewMode = false;
+    let englishQuizSessionMeta = null;
     let userInventoryData = []; let showAllInventory = false;
     function getUserIdForPref() {
       try {
@@ -3321,7 +3322,8 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
     /** handleSaveLearningSession と同じ係数（時間・ニガテ・ランダム） */
     function computePointsMultiplierClient() {
       const user = JSON.parse(localStorage.getItem('app_kid_user') || '{}');
-      const unitId = getDetailedUnitId();
+      const meta = getEnglishQuizSessionMeta();
+      const unitId = meta.detailedUnitId || getDetailedUnitId();
       let mult = 1.0;
       const lastStudyTimeStr = user.lastStudyJson && user.lastStudyJson[unitId];
       if (lastStudyTimeStr) {
@@ -3331,8 +3333,8 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         if (basePercent > 100) basePercent = 100;
         mult = basePercent / 100;
       }
-      if (currentIsReviewMode) mult += 0.4;
-      if (document.getElementById('setting-order') && document.getElementById('setting-order').value === 'random') mult += 0.1;
+      if (meta.isReviewMode) mult += 0.4;
+      if (meta.isRandom) mult += 0.1;
       return mult;
     }
 
@@ -3390,9 +3392,10 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
 
     function sumMaxPossibleRawForSession() {
       if (!filteredQuestions || filteredQuestions.length === 0) return 0;
-      const format = document.getElementById('setting-format').value;
-      const ansType = getActiveQuizAnswerType();
-      const isWord = currentModeName.includes("単語");
+      const meta = getEnglishQuizSessionMeta();
+      const format = meta.format || (document.getElementById('setting-format') || {}).value || "";
+      const ansType = meta.ansType || getActiveQuizAnswerType();
+      const isWord = String(meta.modeName || currentModeName || "").includes("単語");
       const defaultBp = getSessionBasePointPerQuestion(format, ansType, isWord);
       const results = Array.isArray(quizResults) ? quizResults : [];
       let sum = 0;
@@ -3530,17 +3533,84 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       renderStopwatch(target);
     }
 
-    function getDetailedUnitId() { 
-      // isTrainingMode が true なら特訓ルート専用のIDにする
-      if (isTrainingMode) return `TrainingRoute_${currentTrainingStepIndex}_${currentUnitName}`;
-      const format = document.getElementById('setting-format').value; 
-      const ansType = document.getElementById('setting-answer-type').value; 
+    function buildEnglishQuizSessionMeta() {
+      const formatEl = document.getElementById('setting-format');
+      const ansEl = document.getElementById('setting-answer-type');
+      const orderEl = document.getElementById('setting-order');
+      const blankEl = document.getElementById('setting-blank-count');
+      const format = formatEl ? String(formatEl.value || "") : "";
+      const ansType = syncAnswerTypeWithFormat(format);
+      let detailedUnitId;
+      if (isTrainingMode) {
+        detailedUnitId = "TrainingRoute_" + currentTrainingStepIndex + "_" + currentUnitName;
+      } else {
+        detailedUnitId = currentModeName + "_" + currentUnitName + "_" + format + "_" + ansType;
+        if (isLegacyFillBlankAnswerType(ansType)) {
+          const blankCount = blankEl ? String(blankEl.value || "1") : "1";
+          detailedUnitId += "_" + blankCount + "blanks";
+        }
+      }
+      return {
+        detailedUnitId: detailedUnitId,
+        format: format,
+        ansType: ansType,
+        isRandom: orderEl ? orderEl.value === "random" : false,
+        isReviewMode: !!currentIsReviewMode,
+        unitSheetName: currentUnitName,
+        modeName: currentModeName,
+        isTrainingMode: !!isTrainingMode,
+        trainingStepIndex: currentTrainingStepIndex,
+        trainingMenuId: currentTrainingMenuId
+      };
+    }
+
+    function captureEnglishQuizSessionMeta() {
+      englishQuizSessionMeta = buildEnglishQuizSessionMeta();
+      return englishQuizSessionMeta;
+    }
+
+    function getEnglishQuizSessionMeta() {
+      return englishQuizSessionMeta || buildEnglishQuizSessionMeta();
+    }
+
+    function slimQuizResultsForSave(results) {
+      return (results || []).map(function (res) {
+        return {
+          questionId: res && res.questionId != null ? res.questionId : "",
+          isCorrect: !!(res && res.isCorrect),
+          timeSec: Number(res && res.timeSec) || 0,
+          basePoint: Number(res && res.basePoint) || 0,
+          maxDeduction: Number(res && res.maxDeduction) || 0
+        };
+      });
+    }
+
+    function mergeHistoryUnitPatchClient(user, unitId, patch) {
+      if (!user || !unitId || !patch || typeof patch !== "object") return;
+      if (!user.historyJson) user.historyJson = {};
+      if (!user.historyJson[unitId]) user.historyJson[unitId] = {};
+      Object.keys(patch).forEach(function (k) {
+        user.historyJson[unitId][k] = patch[k];
+      });
+    }
+
+    function getDetailedUnitId() {
+      const meta = getEnglishQuizSessionMeta();
+      if (meta && meta.detailedUnitId) return meta.detailedUnitId;
+      if (isTrainingMode) {
+        return "TrainingRoute_" + currentTrainingStepIndex + "_" + currentUnitName;
+      }
+      const formatEl = document.getElementById('setting-format');
+      const ansEl = document.getElementById('setting-answer-type');
+      const blankEl = document.getElementById('setting-blank-count');
+      const format = formatEl ? String(formatEl.value || "") : "";
+      const ansType = ansEl ? String(ansEl.value || "") : syncAnswerTypeWithFormat(format);
       let unitId = `${currentModeName}_${currentUnitName}_${format}_${ansType}`;
       if (isLegacyFillBlankAnswerType(ansType)) {
-        const blankCount = document.getElementById('setting-blank-count').value;
+        const blankCount = blankEl ? String(blankEl.value || "1") : "1";
         unitId += `_${blankCount}blanks`;
       }
-      return unitId; 
+      return unitId;
     }
 
     function checkIsNigate(historyObj) { if(!historyObj || !historyObj.results || historyObj.results.length === 0) return false; const rMissLimit = Number(appSettings["苦手_直近ミス判定"]) || 1; const timeLimit = Number(appSettings["苦手_時間判定_秒"]) || 15; const rateLimit = Number(appSettings["苦手_全体正答率_未満"]) || 80; const recentResults = historyObj.results.slice(-3); if (recentResults.filter(r => r === 0).length >= rMissLimit) return true; if (((historyObj.results.filter(r => r === 1).length / historyObj.results.length) * 100) < rateLimit) return true; if (historyObj.times && historyObj.times.length > 0 && (historyObj.times.reduce((a,b)=>a+b, 0) / historyObj.times.length) >= timeLimit) return true; return false; }
@@ -4212,6 +4282,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       if (playEl) playEl.value = safePlayMode;
       if (blankEl) blankEl.value = safeBlank;
 
+      captureEnglishQuizSessionMeta();
       switchSection('section-quiz');
       showQuestion();
       return true;
@@ -11207,7 +11278,9 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         }
       }
       if (order === 'random') filteredQuestions.sort(() => Math.random() - 0.5);
-      currentQuestionIndex = 0; quizResults = []; switchSection('section-quiz'); saveQuizRecoveryDraft(0); showQuestion();
+      currentQuestionIndex = 0; quizResults = [];
+      captureEnglishQuizSessionMeta();
+      switchSection('section-quiz'); saveQuizRecoveryDraft(0); showQuestion();
     }
 
     /** 正誤表示を「つぎへ」ボタンの直前の定位置へ戻す（answerArea を空にする前に必須） */
@@ -11662,11 +11735,14 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         document.getElementById('result-home-btn').style.display = "block";
         return;
       }
+      const meta = getEnglishQuizSessionMeta();
       const orderEl = document.getElementById('setting-order');
-      const isRandom = orderEl ? orderEl.value === 'random' : false;
-      const detailedUnitId = getDetailedUnitId();
+      const isRandom = meta.isRandom != null ? meta.isRandom : (orderEl ? orderEl.value === 'random' : false);
+      const isReviewMode = meta.isReviewMode != null ? meta.isReviewMode : currentIsReviewMode;
+      const detailedUnitId = meta.detailedUnitId || getDetailedUnitId();
+      const unitSheetName = meta.unitSheetName || currentUnitName;
       const expectedCount = Array.isArray(filteredQuestions) ? filteredQuestions.length : 0;
-      let resultsToSend = Array.isArray(quizResults) ? quizResults.slice() : [];
+      let resultsToSend = slimQuizResultsForSave(Array.isArray(quizResults) ? quizResults.slice() : []);
       if (expectedCount > 0 && resultsToSend.length > expectedCount) {
         console.warn("quizResults が問題数を超えています。集計用に先頭", expectedCount, "件に切り詰めます。", resultsToSend.length);
         resultsToSend = resultsToSend.slice(0, expectedCount);
@@ -11677,8 +11753,8 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         action: "save_learning_session",
         userId: user.id,
         unitId: detailedUnitId,
-        unitSheetName: currentUnitName,
-        isReviewMode: currentIsReviewMode,
+        unitSheetName: unitSheetName,
+        isReviewMode: isReviewMode,
         isRandom: isRandom,
         results: resultsToSend,
         sessionSubmitId: sessionSubmitId
@@ -11760,7 +11836,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         if (d.newTotal != null) user.points = d.newTotal;
         if (!user.historyJson) user.historyJson = {};
         if (d.historyUnitId && d.historyUnitPatch) {
-          user.historyJson[d.historyUnitId] = d.historyUnitPatch;
+          mergeHistoryUnitPatchClient(user, d.historyUnitId, d.historyUnitPatch);
         } else if (d.historyJson) {
           user.historyJson = d.historyJson;
         }
@@ -11828,7 +11904,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         if (submitInFlight) return;
         submitInFlight = true;
 
-        gasApiFetchText(payload, { retries: 4, timeoutMs: 90000, xhrFallback: true })
+        gasApiFetchText(payload, { retries: 4, timeoutMs: 120000, xhrFallback: true })
           .then(function (res) {
             try {
               const httpStatus = res.status;
