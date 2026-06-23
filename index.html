@@ -96,7 +96,8 @@
     #section-quiz.pen-mode-active .cancel-btn,
     #section-quiz.pen-mode-active .submit-btn,
     #section-quiz.pen-mode-active label { touch-action: manipulation; }
-    #section-quiz.pen-mode-active input[readonly] { -webkit-user-select: none; user-select: none; caret-color: transparent; }
+    #section-quiz.pen-mode-active input[readonly],
+    #section-quiz.pen-mode-active textarea[readonly] { -webkit-user-select: none; user-select: none; caret-color: transparent; }
     .pen-canvas {
       background: #fff;
       border: 1px solid #555;
@@ -114,6 +115,17 @@
     .pen-toggle-switch button { border:none; background:transparent; color:#ccc; padding:6px 12px; border-radius:999px; cursor:pointer; font-size:13px; }
     .pen-toggle-switch button.active { background:#1a73e8; color:#fff; }
     .type-answer-temp { color:#d93025; font-weight:bold; }
+    .pen-typing-preview-row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; justify-content:center; margin-bottom:8px; }
+    .pen-typing-preview-area { width:100%; max-width:100%; margin:0 auto 8px; box-sizing:border-box; }
+    .type-answer-pen-preview {
+      display:block; width:100%; max-width:100%; box-sizing:border-box;
+      padding:12px 14px; font-size:clamp(18px, 4vw, 24px); line-height:1.45;
+      min-height:calc(2 * 1.45em + 24px); max-height:calc(2 * 1.45em + 24px);
+      overflow-y:auto; overflow-x:hidden; resize:none;
+      white-space:pre-wrap; overflow-wrap:break-word; word-break:break-word;
+      text-align:left; background:#fff; color:#000; border:2px solid #888; border-radius:8px; margin:0;
+    }
+    .type-answer-pen-preview.type-answer-temp { color:#d93025; font-weight:bold; }
     .pen-confirm-box { margin:10px auto 0; max-width:1200px; background:#1f1f1f; border:1px solid #444; border-radius:8px; padding:10px; text-align:left; }
     .pen-candidates { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
     .pen-candidate-btn { border:1px solid #666; border-radius:16px; background:#2a2a2a; color:#fff; padding:6px 12px; cursor:pointer; }
@@ -11001,6 +11013,12 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       return null;
     }
 
+    function scrollPenTypeAnswerPreview_() {
+      const target = getPenTargetInput();
+      if (!target || target.tagName !== 'TEXTAREA') return;
+      try { target.scrollTop = target.scrollHeight; } catch (_) {}
+    }
+
     function composeWithAutoSpace(baseText, appendText) {
       const base = String(baseText || "");
       const add = String(appendText || "");
@@ -11018,6 +11036,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         target.value = composeWithAutoSpace(target.value, text);
         target.classList.remove('type-answer-temp');
         handwritingState.pendingTempText = "";
+        scrollPenTypeAnswerPreview_();
         return;
       }
       const ansTypeEl = document.getElementById('setting-answer-type');
@@ -11037,6 +11056,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       target.value = composeWithAutoSpace(before, text);
       target.classList.add('type-answer-temp');
       handwritingState.pendingTempText = target.value.slice(before.length);
+      scrollPenTypeAnswerPreview_();
     }
 
     function confirmTemporaryTypingInput() {
@@ -11517,11 +11537,13 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
             </div>
           `
           : `
-            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">
+            <div class="pen-typing-preview-row">
               <button type="button" id="pen-recognize-btn" class="submit-btn btn-blue pen-recognize-btn" style="margin-top:0;padding:10px 14px;font-size:14px;" onclick="recognizePenStrokes()">文字起こし</button>
               <button type="button" class="submit-btn btn-gray" style="margin-top:0;padding:10px 14px;font-size:14px;" onclick="appendTypeAnswerText(' ')">間をあける</button>
-              <input type="text" id="type-answer" class="large-input" readonly placeholder="認識結果が入ります" style="margin:0;flex:1;min-width:260px;">
               <button type="button" id="pen-typing-submit-btn" class="submit-btn btn-green" style="margin-top:0;padding:10px 14px;font-size:14px;" onclick="submitTypingFromPen()">答えを送信</button>
+            </div>
+            <div class="pen-typing-preview-area">
+              <textarea id="type-answer" class="large-input type-answer-pen-preview" readonly rows="2" placeholder="認識結果が入ります" aria-label="手書きの認識結果"></textarea>
             </div>
           `;
         const activePen = handwritingState.penMode === 'pen' ? 'active' : '';
