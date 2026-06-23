@@ -126,6 +126,14 @@
       text-align:left; background:#fff; color:#000; border:2px solid #888; border-radius:8px; margin:0;
     }
     .type-answer-pen-preview.type-answer-temp { color:#d93025; font-weight:bold; }
+    .en-flash-ja-line { font-size:clamp(22px,4.5vw,32px); font-weight:bold; margin-bottom:12px; line-height:1.45; color:#e8eaf0; }
+    .en-flash-preview-text { font-size:clamp(22px,5vw,36px); font-weight:bold; letter-spacing:0.06em; line-height:1.45; margin:8px auto; max-width:min(96vw,720px); white-space:pre-wrap; word-break:break-word; }
+    .en-flash-toolbar { margin:12px auto 0; max-width:min(96vw,720px); }
+    .en-flash-text-slot { margin-bottom:10px; }
+    .en-flash-revealed-text { font-size:clamp(20px,4.5vw,32px); font-weight:bold; line-height:1.45; color:#e8eaf0; padding:12px 14px; background:#1f2a33; border:2px solid #4a90c4; border-radius:10px; white-space:pre-wrap; word-break:break-word; }
+    .en-flash-btn-row { display:flex; flex-direction:column; gap:10px; align-items:center; }
+    .en-flash-hint-btn { width:90%; max-width:360px; margin:0; }
+    .en-flash-start-btn { font-size:22px; padding:18px 36px; border-radius:50px; }
     .pen-confirm-box { margin:10px auto 0; max-width:1200px; background:#1f1f1f; border:1px solid #444; border-radius:8px; padding:10px; text-align:left; }
     .pen-candidates { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
     .pen-candidate-btn { border:1px solid #666; border-radius:16px; background:#2a2a2a; color:#fff; padding:6px 12px; cursor:pointer; }
@@ -2777,6 +2785,12 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
     let fillBlanksData = []; 
     let activeFillBlankIndex = 0;
     let voiceFailCount = 0;
+    let enFlashAnswerStarted = false;
+    let enFlashRevealTimer = null;
+    let enFlashCurrentEnglish = "";
+    const EN_FLASH_VIEW_PENALTY = 2;
+    const EN_FLASH_LISTEN_PENALTY = 1;
+    const EN_FLASH_REVEAL_MS = 3000;
     const LS_INPUT_MODE = 'input_method_mode';
     const LS_QUIZ_RECOVERY_DRAFT = 'quiz_recovery_draft_v1';
     const LS_KANJI_QUIZ_RECOVERY_DRAFT = 'kanji_quiz_recovery_draft_v1';
@@ -2919,16 +2933,21 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       }
       return computeQuizBasePoint(format, ansType, isWord);
     }
+    function isEnToEnFlashAnswerType(ansType) {
+      return ansType === "flash_typing" || ansType === "flash_voice";
+    }
     /** 英語→英語：イニシャル／穴埋め列を手がかりに英文を答えるモード */
     function isEnToEnClueAnswerType(ansType) {
       return ansType === "initial_typing" || ansType === "sheet_fill_typing" ||
         ansType === "initial_voice" || ansType === "sheet_fill_voice";
     }
     function isQuizFreeTypingAnswerType(ansType) {
-      return ansType === "typing" || ansType === "initial_typing" || ansType === "sheet_fill_typing";
+      return ansType === "typing" || ansType === "initial_typing" || ansType === "sheet_fill_typing" ||
+        ansType === "flash_typing";
     }
     function isQuizVoiceAnswerType(ansType) {
-      return ansType === "voice" || ansType === "initial_voice" || ansType === "sheet_fill_voice";
+      return ansType === "voice" || ansType === "initial_voice" || ansType === "sheet_fill_voice" ||
+        ansType === "flash_voice";
     }
     function getSheetFillClueCandidates(q) {
       const out = [];
@@ -2951,6 +2970,89 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         return String(q._enClueText || pickRandomSheetFillClue(q) || "").trim();
       }
       return "";
+    }
+
+    function clearEnFlashReveal_() {
+      if (enFlashRevealTimer) {
+        clearTimeout(enFlashRevealTimer);
+        enFlashRevealTimer = null;
+      }
+      const slot = document.getElementById("en-flash-text-slot");
+      if (slot) {
+        slot.style.display = "none";
+        slot.innerHTML = "";
+      }
+    }
+    function resetEnFlashQuestionState_() {
+      enFlashAnswerStarted = false;
+      enFlashCurrentEnglish = "";
+      clearEnFlashReveal_();
+    }
+    function buildEnFlashJaLineHtml_(q) {
+      const jaLine = String(q && q["日本語"] != null ? q["日本語"] : "").trim();
+      if (!jaLine) return "";
+      return `<div class="en-flash-ja-line">${escapeHtml(jaLine)}</div>`;
+    }
+    function buildEnFlashToolbarHtml_() {
+      return `<div id="en-flash-toolbar" class="en-flash-toolbar">
+        <div id="en-flash-text-slot" class="en-flash-text-slot" style="display:none;" aria-live="polite"></div>
+        <div class="en-flash-btn-row">
+          <button type="button" id="en-flash-view-btn" class="hint-btn en-flash-hint-btn" onclick="useEnFlashRevealText()">英文を見る（-2点/一回）</button>
+          <button type="button" id="en-flash-listen-btn" class="hint-btn en-flash-hint-btn" onclick="useEnFlashListenAudio()">英文を聞く（-1点/一回）</button>
+        </div>
+      </div>`;
+    }
+    function useEnFlashRevealText() {
+      if (!enFlashAnswerStarted || !enFlashCurrentEnglish) return;
+      maxDeduction += EN_FLASH_VIEW_PENALTY;
+      clearEnFlashReveal_();
+      const slot = document.getElementById("en-flash-text-slot");
+      if (!slot) return;
+      slot.innerHTML = `<div class="en-flash-revealed-text">${escapeHtml(enFlashCurrentEnglish)}</div>`;
+      slot.style.display = "block";
+      enFlashRevealTimer = setTimeout(function () {
+        enFlashRevealTimer = null;
+        if (slot) slot.style.display = "none";
+      }, EN_FLASH_REVEAL_MS);
+    }
+    function useEnFlashListenAudio() {
+      if (!enFlashAnswerStarted || !enFlashCurrentEnglish) return;
+      if (quizEnglishAudioPlaying) return;
+      if (shouldQuizAudioVoiceMutex_() && quizVoiceListening) return;
+      maxDeduction += EN_FLASH_LISTEN_PENALTY;
+      speakQuizEnglishAudio(enFlashCurrentEnglish);
+    }
+    function mountQuizVoiceAnswerArea_() {
+      const answerArea = document.getElementById("quiz-answer-area");
+      if (!answerArea) return;
+      answerArea.innerHTML = `<input type="text" id="voice-recognized-text" class="large-input" readonly placeholder="ここに聞き取った言葉が出ます"><button id="voice-btn" class="submit-btn btn-blue" style="padding: 20px 40px; font-size: 24px; border-radius: 50px; display: block; margin: 0 auto;" onclick="startVoiceInput()">🎙️ マイクでこたえる</button><div id="voice-feedback" style="margin-top:15px; font-size:18px; color:#ccc;">おうちの静かな場所でやってみてね。</div>`;
+      syncQuizAudioVoiceControls_();
+    }
+    function startEnFlashAnswer() {
+      if (enFlashAnswerStarted) return;
+      if (!Array.isArray(filteredQuestions) || currentQuestionIndex < 0 || currentQuestionIndex >= filteredQuestions.length) return;
+      const q = filteredQuestions[currentQuestionIndex];
+      const formatEl = document.getElementById("setting-format");
+      const format = formatEl ? String(formatEl.value || "") : "";
+      const answerType = syncAnswerTypeWithFormat(format);
+      if (!isEnToEnFlashAnswerType(answerType)) return;
+      enFlashAnswerStarted = true;
+      questionStartTime = Date.now();
+      clearEnFlashReveal_();
+      const qTextEl = document.getElementById("quiz-q-text");
+      if (qTextEl) qTextEl.innerHTML = buildEnFlashJaLineHtml_(q) + buildEnFlashToolbarHtml_();
+      const answerArea = document.getElementById("quiz-answer-area");
+      if (!answerArea) return;
+      if (answerType === "flash_typing") {
+        shiftMode = 0;
+        isShiftHoldMode = false;
+        answerArea.innerHTML = buildTypingInputAreaMarkup(false);
+        if (inputMethodMode === "pen") setPenMode("pen");
+        mountTypingMethodBody(false);
+        placeQuizFeedbackAboveKeyboard(answerArea);
+      } else {
+        mountQuizVoiceAnswerArea_();
+      }
     }
 
     function parseSortPhraseTokens(q) {
@@ -3303,6 +3405,15 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         if (!isNaN(parentPt)) return parentPt;
         return isWord ? 20 : 25;
       }
+      if (isEnToEnFlashAnswerType(ansType)) {
+        if (hasCustom) return customPoint;
+        const parentKey = ansType === "flash_voice"
+          ? `基本Pt_${format}_voice`
+          : `基本Pt_${format}_typing`;
+        const parentPt = Number(appSettings[parentKey]);
+        if (!isNaN(parentPt)) return parentPt;
+        return isWord ? 20 : 25;
+      }
       if (hasCustom) return customPoint;
       if (isWord) {
         if (ansType === "4choice") return format.includes("to_en") ? 3 : 2;
@@ -3639,6 +3750,11 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       syncQuizAudioVoiceControls_();
     }
     function syncQuizAudioVoiceControls_() {
+      const flashListenBtn = document.getElementById('en-flash-listen-btn');
+      if (flashListenBtn) {
+        const voiceMutex = shouldQuizAudioVoiceMutex_();
+        flashListenBtn.disabled = quizEnglishAudioPlaying || (voiceMutex && quizVoiceListening);
+      }
       if (!shouldQuizAudioVoiceMutex_()) return;
       const listenBtn = document.getElementById('quiz-listen-btn');
       const voiceBtn = document.getElementById('voice-btn');
@@ -4274,7 +4390,11 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       }
 
       let hintHtml = "";
-      if (maxDeduction > 0) hintHtml = `<span class="quiz-feedback-hint-penalty">ヒントをつかったので -${maxDeduction}Pt されます</span>`;
+      if (maxDeduction > 0) {
+        hintHtml = isEnToEnFlashAnswerType(answerType)
+          ? `<span class="quiz-feedback-hint-penalty">英文の確認で -${maxDeduction}Pt されます</span>`
+          : `<span class="quiz-feedback-hint-penalty">ヒントをつかったので -${maxDeduction}Pt されます</span>`;
+      }
 
       const plus = pointsPlusHtml ? String(pointsPlusHtml) : "";
       if (isChoiceAnswer) {
@@ -5280,6 +5400,8 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         else if (route.aFormat === "音声") mappedAnsType = "voice";
         else if (route.aFormat === "音声入力（イニシャル）") mappedAnsType = "initial_voice";
         else if (route.aFormat === "音声入力（穴埋め）") mappedAnsType = "sheet_fill_voice";
+        else if (route.aFormat === "タイピング（フラッシュ）") mappedAnsType = "flash_typing";
+        else if (route.aFormat === "音声入力（フラッシュ）") mappedAnsType = "flash_voice";
         else if (route.aFormat === "穴埋め4択") mappedAnsType = "fill_4choice";
         else if (route.aFormat === "穴埋めタイピング") mappedAnsType = "fill_typing";
         else if (route.aFormat === "すべて用いる") mappedAnsType = "sort_all";
@@ -5619,6 +5741,8 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       "タイピング（穴埋め）": "sheet_fill_typing",
       "音声入力（イニシャル）": "initial_voice",
       "音声入力（穴埋め）": "sheet_fill_voice",
+      "タイピング（フラッシュ）": "flash_typing",
+      "音声入力（フラッシュ）": "flash_voice",
       "すべて用いる": "sort_all",
       "不要語混入": "sort_dummy",
       "不足語補足": "sort_missing",
@@ -5727,6 +5851,8 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       if (format === "en_to_en") {
         add("typing", "タイピング（入力する）", "タイピング");
         add("voice", "🎙️ 音声入力（マイク）", "音声");
+        add("flash_typing", "タイピング（フラッシュ）", "タイピング（フラッシュ）");
+        add("flash_voice", "🎙️ 音声入力（フラッシュ）", "音声入力（フラッシュ）");
         if (!isWord) {
           add("initial_typing", "タイピング（イニシャル）", "タイピング（イニシャル）");
           add("sheet_fill_typing", "タイピング（穴埋め）", "タイピング（穴埋め）");
@@ -11965,7 +12091,8 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       maxDeduction = 0;
       voiceFailCount = 0;
       resetQuizAudioVoiceMutex_();
-      clearTimeout(autoNextTimer); 
+      resetEnFlashQuestionState_();
+      clearTimeout(autoNextTimer);
       destroySortQuizIfAny();
       
       const q = filteredQuestions[currentQuestionIndex]; 
@@ -11994,7 +12121,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         engTextForAudio = correctA;
         if (isEnToEnClueAnswerType(answerType)) {
           qText = getEnToEnCluePrompt(q, answerType);
-        } else {
+        } else if (!isEnToEnFlashAnswerType(answerType)) {
           qText = correctA;
         }
       }
@@ -12023,6 +12150,11 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
             (jaLine ? `<div style="font-size:clamp(26px,5.5vw,38px);font-weight:bold;margin-bottom:12px;line-height:1.45;">${escapeHtml(jaLine)}</div>` : "") +
             clueBadge +
             `<div style="font-size:clamp(22px,5vw,36px);font-weight:bold;letter-spacing:0.06em;line-height:1.45;color:#e8eaf0;">${escapeHtml(safeText)}</div>`;
+        } else if (isEnToEnFlashAnswerType(answerType)) {
+          enFlashCurrentEnglish = correctA;
+          document.getElementById('quiz-q-text').innerHTML =
+            buildEnFlashJaLineHtml_(q) +
+            `<div id="en-flash-preview-text" class="en-flash-preview-text">${escapeHtml(correctA)}</div>`;
         } else {
           const clueBadge = clueLabel
             ? `<div style="font-size:14px;color:#90A4AE;margin-bottom:6px;">手がかり（${clueLabel}）</div>`
@@ -12046,7 +12178,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       
       document.getElementById('hint-btn-2').innerText = isWord ? "💡 イニシャルと文字数を見る（-7 Pt）" : "💡 ヒントを見る（-7 Pt）";
 
-      if (answerType === "4choice" || format.includes("en_to_ja") || format === "en_audio_to_ja" || isLegacyFillBlankAnswerType(answerType) || isEnToEnClueAnswerType(answerType)) {
+      if (answerType === "4choice" || format.includes("en_to_ja") || format === "en_audio_to_ja" || isLegacyFillBlankAnswerType(answerType) || isEnToEnClueAnswerType(answerType) || isEnToEnFlashAnswerType(answerType)) {
         hintArea.style.display = "none";
       } else {
         hintArea.style.display = "flex";
@@ -12060,8 +12192,9 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       answerArea.classList.remove('pen-mode-active');
       const quizSec = document.getElementById('section-quiz');
       if (quizSec) quizSec.classList.remove('pen-mode-active');
-      answerArea.innerHTML = ""; questionStartTime = Date.now();
+      answerArea.innerHTML = "";
       resetHandwritingInputState();
+      if (!isEnToEnFlashAnswerType(answerType)) questionStartTime = Date.now();
       saveQuizRecoveryDraft(currentQuestionIndex);
       
       if (format === "ja_to_en_sort" && (answerType === "sort_all" || answerType === "sort_dummy" || answerType === "sort_missing")) {
@@ -12074,15 +12207,23 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         choices.sort(() => Math.random() - 0.5);
         choices.forEach(c => { const btn = document.createElement('button'); btn.innerText = c; btn.className = "choice-btn"; btn.onclick = () => checkAnswer(c, correctA, q); answerArea.appendChild(btn); });
       } 
-      else if (isQuizFreeTypingAnswerType(answerType)) { 
-        shiftMode = 0; isShiftHoldMode = false;
-        answerArea.innerHTML = buildTypingInputAreaMarkup(false);
-        if (inputMethodMode === 'pen') setPenMode('pen');
-        mountTypingMethodBody(false);
-        placeQuizFeedbackAboveKeyboard(answerArea);
+      else if (isQuizFreeTypingAnswerType(answerType)) {
+        if (isEnToEnFlashAnswerType(answerType)) {
+          answerArea.innerHTML = `<button type="button" id="en-flash-start-btn" class="submit-btn btn-green en-flash-start-btn" onclick="startEnFlashAnswer()">回答を始める</button>`;
+        } else {
+          shiftMode = 0; isShiftHoldMode = false;
+          answerArea.innerHTML = buildTypingInputAreaMarkup(false);
+          if (inputMethodMode === 'pen') setPenMode('pen');
+          mountTypingMethodBody(false);
+          placeQuizFeedbackAboveKeyboard(answerArea);
+        }
       }
       else if (isQuizVoiceAnswerType(answerType)) {
-        answerArea.innerHTML = `<input type="text" id="voice-recognized-text" class="large-input" readonly placeholder="ここに聞き取った言葉が出ます"><button id="voice-btn" class="submit-btn btn-blue" style="padding: 20px 40px; font-size: 24px; border-radius: 50px; display: block; margin: 0 auto;" onclick="startVoiceInput()">🎙️ マイクでこたえる</button><div id="voice-feedback" style="margin-top:15px; font-size:18px; color:#ccc;">おうちの静かな場所でやってみてね。</div>`;
+        if (isEnToEnFlashAnswerType(answerType)) {
+          answerArea.innerHTML = `<button type="button" id="en-flash-start-btn" class="submit-btn btn-green en-flash-start-btn" onclick="startEnFlashAnswer()">回答を始める</button>`;
+        } else {
+          mountQuizVoiceAnswerArea_();
+        }
       }
       else if (isLegacyFillBlankAnswerType(answerType)) {
         setupFillBlankQuiz(correctA, answerType);
@@ -12359,6 +12500,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       if (recognition) { try { recognition.stop(); } catch (_) {} }
       window.speechSynthesis.cancel();
       resetQuizAudioVoiceMutex_();
+      resetEnFlashQuestionState_();
       resetHandwritingInputState();
       currentQuestionIndex++;
       showQuestion();
@@ -12368,6 +12510,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       if (recognition) { try { recognition.stop(); } catch (_) {} }
       window.speechSynthesis.cancel();
       resetQuizAudioVoiceMutex_();
+      resetEnFlashQuestionState_();
       resetHandwritingInputState();
       document.body.classList.remove('quiz-answer-submitting');
       document.getElementById('section-quiz')?.classList.remove('pen-mode-active');

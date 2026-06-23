@@ -23,6 +23,8 @@ function getDefaultAppSettingsRows_() {
     ["基本Pt_en_to_en_sheet_fill_typing", 20],
     ["基本Pt_en_to_en_initial_voice", 20],
     ["基本Pt_en_to_en_sheet_fill_voice", 20],
+    ["基本Pt_en_to_en_flash_typing", 20],
+    ["基本Pt_en_to_en_flash_voice", 20],
     ["基本Pt_qtext_to_en_4choice", 3],
     ["基本Pt_qtext_to_en_typing", 30],
     ["基本Pt_qtext_to_en_voice", 30],
@@ -177,6 +179,7 @@ function getTrainingRouteOptionLists_() {
     aFormats: [
       "4択", "タイピング", "音声", "穴埋め4択", "穴埋めタイピング",
       "タイピング（イニシャル）", "タイピング（穴埋め）", "音声入力（イニシャル）", "音声入力（穴埋め）",
+      "タイピング（フラッシュ）", "音声入力（フラッシュ）",
       "すべて用いる", "不要語混入", "不足語補足", "採点"
     ],
     modes: ["ランダム", "順番"]
@@ -244,6 +247,7 @@ function getLearnerAnswerOptionsForTraining_(format, modeName) {
   }
   if (format === "en_to_en") {
     add("typing", "タイピング"); add("voice", "音声");
+    add("flash_typing", "タイピング（フラッシュ）"); add("flash_voice", "音声入力（フラッシュ）");
     if (!isWord) {
       add("initial_typing", "タイピング（イニシャル）"); add("sheet_fill_typing", "タイピング（穴埋め）");
       add("initial_voice", "音声入力（イニシャル）"); add("sheet_fill_voice", "音声入力（穴埋め）");
