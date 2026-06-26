@@ -69,43 +69,132 @@ function getDefaultAppSettingsRows_() {
   ];
 }
 
+function isEnglishBasePointSettingKey_(key) {
+  return String(key || "").indexOf("基本Pt_") === 0;
+}
+
+function parseEnglishBasePointSettingKey_(key) {
+  const s = String(key || "");
+  if (!isEnglishBasePointSettingKey_(s)) return null;
+  const body = s.slice("基本Pt_".length);
+  const knownFormats = [
+    "ja_to_en_sort", "en_audio_to_en", "en_audio_to_ja",
+    "qtext_to_en", "qaudio_to_en", "ja_to_en", "en_to_ja", "en_to_en"
+  ];
+  for (let i = 0; i < knownFormats.length; i++) {
+    const f = knownFormats[i];
+    const prefix = f + "_";
+    if (body.indexOf(prefix) === 0) {
+      return { format: f, ansType: body.slice(prefix.length) };
+    }
+  }
+  return null;
+}
+
+/** 英語基本点の既定（単語列・表現列）。クライアント computeQuizBasePoint のフォールバックと揃える。 */
+function computeDefaultEnglishBasePointPair_(format, ansType) {
+  if (format === "ja_to_en_sort") {
+    const m = { sort_all: 25, sort_dummy: 28, sort_missing: 30 };
+    const v = m[ansType] != null ? m[ansType] : 25;
+    return { word: v, expression: v };
+  }
+  if (ansType === "fill_4choice" || ansType === "fill_typing") {
+    return { word: 5, expression: 5 };
+  }
+  if (ansType === "4choice") {
+    const v = String(format || "").indexOf("to_en") >= 0 ? 3 : 2;
+    return { word: v, expression: v };
+  }
+  if (String(format || "").indexOf("qtext") >= 0 || String(format || "").indexOf("qaudio") >= 0) {
+    return { word: 20, expression: 30 };
+  }
+  return { word: 20, expression: 25 };
+}
+
+function computeDefaultEnglishBasePointPairForKey_(key) {
+  const parsed = parseEnglishBasePointSettingKey_(key);
+  if (!parsed) return { word: 20, expression: 25 };
+  return computeDefaultEnglishBasePointPair_(parsed.format, parsed.ansType);
+}
+
+function buildAppSettingsFromSheetRows_(data) {
+  const out = {};
+  if (!data || data.length < 1) return out;
+  const hdr = data[0] || [];
+  const threeCol = String(hdr[1] || "").trim() === "単語" && String(hdr[2] || "").trim() === "表現";
+  for (let i = 1; i < data.length; i++) {
+    const k = String(data[i][0] || "").trim();
+    if (!k) continue;
+    if (threeCol && isEnglishBasePointSettingKey_(k)) {
+      out[k] = { word: data[i][1], expression: data[i][2] };
+    } else {
+      out[k] = data[i][1];
+    }
+  }
+  return out;
+}
+
+function ensureAppSettingsSheetStructure_(sheet, result) {
+  if (!sheet) return;
+  const lastRow = sheet.getLastRow();
+  if (lastRow === 0) {
+    sheet.getRange(1, 1, 1, 3).setValues([["設定名", "単語", "表現"]]);
+    if (result) result.headerFixed = true;
+    return;
+  }
+  const lastCol = Math.max(3, sheet.getLastColumn());
+  const row1 = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  const colA = String(row1[0] || "").trim();
+  const colB = String(row1[1] || "").trim();
+  const colC = String(row1[2] || "").trim();
+  if (colA === "設定名" && colB === "値" && colC !== "表現") {
+    sheet.getRange(1, 2).setValue("単語");
+    sheet.insertColumnAfter(2);
+    sheet.getRange(1, 3).setValue("表現");
+    const data = sheet.getDataRange().getValues();
+    for (let i = 1; i < data.length; i++) {
+      const k = String(data[i][0] || "").trim();
+      if (k.indexOf("基本Pt_") === 0) {
+        sheet.getRange(i + 1, 3).setValue(data[i][1]);
+      }
+    }
+    if (result) {
+      result.headerFixed = true;
+      result.migratedToThreeCol = true;
+    }
+    return;
+  }
+  if (colA !== "設定名" || colB !== "単語" || colC !== "表現") {
+    sheet.insertRowBefore(1);
+    sheet.getRange(1, 1, 1, 3).setValues([["設定名", "単語", "表現"]]);
+    if (result) result.headerFixed = true;
+  }
+}
+
 /**
  * アプリ設定シートの見出し行と不足キーを自動補完する。
  * setupSystem() の手動実行に加え、get_app_settings 取得時にも呼ぶ（デプロイ後の追加分を自動反映）。
  */
 function ensureAppSettingsDefaults_(adminSs) {
-  const result = { headerFixed: false, addedKeys: [], sheet: null };
+  const result = { headerFixed: false, addedKeys: [], migratedToThreeCol: false, sheet: null };
   if (!adminSs) return result;
 
   let sheet = adminSs.getSheetByName("アプリ設定");
   if (!sheet) {
     sheet = adminSs.insertSheet("アプリ設定");
-    sheet.appendRow(["設定名", "値"]);
-    sheet.appendRow(["基本ポイント_4択", 2]);
-    sheet.appendRow(["基本ポイント_タイピング", 20]);
-    sheet.appendRow(["基本ポイント_穴埋め", 5]);
-    sheet.appendRow(["基本ポイント_音声", 20]);
-    sheet.appendRow(["ヒント減点_イニシャル", 5]);
-    sheet.appendRow(["ヒント減点_文字数", 7]);
-    sheet.appendRow(["ヒント減点_音声", 10]);
+    sheet.appendRow(["設定名", "単語", "表現"]);
+    sheet.appendRow(["基本ポイント_4択", 2, ""]);
+    sheet.appendRow(["基本ポイント_タイピング", 20, ""]);
+    sheet.appendRow(["基本ポイント_穴埋め", 5, ""]);
+    sheet.appendRow(["基本ポイント_音声", 20, ""]);
+    sheet.appendRow(["ヒント減点_イニシャル", 5, ""]);
+    sheet.appendRow(["ヒント減点_文字数", 7, ""]);
+    sheet.appendRow(["ヒント減点_音声", 10, ""]);
     result.headerFixed = true;
   }
   result.sheet = sheet;
 
-  const lastRow = sheet.getLastRow();
-  if (lastRow === 0) {
-    sheet.getRange(1, 1, 1, 2).setValues([["設定名", "値"]]);
-    result.headerFixed = true;
-  } else {
-    const row1 = sheet.getRange(1, 1, 1, 2).getValues()[0];
-    const colA = String(row1[0] || "").trim();
-    const colB = String(row1[1] || "").trim();
-    if (colA !== "設定名" || colB !== "値") {
-      sheet.insertRowBefore(1);
-      sheet.getRange(1, 1, 1, 2).setValues([["設定名", "値"]]);
-      result.headerFixed = true;
-    }
-  }
+  ensureAppSettingsSheetStructure_(sheet, result);
 
   const settingsData = sheet.getDataRange().getValues();
   const existingKeys = {};
@@ -117,7 +206,12 @@ function ensureAppSettingsDefaults_(adminSs) {
   getDefaultAppSettingsRows_().forEach(function (row) {
     const key = String(row[0] || "");
     if (!key || existingKeys[key]) return;
-    sheet.appendRow(row);
+    if (isEnglishBasePointSettingKey_(key)) {
+      const pair = computeDefaultEnglishBasePointPairForKey_(key);
+      sheet.appendRow([key, pair.word, pair.expression]);
+    } else {
+      sheet.appendRow([key, row[1], ""]);
+    }
     result.addedKeys.push(key);
     existingKeys[key] = true;
   });
@@ -143,7 +237,7 @@ function ensureTrainingMenuAppSettings_(sheet, existingKeys, result) {
     rows.forEach(function (row) {
       const key = row[0];
       if (existingKeys[key]) return;
-      sheet.appendRow(row);
+      sheet.appendRow([row[0], row[1], ""]);
       if (result && result.addedKeys) result.addedKeys.push(key);
       existingKeys[key] = true;
     });
@@ -161,7 +255,32 @@ function setAppSettingValue_(adminSs, key, value) {
       return;
     }
   }
-  sheet.appendRow([key, value]);
+  if (isEnglishBasePointSettingKey_(key)) {
+    const pair = computeDefaultEnglishBasePointPairForKey_(key);
+    sheet.appendRow([key, value, pair.expression]);
+  } else {
+    sheet.appendRow([key, value, ""]);
+  }
+}
+
+function setEnglishBasePointSettingValue_(adminSs, key, modeCategory, value) {
+  ensureAppSettingsDefaults_(adminSs);
+  const sheet = adminSs.getSheetByName("アプリ設定");
+  if (!sheet) return;
+  const col = modeCategory === "expression" ? 3 : 2;
+  const data = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]) === String(key)) {
+      sheet.getRange(i + 1, col).setValue(value);
+      return;
+    }
+  }
+  const pair = computeDefaultEnglishBasePointPairForKey_(key);
+  sheet.appendRow([
+    key,
+    modeCategory === "word" ? value : pair.word,
+    modeCategory === "expression" ? value : pair.expression
+  ]);
 }
 
 function parseTrainingMenuEnabled_(value) {
@@ -413,7 +532,10 @@ function setupSystem() {
 
   const appSettingsEnsure = ensureAppSettingsDefaults_(adminSs);
   if (appSettingsEnsure.headerFixed) {
-    logMessage += "✅ 「アプリ設定」の見出し行（設定名・値）を整えました。\n";
+    logMessage += "✅ 「アプリ設定」の見出し行（設定名・単語・表現）を整えました。\n";
+  }
+  if (appSettingsEnsure.migratedToThreeCol) {
+    logMessage += "✅ 英語基本点を3列化しました（旧「値」列→単語列、表現列を追加）。\n";
   }
   if (appSettingsEnsure.addedKeys.length > 0) {
     logMessage += "✅ 「アプリ設定」に不足キーを " + appSettingsEnsure.addedKeys.length + " 件追加しました。\n";
@@ -1008,8 +1130,18 @@ function handleSaveTrainingBasePoint(req) {
   const num = Number(req.value);
   if (isNaN(num) || num < 0) return sendResponse({ status: "error", message: "0以上の数値を入力してください" });
 
-  setAppSettingValue_(adminSs, settingKey, num);
-  return sendResponse({ status: "success", message: "点数を保存しました", settingKey: settingKey, value: num });
+  const modeCategory = String(req.modeCategory || "word").trim();
+  if (modeCategory !== "word" && modeCategory !== "expression") {
+    return sendResponse({ status: "error", message: "モード（単語/表現）が不正です" });
+  }
+  setEnglishBasePointSettingValue_(adminSs, settingKey, modeCategory, num);
+  return sendResponse({
+    status: "success",
+    message: "点数を保存しました",
+    settingKey: settingKey,
+    modeCategory: modeCategory,
+    value: num
+  });
 }
 
 function handleDeleteTrainingMenuRoute(req) {
@@ -1045,13 +1177,8 @@ function parseUnitSheetPointPercent_(sheetName) {
 function getAppSettingsMap_(adminSs) {
   ensureAppSettingsDefaults_(adminSs);
   const sheet = adminSs.getSheetByName("アプリ設定");
-  const out = {};
-  if (!sheet) return out;
-  const data = sheet.getDataRange().getValues();
-  for (let i = 1; i < data.length; i++) {
-    if (data[i][0]) out[String(data[i][0])] = data[i][1];
-  }
-  return out;
+  if (!sheet) return {};
+  return buildAppSettingsFromSheetRows_(sheet.getDataRange().getValues());
 }
 
 /**
@@ -2315,12 +2442,10 @@ function handleGetAppSettings(req) {
   ensureAppSettingsDefaults_(adminSs);
   const settingsSheet = adminSs.getSheetByName("アプリ設定");
   if (!settingsSheet) return sendResponse({ status: "success", settings: {} });
-  const data = settingsSheet.getDataRange().getValues();
-  const settings = {};
-  for (let i = 1; i < data.length; i++) {
-    if (data[i][0]) settings[data[i][0]] = data[i][1];
-  }
-  return sendResponse({ status: "success", settings: settings });
+  return sendResponse({
+    status: "success",
+    settings: buildAppSettingsFromSheetRows_(settingsSheet.getDataRange().getValues())
+  });
 }
 function handleGetExternalLearning(req) { const sheet = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('ADMIN_SS_ID')).getSheetByName("外部学習"); const list = []; if (sheet) { const data = sheet.getDataRange().getValues(); if (data.length > 0) { const headers = data[0].map(String); const isNew = headers[0] === "カテゴリ"; for (let i = 1; i < data.length; i++) { if (!data[i][0]) continue; if (isNew) { list.push({ category: data[i][0], volume: data[i][1], points: Number(data[i][2]) }); } else { list.push({ category: data[i][0], volume: "", points: Number(data[i][1]) }); } } } } return sendResponse({ status: "success", list: list }); }
 

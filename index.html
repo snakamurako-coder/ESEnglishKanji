@@ -3379,42 +3379,48 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
 
     function computeQuizBasePoint(format, ansType, isWord) {
       const settingKey = `基本Pt_${format}_${ansType}`;
-      const customPoint = Number(appSettings[settingKey]);
-      const hasCustom = !isNaN(customPoint);
+
+      function configuredPoint(key) {
+        const n = getEnglishBasePointFromSettings_(key, isWord);
+        return isNaN(n) ? null : n;
+      }
 
       if (isLegacyFillBlankAnswerType(ansType)) {
-        if (hasCustom) return customPoint;
+        const cp = configuredPoint(settingKey);
+        if (cp != null) return cp;
         const numBlanks = parseInt(document.getElementById('setting-blank-count').value) || 1;
         return 5 + numBlanks;
       }
       if (format === "ja_to_en_sort") {
-        const sk = `基本Pt_${format}_${ansType}`;
-        const cp = Number(appSettings[sk]);
-        if (!isNaN(cp)) return cp;
+        const cp = configuredPoint(settingKey);
+        if (cp != null) return cp;
         if (ansType === "sort_all") return 25;
         if (ansType === "sort_dummy") return 28;
         if (ansType === "sort_missing") return 30;
         return 25;
       }
       if (isEnToEnClueAnswerType(ansType)) {
-        if (hasCustom) return customPoint;
+        const cp = configuredPoint(settingKey);
+        if (cp != null) return cp;
         const parentKey = isQuizVoiceAnswerType(ansType)
           ? `基本Pt_${format}_voice`
           : `基本Pt_${format}_typing`;
-        const parentPt = Number(appSettings[parentKey]);
-        if (!isNaN(parentPt)) return parentPt;
+        const parentPt = configuredPoint(parentKey);
+        if (parentPt != null) return parentPt;
         return isWord ? 20 : 25;
       }
       if (isEnToEnFlashAnswerType(ansType)) {
-        if (hasCustom) return customPoint;
+        const cp = configuredPoint(settingKey);
+        if (cp != null) return cp;
         const parentKey = ansType === "flash_voice"
           ? `基本Pt_${format}_voice`
           : `基本Pt_${format}_typing`;
-        const parentPt = Number(appSettings[parentKey]);
-        if (!isNaN(parentPt)) return parentPt;
+        const parentPt = configuredPoint(parentKey);
+        if (parentPt != null) return parentPt;
         return isWord ? 20 : 25;
       }
-      if (hasCustom) return customPoint;
+      const cp = configuredPoint(settingKey);
+      if (cp != null) return cp;
       if (isWord) {
         if (ansType === "4choice") return format.includes("to_en") ? 3 : 2;
         if (isQuizFreeTypingAnswerType(ansType) || isQuizVoiceAnswerType(ansType)) return 20;
@@ -3425,6 +3431,19 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         }
       }
       return 0;
+    }
+
+    /** アプリ設定の英語基本点（3列: 単語/表現）。旧1列の数値にも対応。 */
+    function getEnglishBasePointFromSettings_(settingKey, isWord) {
+      const raw = appSettings[settingKey];
+      if (raw != null && typeof raw === "object" && !Array.isArray(raw)) {
+        const v = isWord ? raw.word : raw.expression;
+        const n = Number(v);
+        if (v != null && String(v).trim() !== "" && !isNaN(n)) return n;
+      }
+      const legacy = Number(raw);
+      if (raw != null && String(raw).trim() !== "" && !isNaN(legacy)) return legacy;
+      return NaN;
     }
 
     /** GAS parseUnitSheetPointPercent_ と同じ（シート名末尾 _数字 ＝得点％） */
@@ -5878,15 +5897,20 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
     }
 
     function getAllEnglishBasePointCombos() {
-      const seen = {};
       const out = [];
       ["単語モード", "表現モード"].forEach(function (modeName) {
+        const modeCategory = modeName.includes("単語") ? "word" : "expression";
         getLearnerFormatOptions(modeName, "english").forEach(function (f) {
           getLearnerAnswerOptions(f.value, modeName).forEach(function (a) {
-            const key = "基本Pt_" + f.value + "_" + a.value;
-            if (seen[key]) return;
-            seen[key] = true;
-            out.push({ format: f.value, formatLabel: f.label, ansType: a.value, ansLabel: a.label, settingKey: key });
+            out.push({
+              format: f.value,
+              formatLabel: f.label,
+              ansType: a.value,
+              ansLabel: a.label,
+              settingKey: "基本Pt_" + f.value + "_" + a.value,
+              modeCategory: modeCategory,
+              modeLabel: modeName
+            });
           });
         });
       });
@@ -6349,19 +6373,36 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       form.innerHTML =
         `<div class="training-admin-field"><label>1. もんだいの形式</label><select id="train-admin-point-format" class="large-select"></select></div>` +
         `<div class="training-admin-field"><label>2. こたえ方</label><select id="train-admin-point-answer" class="large-select"></select></div>` +
+        `<div class="training-admin-field"><label>3. モード</label><select id="train-admin-point-mode" class="large-select"><option value="word">単語モード（単語列）</option><option value="expression">表現モード（表現列）</option></select></div>` +
         `<div class="training-admin-field"><label>基本ポイント（1問あたり）</label><input type="number" id="train-admin-point-value" min="0" max="999" step="1" value="20"></div>` +
         `<div id="train-admin-point-key" class="training-admin-points-key"></div>`;
       const formatEl = document.getElementById('train-admin-point-format');
       const ansEl = document.getElementById('train-admin-point-answer');
+      const modeEl = document.getElementById('train-admin-point-mode');
       const valueEl = document.getElementById('train-admin-point-value');
       const keyEl = document.getElementById('train-admin-point-key');
       const settings = (trainingAdminData && trainingAdminData.basePointSettings) || {};
 
+      function readPointForSelection(key, modeCategory) {
+        if (!key) return null;
+        const raw = settings[key];
+        if (raw != null && typeof raw === "object" && !Array.isArray(raw)) {
+          const v = modeCategory === "expression" ? raw.expression : raw.word;
+          if (v != null && String(v).trim() !== "") return String(v);
+        } else if (raw != null && String(raw).trim() !== "") {
+          return String(raw);
+        }
+        return null;
+      }
+
       function refreshAnswerOptions() {
         const format = formatEl.value;
-        const answers = combos.filter(function (c) { return c.format === format; });
+        const modeCategory = modeEl ? modeEl.value : "word";
+        const answers = combos.filter(function (c) {
+          return c.format === format && c.modeCategory === modeCategory;
+        });
         ansEl.innerHTML = answers.map(function (a, idx) {
-          return `<option value="${escapeHtml(a.ansType)}" data-key="${escapeHtml(a.settingKey)}"${idx === 0 ? " selected" : ""}>${escapeHtml(a.ansLabel)}</option>`;
+          return `<option value="${escapeHtml(a.ansType)}" data-key="${escapeHtml(a.settingKey)}" data-mode="${escapeHtml(a.modeCategory)}"${idx === 0 ? " selected" : ""}>${escapeHtml(a.ansLabel)}</option>`;
         }).join("");
         syncPointValueFromSelection();
       }
@@ -6369,16 +6410,18 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       function syncPointValueFromSelection() {
         const opt = ansEl.options[ansEl.selectedIndex];
         const key = opt ? opt.getAttribute('data-key') : "";
-        if (keyEl) keyEl.innerText = key ? ("設定キー: " + key) : "";
-        if (key && valueEl && settings[key] != null && String(settings[key]).trim() !== "") {
-          valueEl.value = String(settings[key]);
-        }
+        const modeCategory = modeEl ? modeEl.value : "word";
+        const modeLabel = modeCategory === "expression" ? "表現列" : "単語列";
+        if (keyEl) keyEl.innerText = key ? ("設定キー: " + key + " / " + modeLabel) : "";
+        const stored = readPointForSelection(key, modeCategory);
+        if (stored != null && valueEl) valueEl.value = stored;
       }
 
       formatEl.innerHTML = formatItems.map(function (f, idx) {
         return `<option value="${escapeHtml(f.value)}"${idx === 0 ? " selected" : ""}>${escapeHtml(f.label)}</option>`;
       }).join("");
       formatEl.onchange = refreshAnswerOptions;
+      if (modeEl) modeEl.onchange = refreshAnswerOptions;
       ansEl.onchange = syncPointValueFromSelection;
       refreshAnswerOptions();
     }
@@ -6386,10 +6429,12 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
     function saveTrainingAdminBasePoint(btn) {
       const formatEl = document.getElementById('train-admin-point-format');
       const ansEl = document.getElementById('train-admin-point-answer');
+      const modeEl = document.getElementById('train-admin-point-mode');
       const valueEl = document.getElementById('train-admin-point-value');
       if (!formatEl || !ansEl || !valueEl) return;
       const opt = ansEl.options[ansEl.selectedIndex];
       const settingKey = opt ? opt.getAttribute('data-key') : "";
+      const modeCategory = modeEl ? modeEl.value : "word";
       const pointValue = valueEl.value;
       if (!settingKey) {
         setTrainingAdminMessage("形式とこたえ方を選んでください", false);
@@ -6402,6 +6447,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         action: "save_training_base_point",
         adminPin: pin,
         settingKey: settingKey,
+        modeCategory: modeCategory,
         value: pointValue
       }) })
       .then(r => r.json()).then(d => {
@@ -6410,9 +6456,18 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
           return;
         }
         if (!trainingAdminData.basePointSettings) trainingAdminData.basePointSettings = {};
-        trainingAdminData.basePointSettings[settingKey] = pointValue;
+        const prev = trainingAdminData.basePointSettings[settingKey];
+        if (prev != null && typeof prev === "object" && !Array.isArray(prev)) {
+          if (modeCategory === "expression") prev.expression = pointValue;
+          else prev.word = pointValue;
+        } else {
+          trainingAdminData.basePointSettings[settingKey] = modeCategory === "expression"
+            ? { word: prev != null ? prev : "", expression: pointValue }
+            : { word: pointValue, expression: "" };
+        }
         invalidateAppSettingsCache();
-        setTrainingAdminMessage("点数を保存しました（" + settingKey + " = " + pointValue + "）", true);
+        const modeLabel = modeCategory === "expression" ? "表現" : "単語";
+        setTrainingAdminMessage("点数を保存しました（" + settingKey + " / " + modeLabel + " = " + pointValue + "）", true);
       }).catch(function () { setTrainingAdminMessage("通信エラー", false); })
       .finally(function () {
         if (saveBtn && saveBtn.isConnected) toggleBtnLoading(saveBtn, false, orig);
