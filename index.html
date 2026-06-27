@@ -3017,7 +3017,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
     }
     function useEnFlashListenAudio() {
       if (!enFlashAnswerStarted || !enFlashCurrentEnglish) return;
-      if (quizEnglishAudioPlaying) return;
+      if (quizEnglishAudioPlaying || quizEnglishAudioPending_) return;
       if (shouldQuizAudioVoiceMutex_() && quizVoiceListening) return;
       maxDeduction += EN_FLASH_LISTEN_PENALTY;
       speakQuizEnglishAudio(enFlashCurrentEnglish);
@@ -3739,8 +3739,32 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
     if ('speechSynthesis' in window) { window.speechSynthesis.onvoiceschanged = loadVoices; loadVoices(); }
 
     let quizEnglishAudioPlaying = false;
+    let quizEnglishAudioPending_ = false;
     let quizVoiceListening = false;
     let activeQuizSpeechUtterance = null;
+    let quizEnglishAudioSafetyTimer_ = null;
+
+    function clearQuizEnglishAudioSafetyTimer_() {
+      if (quizEnglishAudioSafetyTimer_) {
+        clearTimeout(quizEnglishAudioSafetyTimer_);
+        quizEnglishAudioSafetyTimer_ = null;
+      }
+    }
+    function armQuizEnglishAudioSafetyTimer_(ms) {
+      clearQuizEnglishAudioSafetyTimer_();
+      quizEnglishAudioSafetyTimer_ = setTimeout(function () {
+        quizEnglishAudioSafetyTimer_ = null;
+        if (!quizEnglishAudioPlaying && !quizEnglishAudioPending_) return;
+        quizEnglishAudioPlaying = false;
+        quizEnglishAudioPending_ = false;
+        activeQuizSpeechUtterance = null;
+        syncQuizAudioVoiceControls_();
+      }, ms == null ? 15000 : ms);
+    }
+    function clearQuizEnglishAudioPending_() {
+      quizEnglishAudioPending_ = false;
+      syncQuizAudioVoiceControls_();
+    }
 
     function isQuizSectionActive_() {
       const sec = document.getElementById('section-quiz');
@@ -3751,6 +3775,10 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
     }
     function setQuizEnglishAudioPlaying_(playing) {
       quizEnglishAudioPlaying = !!playing;
+      if (!quizEnglishAudioPlaying) {
+        quizEnglishAudioPending_ = false;
+        clearQuizEnglishAudioSafetyTimer_();
+      }
       syncQuizAudioVoiceControls_();
     }
     function stopQuizVoiceListening_() {
@@ -3765,20 +3793,42 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
     function resetQuizAudioVoiceMutex_() {
       quizVoiceListening = false;
       quizEnglishAudioPlaying = false;
+      quizEnglishAudioPending_ = false;
       activeQuizSpeechUtterance = null;
+      clearQuizEnglishAudioSafetyTimer_();
       syncQuizAudioVoiceControls_();
+    }
+    function isQuizVoiceMicBlocked_() {
+      return quizEnglishAudioPlaying || quizEnglishAudioPending_;
+    }
+    function releaseStuckQuizVoiceState_() {
+      if (quizVoiceListening) {
+        try { if (recognition) recognition.abort(); } catch (_) {
+          try { if (recognition) recognition.stop(); } catch (_2) {}
+        }
+        stopQuizVoiceListening_();
+      }
+      if (isQuizVoiceMicBlocked_()) {
+        const synthSpeaking = ('speechSynthesis' in window) && window.speechSynthesis.speaking;
+        if (!synthSpeaking && !activeQuizSpeechUtterance) {
+          quizEnglishAudioPlaying = false;
+          quizEnglishAudioPending_ = false;
+          clearQuizEnglishAudioSafetyTimer_();
+          syncQuizAudioVoiceControls_();
+        }
+      }
     }
     function syncQuizAudioVoiceControls_() {
       const flashListenBtn = document.getElementById('en-flash-listen-btn');
       if (flashListenBtn) {
         const voiceMutex = shouldQuizAudioVoiceMutex_();
-        flashListenBtn.disabled = quizEnglishAudioPlaying || (voiceMutex && quizVoiceListening);
+        flashListenBtn.disabled = quizEnglishAudioPlaying || quizEnglishAudioPending_ || (voiceMutex && quizVoiceListening);
       }
       if (!shouldQuizAudioVoiceMutex_()) return;
       const listenBtn = document.getElementById('quiz-listen-btn');
       const voiceBtn = document.getElementById('voice-btn');
       if (listenBtn) listenBtn.disabled = quizVoiceListening;
-      if (voiceBtn) voiceBtn.disabled = quizEnglishAudioPlaying;
+      if (voiceBtn) voiceBtn.disabled = isQuizVoiceMicBlocked_();
     }
     function speakQuizEnglishAudio(text, rate) {
       if (quizVoiceListening) return;
@@ -3788,16 +3838,25 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
     /** langHint: 'ja' | 'en' | undefined（undefined は文字から自動判定） */
     function speakText(text, rate = 0.9, langHint) {
       if (!('speechSynthesis' in window)) {
-        if (shouldQuizAudioVoiceMutex_()) setQuizEnglishAudioPlaying_(false);
+        if (shouldQuizAudioVoiceMutex_()) {
+          clearQuizEnglishAudioPending_();
+          setQuizEnglishAudioPlaying_(false);
+        }
         return;
       }
       if (text == null || (typeof text !== 'string' && typeof text !== 'number')) {
-        if (shouldQuizAudioVoiceMutex_()) setQuizEnglishAudioPlaying_(false);
+        if (shouldQuizAudioVoiceMutex_()) {
+          clearQuizEnglishAudioPending_();
+          setQuizEnglishAudioPlaying_(false);
+        }
         return;
       }
       const t = String(text).trim();
       if (!t) {
-        if (shouldQuizAudioVoiceMutex_()) setQuizEnglishAudioPlaying_(false);
+        if (shouldQuizAudioVoiceMutex_()) {
+          clearQuizEnglishAudioPending_();
+          setQuizEnglishAudioPlaying_(false);
+        }
         return;
       }
       loadVoices();
@@ -3822,7 +3881,12 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       }
       if (mutex) {
         activeQuizSpeechUtterance = uttr;
-        uttr.onstart = function () { setQuizEnglishAudioPlaying_(true); };
+        armQuizEnglishAudioSafetyTimer_(15000);
+        uttr.onstart = function () {
+          clearQuizEnglishAudioPending_();
+          setQuizEnglishAudioPlaying_(true);
+          armQuizEnglishAudioSafetyTimer_(15000);
+        };
         uttr.onend = uttr.onerror = function () {
           if (activeQuizSpeechUtterance === uttr) {
             activeQuizSpeechUtterance = null;
@@ -11991,9 +12055,20 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
 
     function startVoiceInput() {
       if(!recognition) { alert("お使いのブラウザは音声入力に対応していません。SafariかChromeを使ってね！"); return; }
-      if (quizEnglishAudioPlaying || quizVoiceListening) return;
-      const feedback = document.getElementById('voice-feedback'); const btn = document.getElementById('voice-btn'); const displayField = document.getElementById('voice-recognized-text');
-      displayField.value = ""; btn.innerText = "🎙️ 聞き取り中..."; btn.style.background = "#e50914"; feedback.innerHTML = "英語ではなしてください...";
+      releaseStuckQuizVoiceState_();
+      if (isQuizVoiceMicBlocked_()) return;
+      if (quizVoiceListening) return;
+      const feedback = document.getElementById('voice-feedback');
+      const btn = document.getElementById('voice-btn');
+      const displayField = document.getElementById('voice-recognized-text');
+      if (!feedback || !btn || !displayField) return;
+      try { recognition.abort(); } catch (_) {
+        try { recognition.stop(); } catch (_2) {}
+      }
+      displayField.value = "";
+      btn.innerText = "🎙️ 聞き取り中...";
+      btn.style.background = "#e50914";
+      feedback.innerHTML = "英語ではなしてください...";
       startQuizVoiceListening_();
       recognition.onresult = (event) => {
         let interimTranscript = ''; let finalTranscript = '';
@@ -12008,8 +12083,9 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
           } 
           else if (finalTranscript) { 
             voiceFailCount++;
+            try { recognition.stop(); } catch (_) {}
+            stopQuizVoiceListening_();
             if (voiceFailCount >= 5) {
-              recognition.stop();
               displayField.value = displayText;
               checkAnswer(displayText, correctA, q);
             } else {
@@ -12020,12 +12096,28 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
           }
         }
       };
-      recognition.onerror = () => { stopQuizVoiceListening_(); feedback.innerText = "聞き取れませんでした。もう一度おしてね。"; btn.innerText = "🎙️ マイクでこたえる"; btn.style.background = "#2196F3"; };
+      recognition.onerror = (event) => {
+        stopQuizVoiceListening_();
+        const errCode = event && event.error ? String(event.error) : "";
+        feedback.innerText = errCode === "not-allowed"
+          ? "マイクの使用が許可されていません。ブラウザの設定を確認してください。"
+          : "聞き取れませんでした。もう一度おしてね。";
+        btn.innerText = "🎙️ マイクでこたえる";
+        btn.style.background = "#2196F3";
+      };
       recognition.onend = () => {
         stopQuizVoiceListening_();
         if(btn.innerText.includes("聞き取り中")) { btn.innerText = "🎙️ マイクでこたえる"; btn.style.background = "#2196F3"; }
       };
-      recognition.start();
+      try {
+        recognition.start();
+      } catch (err) {
+        stopQuizVoiceListening_();
+        btn.innerText = "🎙️ マイクでこたえる";
+        btn.style.background = "#2196F3";
+        feedback.innerText = "マイクを起動できませんでした。少し待ってからもう一度お試しください。";
+        console.warn("recognition.start failed", err);
+      }
     }
 
     function startJaSpeechToField(fieldId) {
@@ -12187,7 +12279,11 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         document.getElementById('quiz-q-text').innerHTML = `<div style="font-size:36px;font-weight:bold;margin-bottom:8px;">${escapeHtml(ja)}</div>${refEn ? `<div style="font-size:22px;color:#aaa;line-height:1.4;">${escapeHtml(refEn)}</div>` : ''}`;
       } else if (format.includes("audio")) {
         document.getElementById('quiz-q-text').innerHTML = `<button id="quiz-listen-btn" onclick="speakQuizEnglishAudio('${engTextForAudio.replace(/'/g, "\\'")}')" class="submit-btn btn-blue" style="border-radius:50px;">🔊 英語をきく</button>`;
-        if (isQuizVoiceAnswerType(answerType) && ('speechSynthesis' in window)) setQuizEnglishAudioPlaying_(true);
+        if (isQuizVoiceAnswerType(answerType) && ('speechSynthesis' in window)) {
+          quizEnglishAudioPending_ = true;
+          armQuizEnglishAudioSafetyTimer_(20000);
+          syncQuizAudioVoiceControls_();
+        }
         setTimeout(() => speakText(engTextForAudio), 500);
       } else if (format === "en_to_en") {
         const safeText = qText || "";
