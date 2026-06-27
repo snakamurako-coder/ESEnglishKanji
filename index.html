@@ -3014,6 +3014,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         enFlashRevealTimer = null;
         if (slot) slot.style.display = "none";
       }, EN_FLASH_REVEAL_MS);
+      updateSessionScoreDisplay();
     }
     function useEnFlashListenAudio() {
       if (!enFlashAnswerStarted || !enFlashCurrentEnglish) return;
@@ -3021,6 +3022,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       if (shouldQuizAudioVoiceMutex_() && quizVoiceListening) return;
       maxDeduction += EN_FLASH_LISTEN_PENALTY;
       speakQuizEnglishAudio(enFlashCurrentEnglish);
+      updateSessionScoreDisplay();
     }
     function mountQuizVoiceAnswerArea_() {
       const answerArea = document.getElementById("quiz-answer-area");
@@ -3611,21 +3613,67 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
 
     /** GAS と同じ二段階の丸め */
     function applySessionEarnedFromRaw(sessionRawPoints, multiplier, sheetPointPercent) {
-      let earned = Math.round(sessionRawPoints * multiplier * 100) / 100;
+      const raw = Number(sessionRawPoints) || 0;
+      if (raw <= 0) return 0;
+      let earned = Math.round(raw * multiplier * 100) / 100;
       if (sheetPointPercent !== 100) {
         earned = Math.round(earned * (sheetPointPercent / 100) * 100) / 100;
       }
-      return earned;
+      return Math.max(0, earned);
+    }
+
+    /** 1問の素点（ヒント減点後も最低1点。0・マイナスにならない） */
+    function computeQuestionRawPoints_(basePoint, maxDeduction) {
+      const bp = Number(basePoint) || 2;
+      const ded = Math.max(0, Number(maxDeduction) || 0);
+      return Math.max(1, bp - ded);
+    }
+
+    /** 実際に差し引かれる減点（基本点-1が下限） */
+    function computeEffectiveDeduction_(basePoint, maxDeduction) {
+      const bp = Math.max(1, Number(basePoint) || 2);
+      const ded = Math.max(0, Number(maxDeduction) || 0);
+      return Math.min(ded, Math.max(0, bp - 1));
     }
 
     function rawPointsFromQuizResults(results) {
       let sum = 0;
       (results || []).forEach(res => {
         if (res.isCorrect) {
-          const qpt = Math.max(1, (Number(res.basePoint) || 2) - (Number(res.maxDeduction) || 0));
-          sum += qpt;
+          sum += computeQuestionRawPoints_(res.basePoint, res.maxDeduction);
         }
       });
+      return sum;
+    }
+
+    /** 回答中・未採点のヒント減点（確定得点には未反映） */
+    function getCurrentQuestionPendingDeduction_() {
+      if (!Array.isArray(filteredQuestions) || filteredQuestions.length === 0) return 0;
+      if (currentQuestionIndex < 0 || currentQuestionIndex >= filteredQuestions.length) return 0;
+      if (!Array.isArray(quizResults) || quizResults.length !== currentQuestionIndex) return 0;
+      return Number(maxDeduction) || 0;
+    }
+
+    /**
+     * 残りをすべて正解したときの素点見込み上限（各問最低1点を反映）。
+     */
+    function projectedMaxRawForSession_() {
+      if (!filteredQuestions || filteredQuestions.length === 0) return 0;
+      const meta = getEnglishQuizSessionMeta();
+      const format = meta.format || (document.getElementById('setting-format') || {}).value || "";
+      const ansType = meta.ansType || getActiveQuizAnswerType();
+      const isWord = String(meta.modeName || currentModeName || "").includes("単語");
+      const defaultBp = getSessionBasePointPerQuestion(format, ansType, isWord);
+      const total = filteredQuestions.length;
+      const results = Array.isArray(quizResults) ? quizResults : [];
+      let sum = rawPointsFromQuizResults(results);
+      const onCurrent = results.length === currentQuestionIndex && currentQuestionIndex < total;
+      if (onCurrent) {
+        const curBp = computeQuizBasePoint(format, ansType, isWord);
+        sum += computeQuestionRawPoints_(curBp, getCurrentQuestionPendingDeduction_());
+      }
+      const remainingFull = Math.max(0, total - results.length - (onCurrent ? 1 : 0));
+      sum += remainingFull * defaultBp;
       return sum;
     }
 
@@ -3650,14 +3698,13 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       const correctCount = (quizResults || []).filter(function (r) { return r && r.isCorrect; }).length;
       const mult = computePointsMultiplierClient();
       const sheetPct = parseUnitSheetPointPercentClient(currentUnitName);
-      const maxRaw = sumMaxPossibleRawForSession();
-      const maxEarned = applySessionEarnedFromRaw(maxRaw, mult, sheetPct);
       const curRaw = rawPointsFromQuizResults(quizResults);
       const curEarned = applySessionEarnedFromRaw(curRaw, mult, sheetPct);
+      const projectedEarned = applySessionEarnedFromRaw(projectedMaxRawForSession_(), mult, sheetPct);
       const statusLine = saveStatusHtml != null ? String(saveStatusHtml) : "";
       return `<h2 style="color:#4CAF50;">✨ おつかれさま！ ✨</h2>` +
         `<p>正解: <strong>${correctCount}</strong> / ${totalQ} 問</p>` +
-        `<p>このセッションの得点: <span style="color:gold;font-size:30px;">${formatPointDisplayNum(curEarned)}</span> / ${formatPointDisplayNum(maxEarned)} 点</p>` +
+        `<p>このセッションの得点: <span style="color:gold;font-size:30px;">${formatPointDisplayNum(curEarned)}</span> / ${formatPointDisplayNum(projectedEarned)} 点</p>` +
         (statusLine ? `<p id="result-save-status" style="font-size:14px;color:#aaa;margin-top:10px;">${statusLine}</p>` : "");
     }
 
@@ -3694,13 +3741,12 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       }
       const mult = computePointsMultiplierClient();
       const sheetPct = parseUnitSheetPointPercentClient(currentUnitName);
-      const maxRaw = sumMaxPossibleRawForSession();
-      const maxEarned = applySessionEarnedFromRaw(maxRaw, mult, sheetPct);
       const curRaw = rawPointsFromQuizResults(quizResults);
       const curEarned = applySessionEarnedFromRaw(curRaw, mult, sheetPct);
+      const projectedEarned = applySessionEarnedFromRaw(projectedMaxRawForSession_(), mult, sheetPct);
       const parts = [];
-      parts.push(`このセッションの得点 <strong style="color:#FFD54F;font-size:20px;">${formatPointDisplayNum(curEarned)}</strong> / <span style="color:#aaa;">${formatPointDisplayNum(maxEarned)}</span> 点`);
-      parts.push(`<span style="font-size:12px;color:#888;">（全問せいかい・ヒントなしのときの最大。時間・ニガテ・ランダム・単元シート名の補正％を含む）</span>`);
+      parts.push(`このセッションの得点 <strong style="color:#FFD54F;font-size:20px;">${formatPointDisplayNum(curEarned)}</strong> / <span style="color:#aaa;">${formatPointDisplayNum(projectedEarned)}</span> 点`);
+      parts.push(`<span style="font-size:12px;color:#888;">（残り全問正解時の見込み最大。英文確認・ヒント減点・時間・ニガテ・ランダム・単元シート％を含む）</span>`);
       el.innerHTML = parts.join('<br>');
     }
 
@@ -12533,6 +12579,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         else speakSrc = q["英単語"] || q["英文"];
         speakText(speakSrc, 0.8);
       }
+      updateSessionScoreDisplay();
     }
     function skipQuestion() {
       const q = filteredQuestions[currentQuestionIndex];
@@ -12597,7 +12644,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
           feedbackUserA = formatSortUserAnswerForDisplay(userA);
           feedbackCorrect = formatSortSentenceForDisplay(resolvedCorrect);
         }
-        feedback.innerHTML = buildFeedbackContentHtml(feedbackUserA, feedbackCorrect, isCorrect, isSkip, maxDeduction, fillFeedback && !isSkip, ansType, plusLine);
+        feedback.innerHTML = buildFeedbackContentHtml(feedbackUserA, feedbackCorrect, isCorrect, isSkip, computeEffectiveDeduction_(basePoint, maxDeduction), fillFeedback && !isSkip, ansType, plusLine);
         updateSessionScoreDisplay();
         if (isQuizFreeTypingAnswerType(ansType) || ansType === "fill_typing" || format === "ja_to_en_sort") {
           requestAnimationFrame(() => {

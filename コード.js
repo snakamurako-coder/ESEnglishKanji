@@ -1811,6 +1811,13 @@ function rememberSessionSubmitLock_(userData, sessionSubmitId, earnedPoints, new
   pruneSessionSubmitLocks_(userData.historyJson.__sessionSubmits);
 }
 
+/** 英語1問の素点（ヒント減点後も最低1点。0・マイナスにならない） */
+function computeEnglishQuestionRawPoints_(basePoint, maxDeduction) {
+  const bp = Number(basePoint) || 2;
+  const ded = Math.max(0, Number(maxDeduction) || 0);
+  return Math.max(1, bp - ded);
+}
+
 // 学習結果の保存（進捗チェックの更新を追加）
 function handleSaveLearningSession(req) {
   try {
@@ -1927,7 +1934,7 @@ function handleSaveLearningSession(req) {
   } else {
     resultsList.forEach(function (res, idx) {
       if (res && res.isCorrect) {
-        let qPoint = Math.max(1, (Number(res.basePoint) || 2) - (Number(res.maxDeduction) || 0));
+        let qPoint = computeEnglishQuestionRawPoints_(res.basePoint, res.maxDeduction);
         sessionRawPoints += qPoint;
       }
     });
@@ -1949,6 +1956,7 @@ function handleSaveLearningSession(req) {
   if (sheetPointPercent !== 100) {
     earnedPoints = Math.round(earnedPoints * (sheetPointPercent / 100) * 100) / 100;
   }
+  earnedPoints = Math.max(0, earnedPoints);
   const newTotalPoints = Math.round((userData.points + earnedPoints) * 100) / 100;
   
   userData.dailyPointsJson[todayStr] = (userData.dailyPointsJson[todayStr] || 0) + earnedPoints;
