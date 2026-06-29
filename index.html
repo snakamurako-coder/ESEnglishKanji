@@ -3752,10 +3752,64 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
 
     let recognition = null;
     let recognitionJa = null;
-    if ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window) {
+    let voiceRecognitionGen_ = 0;
+    let voiceRecognitionPendingStart_ = null;
+    let voiceRecognitionStopFallbackTimer_ = null;
+
+    function createEnglishRecognition_() {
+      if (!('SpeechRecognition' in window || 'webkitSpeechRecognition' in window)) return null;
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      recognition = new SpeechRecognition();
-      recognition.lang = 'en-US'; recognition.interimResults = true; recognition.continuous = false;
+      const r = new SpeechRecognition();
+      r.lang = 'en-US';
+      r.interimResults = true;
+      r.continuous = false;
+      return r;
+    }
+    recognition = createEnglishRecognition_();
+
+    function cancelVoiceRecognitionPendingStart_() {
+      if (voiceRecognitionPendingStart_) {
+        clearTimeout(voiceRecognitionPendingStart_);
+        voiceRecognitionPendingStart_ = null;
+      }
+    }
+    function resetVoiceBtnIdle_(btn, feedback, msg) {
+      if (btn) {
+        btn.innerText = "🎙️ マイクでこたえる";
+        btn.style.background = "#2196F3";
+        btn.disabled = false;
+      }
+      if (feedback && msg != null) feedback.innerText = String(msg);
+      syncQuizAudioVoiceControls_();
+    }
+    function stopEnglishRecognitionSafely_(next) {
+      cancelVoiceRecognitionPendingStart_();
+      if (voiceRecognitionStopFallbackTimer_) {
+        clearTimeout(voiceRecognitionStopFallbackTimer_);
+        voiceRecognitionStopFallbackTimer_ = null;
+      }
+      voiceRecognitionGen_++;
+      if (!recognition) {
+        stopQuizVoiceListening_();
+        if (typeof next === "function") next();
+        return;
+      }
+      let finished = false;
+      const finish = function () {
+        if (finished) return;
+        finished = true;
+        if (voiceRecognitionStopFallbackTimer_) {
+          clearTimeout(voiceRecognitionStopFallbackTimer_);
+          voiceRecognitionStopFallbackTimer_ = null;
+        }
+        stopQuizVoiceListening_();
+        if (typeof next === "function") next();
+      };
+      recognition.onend = function () { finish(); };
+      try { recognition.abort(); } catch (_) {
+        try { recognition.stop(); } catch (_2) { finish(); return; }
+      }
+      voiceRecognitionStopFallbackTimer_ = setTimeout(finish, 450);
     }
     let preferredVoice = null;
     let preferredJapaneseVoice = null;
@@ -3849,10 +3903,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
     }
     function releaseStuckQuizVoiceState_() {
       if (quizVoiceListening) {
-        try { if (recognition) recognition.abort(); } catch (_) {
-          try { if (recognition) recognition.stop(); } catch (_2) {}
-        }
-        stopQuizVoiceListening_();
+        stopEnglishRecognitionSafely_(null);
       }
       if (isQuizVoiceMicBlocked_()) {
         const synthSpeaking = ('speechSynthesis' in window) && window.speechSynthesis.speaking;
@@ -11272,12 +11323,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
             onEnterSubmit();
             return;
           }
-          const targetInput = document.getElementById(targetInputId);
-          const userA = targetInput ? targetInput.value : "";
-          const q = filteredQuestions[currentQuestionIndex];
-          const format = document.getElementById('setting-format').value;
-          let correctA = (format.includes("qtext") || format.includes("qaudio")) ? q["英文"] : (q["英単語"] || q["英文"]);
-          checkAnswer(userA, correctA, q);
+          submitTypingAnswer();
         });
         bottomRow.appendChild(spaceBtn); bottomRow.appendChild(enterBtn);
       } else {
@@ -11831,7 +11877,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
             <div class="pen-typing-preview-row">
               <button type="button" id="pen-recognize-btn" class="submit-btn btn-blue pen-recognize-btn" style="margin-top:0;padding:10px 14px;font-size:14px;" onclick="recognizePenStrokes()">文字起こし</button>
               <button type="button" class="submit-btn btn-gray" style="margin-top:0;padding:10px 14px;font-size:14px;" onclick="appendTypeAnswerText(' ')">間をあける</button>
-              <button type="button" id="pen-typing-submit-btn" class="submit-btn btn-green" style="margin-top:0;padding:10px 14px;font-size:14px;" onclick="submitTypingFromPen()">答えを送信</button>
+              <button type="button" id="pen-typing-submit-btn" class="submit-btn btn-green" style="margin-top:0;padding:10px 14px;font-size:14px;" onclick="submitTypingAnswer()">答えを送信</button>
             </div>
             <div class="pen-typing-preview-area">
               <textarea id="type-answer" class="large-input type-answer-pen-preview" readonly rows="2" placeholder="認識結果が入ります" aria-label="手書きの認識結果"></textarea>
@@ -11889,7 +11935,12 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
           body.innerHTML = `<div id="keyboard-container"></div>`;
           renderCustomKeyboard(true);
         } else {
-          body.innerHTML = `<input type="text" id="type-answer" class="large-input" readonly inputmode="none" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="下のキーボードで入力"><div id="keyboard-container"></div>`;
+          body.innerHTML = `
+            <div class="keyboard-typing-top-row" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:center;margin-bottom:8px;">
+              <button type="button" id="keyboard-typing-submit-btn" class="submit-btn btn-green" style="margin-top:0;padding:10px 20px;font-size:16px;" onclick="submitTypingAnswer()">答えを送信</button>
+            </div>
+            <input type="text" id="type-answer" class="large-input" readonly inputmode="none" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="下のキーボードで入力">
+            <div id="keyboard-container"></div>`;
           renderCustomKeyboard(false);
           focusQuizTypeAnswerInput();
         }
@@ -11909,28 +11960,30 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
     let isPenTypingSubmitInFlight = false;
     function setPenTypingSubmitBusy(isBusy) {
       isPenTypingSubmitInFlight = !!isBusy;
-      const btn = document.getElementById('pen-typing-submit-btn');
-      if (!btn) return;
-      btn.disabled = !!isBusy;
-      btn.setAttribute('aria-busy', isBusy ? 'true' : 'false');
-      btn.innerText = isBusy ? '送信中...' : '答えを送信';
+      ['pen-typing-submit-btn', 'keyboard-typing-submit-btn'].forEach(function (id) {
+        const btn = document.getElementById(id);
+        if (!btn) return;
+        btn.disabled = !!isBusy;
+        btn.setAttribute('aria-busy', isBusy ? 'true' : 'false');
+        btn.innerText = isBusy ? '送信中...' : '答えを送信';
+      });
     }
-    function submitTypingFromPen() {
-      if (isPenTypingSubmitInFlight) return;
-      if (handwritingState.pendingTempText) confirmTemporaryTypingInput();
+    function submitTypingAnswer() {
+      if (isPenTypingSubmitInFlight || isQuizAnswerSubmitting()) return;
+      if (inputMethodMode === 'pen' && handwritingState.pendingTempText) confirmTemporaryTypingInput();
       const target = document.getElementById('type-answer');
       const userA = target ? String(target.value || "") : "";
       if (!normalizeText(userA)) {
-        setPenStatus('先に文字起こしして入力してください。');
+        if (inputMethodMode === 'pen') setPenStatus('先に文字起こしして入力してください。');
         return;
       }
       if (!Array.isArray(filteredQuestions) || currentQuestionIndex < 0 || currentQuestionIndex >= filteredQuestions.length) {
-        setPenStatus('問題データの読み込み待ちです。少し待って再度お試しください。');
+        if (inputMethodMode === 'pen') setPenStatus('問題データの読み込み待ちです。少し待って再度お試しください。');
         return;
       }
       const q = filteredQuestions[currentQuestionIndex];
       if (!q) {
-        setPenStatus('問題の取得に失敗しました。次の問題に進んでください。');
+        if (inputMethodMode === 'pen') setPenStatus('問題の取得に失敗しました。次の問題に進んでください。');
         return;
       }
       const formatEl = document.getElementById('setting-format');
@@ -11938,6 +11991,9 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       const correctA = (format.includes("qtext") || format.includes("qaudio")) ? q["英文"] : (q["英単語"] || q["英文"]);
       setPenTypingSubmitBusy(true);
       checkAnswer(userA, correctA, q);
+    }
+    function submitTypingFromPen() {
+      submitTypingAnswer();
     }
 
     function switchInputMethod(mode) {
@@ -12100,7 +12156,9 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
     }
 
     function startVoiceInput() {
-      if(!recognition) { alert("お使いのブラウザは音声入力に対応していません。SafariかChromeを使ってね！"); return; }
+      if (!recognition) recognition = createEnglishRecognition_();
+      if (!recognition) { alert("お使いのブラウザは音声入力に対応していません。SafariかChromeを使ってね！"); return; }
+      if (voiceRecognitionPendingStart_) return;
       releaseStuckQuizVoiceState_();
       if (isQuizVoiceMicBlocked_()) return;
       if (quizVoiceListening) return;
@@ -12108,62 +12166,79 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       const btn = document.getElementById('voice-btn');
       const displayField = document.getElementById('voice-recognized-text');
       if (!feedback || !btn || !displayField) return;
-      try { recognition.abort(); } catch (_) {
-        try { recognition.stop(); } catch (_2) {}
-      }
-      displayField.value = "";
-      btn.innerText = "🎙️ 聞き取り中...";
-      btn.style.background = "#e50914";
-      feedback.innerHTML = "英語ではなしてください...";
-      startQuizVoiceListening_();
-      recognition.onresult = (event) => {
-        let interimTranscript = ''; let finalTranscript = '';
-        for (let i = event.resultIndex; i < event.results.length; ++i) { if (event.results[i].isFinal) finalTranscript += event.results[i][0].transcript; else interimTranscript += event.results[i][0].transcript; }
-        let rawTranscript = finalTranscript || interimTranscript; 
-        const displayText = convertDigitsToWordsInText(rawTranscript);
-        displayField.value = displayText;
-        if (displayText) {
-          const q = filteredQuestions[currentQuestionIndex]; const format = document.getElementById('setting-format').value; let correctA = (format.includes("qtext") || format.includes("qaudio")) ? q["英文"] : (q["英単語"] || q["英文"]);
-          if(normalizeText(displayText) === normalizeText(correctA)) { 
-            recognition.stop(); displayField.value = displayText; checkAnswer(displayText, correctA, q); 
-          } 
-          else if (finalTranscript) { 
-            voiceFailCount++;
-            try { recognition.stop(); } catch (_) {}
-            stopQuizVoiceListening_();
-            if (voiceFailCount >= 5) {
+
+      const beginListening = function () {
+        voiceRecognitionPendingStart_ = null;
+        if (isQuizVoiceMicBlocked_() || quizVoiceListening) return;
+        if (!recognition) recognition = createEnglishRecognition_();
+        if (!recognition) return;
+        const sessionGen = ++voiceRecognitionGen_;
+        displayField.value = "";
+        btn.innerText = "🎙️ 聞き取り中...";
+        btn.style.background = "#e50914";
+        btn.disabled = false;
+        feedback.innerHTML = "英語ではなしてください...";
+        startQuizVoiceListening_();
+
+        recognition.onresult = (event) => {
+          if (sessionGen !== voiceRecognitionGen_) return;
+          let interimTranscript = ''; let finalTranscript = '';
+          for (let i = event.resultIndex; i < event.results.length; ++i) { if (event.results[i].isFinal) finalTranscript += event.results[i][0].transcript; else interimTranscript += event.results[i][0].transcript; }
+          let rawTranscript = finalTranscript || interimTranscript;
+          const displayText = convertDigitsToWordsInText(rawTranscript);
+          displayField.value = displayText;
+          if (displayText) {
+            const q = filteredQuestions[currentQuestionIndex]; const format = document.getElementById('setting-format').value; let correctA = (format.includes("qtext") || format.includes("qaudio")) ? q["英文"] : (q["英単語"] || q["英文"]);
+            if(normalizeText(displayText) === normalizeText(correctA)) {
+              stopEnglishRecognitionSafely_(null);
               displayField.value = displayText;
               checkAnswer(displayText, correctA, q);
-            } else {
-              displayField.value = displayText; 
-              feedback.innerHTML = `聞き取った言葉：<br><b style='color:#FF9800;'>「${displayText}」</b><br>ちがうみたい！もう一度🎙️をおしてね。<br><span style="font-size:14px; color:#F44336;">（まちがい: ${voiceFailCount}回 / 5回で不正解）</span>`; 
-              btn.innerText = "🎙️ マイクでこたえる"; btn.style.background = "#2196F3"; 
+            }
+            else if (finalTranscript) {
+              voiceFailCount++;
+              stopEnglishRecognitionSafely_(function () {
+                if (sessionGen !== voiceRecognitionGen_) return;
+                if (voiceFailCount >= 5) {
+                  displayField.value = displayText;
+                  checkAnswer(displayText, correctA, q);
+                } else {
+                  displayField.value = displayText;
+                  feedback.innerHTML = `聞き取った言葉：<br><b style='color:#FF9800;'>「${displayText}」</b><br>ちがうみたい！もう一度🎙️をおしてね。<br><span style="font-size:14px; color:#F44336;">（まちがい: ${voiceFailCount}回 / 5回で不正解）</span>`;
+                  resetVoiceBtnIdle_(btn);
+                }
+              });
             }
           }
+        };
+        recognition.onerror = (event) => {
+          if (sessionGen !== voiceRecognitionGen_) return;
+          const errCode = event && event.error ? String(event.error) : "";
+          stopEnglishRecognitionSafely_(function () {
+            if (sessionGen !== voiceRecognitionGen_) return;
+            recognition = createEnglishRecognition_();
+            resetVoiceBtnIdle_(btn, feedback, errCode === "not-allowed"
+              ? "マイクの使用が許可されていません。ブラウザの設定を確認してください。"
+              : "聞き取れませんでした。もう一度おしてね。");
+          });
+        };
+        recognition.onend = function () {
+          if (sessionGen !== voiceRecognitionGen_) return;
+          stopQuizVoiceListening_();
+          if (btn.innerText.includes("聞き取り中")) resetVoiceBtnIdle_(btn);
+        };
+        try {
+          recognition.start();
+        } catch (err) {
+          stopQuizVoiceListening_();
+          recognition = createEnglishRecognition_();
+          resetVoiceBtnIdle_(btn, feedback, "マイクを起動できませんでした。少し待ってからもう一度お試しください。");
+          console.warn("recognition.start failed", err);
         }
       };
-      recognition.onerror = (event) => {
-        stopQuizVoiceListening_();
-        const errCode = event && event.error ? String(event.error) : "";
-        feedback.innerText = errCode === "not-allowed"
-          ? "マイクの使用が許可されていません。ブラウザの設定を確認してください。"
-          : "聞き取れませんでした。もう一度おしてね。";
-        btn.innerText = "🎙️ マイクでこたえる";
-        btn.style.background = "#2196F3";
-      };
-      recognition.onend = () => {
-        stopQuizVoiceListening_();
-        if(btn.innerText.includes("聞き取り中")) { btn.innerText = "🎙️ マイクでこたえる"; btn.style.background = "#2196F3"; }
-      };
-      try {
-        recognition.start();
-      } catch (err) {
-        stopQuizVoiceListening_();
-        btn.innerText = "🎙️ マイクでこたえる";
-        btn.style.background = "#2196F3";
-        feedback.innerText = "マイクを起動できませんでした。少し待ってからもう一度お試しください。";
-        console.warn("recognition.start failed", err);
-      }
+
+      stopEnglishRecognitionSafely_(function () {
+        voiceRecognitionPendingStart_ = setTimeout(beginListening, 220);
+      });
     }
 
     function startJaSpeechToField(fieldId) {
@@ -12283,6 +12358,8 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       setPenTypingSubmitBusy(false);
       maxDeduction = 0;
       voiceFailCount = 0;
+      cancelVoiceRecognitionPendingStart_();
+      stopEnglishRecognitionSafely_(null);
       resetQuizAudioVoiceMutex_();
       resetEnFlashQuestionState_();
       clearTimeout(autoNextTimer);
@@ -12695,7 +12772,8 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
 
     function nextQuestion() {
       clearTimeout(autoNextTimer);
-      if (recognition) { try { recognition.stop(); } catch (_) {} }
+      cancelVoiceRecognitionPendingStart_();
+      stopEnglishRecognitionSafely_(null);
       window.speechSynthesis.cancel();
       resetQuizAudioVoiceMutex_();
       resetEnFlashQuestionState_();
