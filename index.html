@@ -4967,7 +4967,8 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       abandonKanjiQuizPlayIfLeavingSection(id);
       document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
       document.getElementById(id).classList.add('active');
-      document.getElementById('message').innerText="";
+      const msgEl = document.getElementById('message');
+      if (msgEl) msgEl.innerText = "";
       const kanjiFlowIds = [
         "section-kanji-learning",
         "section-kanji-quiz-sets",
@@ -5462,7 +5463,32 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
     function verifyPin() { document.getElementById('message').innerText = "かくにん中..."; fetch(GAS_API_URL, { method: 'POST', body: JSON.stringify({ action: "verify_kid_pin", userId: selectedUserId, pin: currentPin }) }).then(r=>r.json()).then(d=>{ if(d.status==="success"){ saveAppKidUserToLocal(d.user); showHome(d.user); } else { document.getElementById('message').innerText = d.message; currentPin=""; updatePinDisplay(); } }); }
     function preparePinReset() { const user = JSON.parse(localStorage.getItem('app_kid_user')); showPinScreen(user.id, user.name, true); }
     function executePinReset() { document.getElementById('message').innerText = "へんこう中..."; fetch(GAS_API_URL, { method: 'POST', body: JSON.stringify({ action: "change_pin", userId: selectedUserId, newPin: currentPin }) }).then(r=>r.json()).then(d=>{ if(d.status==="success") { alert(d.message); showHome(JSON.parse(localStorage.getItem('app_kid_user'))); } else { document.getElementById('message').innerText = d.message; currentPin=""; updatePinDisplay(); } }); }
-    function logout() { englishUnitHistoryCache = {}; kanjiHistoryCache = {}; localStorage.removeItem('app_kid_user'); document.body.classList.remove('kanji-study-mode'); document.getElementById('global-header').style.display = 'none'; switchSection('section-users'); }
+    function logout() {
+      syncAllStopwatchesToServer(true);
+      englishUnitHistoryCache = {};
+      kanjiHistoryCache = {};
+      localStorage.removeItem('app_kid_user');
+      document.body.classList.remove('kanji-study-mode');
+      document.getElementById('global-header').style.display = 'none';
+      activeRewardTicket_ = null;
+      if (rewardCountdownTimerId_) {
+        clearInterval(rewardCountdownTimerId_);
+        rewardCountdownTimerId_ = null;
+      }
+      ['home', 'external'].forEach(function (target) {
+        const st = stopwatches[target];
+        if (!st) return;
+        if (st.timerId) {
+          clearInterval(st.timerId);
+          st.timerId = null;
+        }
+        st.running = false;
+        st.startAt = 0;
+        st.elapsed = 0;
+      });
+      switchSection('section-users');
+      fetchUsers();
+    }
 
     // ★ 特訓ルートの読み込み処理を追加
     function showHome(user) {
