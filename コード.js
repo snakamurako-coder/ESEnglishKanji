@@ -2239,10 +2239,9 @@ function handleSaveStopwatch(req) {
 }
 
 function handleGetParentNotifyEmails(req) {
-  if (!verifyExternalAdminPin_(req.adminPin)) {
-    return sendResponse({ status: "error", message: "PINが正しくありません" });
-  }
   const adminSs = getAdminSpreadsheet_();
+  const v = verifyExternalAdminPin_(adminSs, req.adminPin);
+  if (!v.ok) return sendResponse({ status: "error", message: v.message });
   ensureAppSettingsDefaults_(adminSs);
   const emails = [];
   for (let i = 1; i <= 4; i++) {
@@ -2252,10 +2251,9 @@ function handleGetParentNotifyEmails(req) {
 }
 
 function handleSaveParentNotifyEmails(req) {
-  if (!verifyExternalAdminPin_(req.adminPin)) {
-    return sendResponse({ status: "error", message: "PINが正しくありません" });
-  }
   const adminSs = getAdminSpreadsheet_();
+  const v = verifyExternalAdminPin_(adminSs, req.adminPin);
+  if (!v.ok) return sendResponse({ status: "error", message: v.message });
   ensureAppSettingsDefaults_(adminSs);
   const list = Array.isArray(req.emails) ? req.emails : [];
   for (let i = 0; i < 4; i++) {
