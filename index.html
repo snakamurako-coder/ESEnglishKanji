@@ -1981,14 +1981,23 @@
       <button class="menu-btn btn-gray" onclick="logout()" style="margin-top: 20px; width:auto; padding: 10px 20px; font-size:16px;">ログアウト</button>
     </div>
     <div id="home-stopwatch" style="margin: 22px auto 0; max-width: 360px; background:#1f1f1f; border:1px solid #333; border-radius:12px; padding:14px;">
-      <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
-        <div style="font-weight:bold; color:#ccc;">⏱️ ストップウォッチ</div>
-        <div id="home-sw-display" style="font-family:'Courier New', monospace; font-size:24px; color: #4CAF50;">00:00:00</div>
+      <div id="home-stopwatch-normal">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
+          <div style="font-weight:bold; color:#ccc;">⏱️ ストップウォッチ</div>
+          <div id="home-sw-display" style="font-family:'Courier New', monospace; font-size:24px; color: #4CAF50;">00:00:00</div>
+        </div>
+        <div style="font-size:12px;color:#888;margin-top:6px;">最大1時間30分で自動リセット（アカウントごとに保存）</div>
+        <div style="display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;">
+          <button type="button" id="home-sw-start-btn" class="submit-btn btn-green" style="flex:1; min-width:120px;" onclick="startStopwatch('home')">開始</button>
+          <button type="button" id="home-sw-stop-btn" class="cancel-btn" style="flex:1; min-width:120px;" onclick="stopStopwatch('home')">停止</button>
+          <button type="button" id="home-sw-reset-btn" class="submit-btn btn-gray" style="flex:1; min-width:120px;" onclick="resetStopwatch('home')">リセット</button>
+        </div>
       </div>
-      <div style="display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;">
-        <button type="button" class="submit-btn btn-green" style="flex:1; min-width:120px;" onclick="startStopwatch('home')">開始</button>
-        <button type="button" class="cancel-btn" style="flex:1; min-width:120px;" onclick="stopStopwatch('home')">停止</button>
-        <button type="button" class="submit-btn btn-gray" style="flex:1; min-width:120px;" onclick="resetStopwatch('home')">リセット</button>
+      <div id="home-reward-countdown" style="display:none;">
+        <div style="font-weight:bold; color:#FFD54F;">🎫 ご褒美タイム</div>
+        <div id="home-reward-countdown-name" style="font-size:15px;color:#ccc;margin-top:6px;"></div>
+        <div id="home-reward-countdown-display" style="font-family:'Courier New', monospace; font-size:28px; color:#FFD54F; margin-top:8px;">00:00</div>
+        <div style="font-size:12px;color:#888;margin-top:6px;">残り時間（ストップウォッチの代わりに表示）</div>
       </div>
     </div>
   </div>
@@ -2202,6 +2211,7 @@
         <div style="font-weight:bold; color:#ccc;">⏱️ ストップウォッチ</div>
         <div id="external-sw-display" style="font-family:'Courier New', monospace; font-size:24px; color: #4CAF50;">00:00:00</div>
       </div>
+      <div style="font-size:12px;color:#888;margin-top:6px;">最大1時間30分で自動リセット（アカウントごとに保存）</div>
       <div style="display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;">
         <button type="button" class="submit-btn btn-green" style="flex:1; min-width:120px;" onclick="startStopwatch('external')">開始</button>
         <button type="button" class="cancel-btn" style="flex:1; min-width:120px;" onclick="stopStopwatch('external')">停止</button>
@@ -2224,9 +2234,28 @@
       <p style="color:#aaa;font-size:14px;text-align:center;margin:0 0 4px;">管理する項目を選んでください</p>
       <button type="button" class="menu-btn btn-blue" onclick="enterParentAdminExternal()">🔐 外部学習の承認</button>
       <button type="button" class="menu-btn btn-purple" onclick="enterParentAdminTraining()">🎯 特訓メニュー管理</button>
+      <button type="button" class="menu-btn btn-green" onclick="enterParentAdminNotify()">📧 通知メール設定</button>
       <button type="button" class="cancel-btn" style="margin-top:4px;" onclick="logoutParentAdmin()">ログアウト</button>
     </div>
     <button type="button" class="cancel-btn" style="margin-top:24px;" onclick="showHome(JSON.parse(localStorage.getItem('app_kid_user')))">ホームにもどる</button>
+  </div>
+
+  <div id="section-parent-admin-notify" class="section">
+    <h1>📧 通知メール設定</h1>
+    <p style="max-width:420px;margin:0 auto 12px;line-height:1.5;color:#ccc;">制限時間付きご褒美チケットの使用・終了をお知らせするメールアドレス（最大4件）</p>
+    <div style="max-width:400px;margin:0 auto;">
+      <label style="display:block;color:#aaa;font-size:14px;margin:8px 0 4px;">通知メール 1</label>
+      <input type="email" id="parent-notify-email-1" autocomplete="email" placeholder="example@mail.com" style="width:100%;padding:12px;font-size:16px;border-radius:8px;border:2px solid #555;background:#222;color:#fff;box-sizing:border-box;">
+      <label style="display:block;color:#aaa;font-size:14px;margin:12px 0 4px;">通知メール 2</label>
+      <input type="email" id="parent-notify-email-2" autocomplete="email" placeholder="（任意）" style="width:100%;padding:12px;font-size:16px;border-radius:8px;border:2px solid #555;background:#222;color:#fff;box-sizing:border-box;">
+      <label style="display:block;color:#aaa;font-size:14px;margin:12px 0 4px;">通知メール 3</label>
+      <input type="email" id="parent-notify-email-3" autocomplete="email" placeholder="（任意）" style="width:100%;padding:12px;font-size:16px;border-radius:8px;border:2px solid #555;background:#222;color:#fff;box-sizing:border-box;">
+      <label style="display:block;color:#aaa;font-size:14px;margin:12px 0 4px;">通知メール 4</label>
+      <input type="email" id="parent-notify-email-4" autocomplete="email" placeholder="（任意）" style="width:100%;padding:12px;font-size:16px;border-radius:8px;border:2px solid #555;background:#222;color:#fff;box-sizing:border-box;">
+      <button type="button" class="submit-btn btn-green" style="margin-top:16px;width:100%;" onclick="saveParentNotifyEmails()">保存する</button>
+      <div id="parent-notify-message" style="color:#ff8a80;margin:12px auto;min-height:1.2em;text-align:center;font-size:14px;"></div>
+    </div>
+    <button type="button" class="cancel-btn" style="margin-top:24px;" onclick="backToParentAdminHub()">管理メニューにもどる</button>
   </div>
 
   <div id="section-external-admin" class="section">
@@ -2382,7 +2411,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
   </script>
   <script>
     // ▼ GASのURLを貼り付けてください（※前回と同じURLならそのままで大丈夫） ▼
-    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbyw8toLnGVJAUzTjfCEzM4NZGPcdqaljtTMzzMAOaQzeZm4OioIfaORZ7WF4S3QDJGE7w/exec";
+    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxw2Vaeak3oog-NN6JdleVVSig7X6ZHOaIZVXRVCqAGgaBO7OCysLN8Xrt9Iq_1YX3UAg/exec";
     const LS_PENDING_FINISH_SAVE = "app_pending_finish_quiz_save_v1";
     const LS_FLUSHED_SUBMIT_IDS = "app_flushed_submit_ids_v1";
     const PENDING_FINISH_FLUSH_MAX_ATTEMPTS = 5;
@@ -2777,9 +2806,13 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
     let __kanjiQuizSubmitInFlight = false;
     let currentMaterialsCategory = "english";
     let stopwatches = {
-      home: { timerId: null, startAt: 0, elapsed: 0 },
-      external: { timerId: null, startAt: 0, elapsed: 0 }
+      home: { timerId: null, startAt: 0, elapsed: 0, running: false },
+      external: { timerId: null, startAt: 0, elapsed: 0, running: false }
     };
+    const STOPWATCH_MAX_MS_ = 90 * 60 * 1000;
+    let stopwatchSyncInFlight_ = { home: false, external: false };
+    let activeRewardTicket_ = null;
+    let rewardCountdownTimerId_ = null;
     
     // ★ 穴埋め用ステート
     let fillBlanksData = []; 
@@ -3995,26 +4028,216 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
     }
 
     function formatStopwatch(ms) {
-      const totalSeconds = Math.floor(ms / 1000);
+      const totalSeconds = Math.floor(Math.max(0, ms) / 1000);
       const h = String(Math.floor(totalSeconds / 3600)).padStart(2, '0');
       const m = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, '0');
       const s = String(totalSeconds % 60).padStart(2, '0');
       return `${h}:${m}:${s}`;
     }
+    function formatRewardCountdown(ms) {
+      const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+      const m = String(Math.floor(totalSeconds / 60)).padStart(2, '0');
+      const s = String(totalSeconds % 60).padStart(2, '0');
+      return m + ':' + s;
+    }
+    function getStopwatchElapsedMs_(target) {
+      const st = stopwatches[target];
+      if (!st) return 0;
+      if (st.timerId) return Date.now() - st.startAt;
+      return st.elapsed || 0;
+    }
+    function normalizeStopwatchSlotClient_(slot) {
+      const out = { running: false, startAt: 0, elapsed: 0, timerId: null };
+      const src = slot || {};
+      out.running = !!src.running;
+      out.startAt = Number(src.startAt || src.startedAtMs) || 0;
+      out.elapsed = Math.max(0, Number(src.elapsed || src.elapsedMs) || 0);
+      const now = Date.now();
+      if (out.running) {
+        if (!out.startAt) out.startAt = now;
+        if (now - out.startAt >= STOPWATCH_MAX_MS_) {
+          out.running = false;
+          out.startAt = 0;
+          out.elapsed = 0;
+        }
+      } else if (out.elapsed >= STOPWATCH_MAX_MS_) {
+        out.elapsed = 0;
+        out.startAt = 0;
+      }
+      return out;
+    }
+    function applyStopwatchState_(target, slot) {
+      const st = stopwatches[target];
+      if (!st) return;
+      if (st.timerId) {
+        clearInterval(st.timerId);
+        st.timerId = null;
+      }
+      const norm = normalizeStopwatchSlotClient_(slot);
+      st.running = norm.running;
+      st.startAt = norm.startAt;
+      st.elapsed = norm.elapsed;
+      if (norm.running) {
+        st.timerId = setInterval(function () {
+          enforceStopwatchMaxDuration_(target);
+          renderStopwatch(target);
+        }, 200);
+      }
+      renderStopwatch(target);
+    }
+    function applyStopwatchJson_(json) {
+      const src = json || {};
+      applyStopwatchState_('home', src.home);
+      applyStopwatchState_('external', src.external);
+    }
+    function buildStopwatchPayload_(target) {
+      const st = stopwatches[target];
+      if (!st) return { running: false, startedAtMs: 0, elapsedMs: 0 };
+      const running = !!st.timerId;
+      return {
+        running: running,
+        startedAtMs: running ? st.startAt : 0,
+        elapsedMs: running ? Math.max(0, Date.now() - st.startAt) : Math.max(0, st.elapsed || 0)
+      };
+    }
+    function syncStopwatchToServer(target, opts) {
+      opts = opts || {};
+      const user = JSON.parse(localStorage.getItem('app_kid_user') || 'null');
+      if (!user || !user.id) return;
+      if (stopwatchSyncInFlight_[target]) return;
+      stopwatchSyncInFlight_[target] = true;
+      const payload = buildStopwatchPayload_(target);
+      fetch(GAS_API_URL, {
+        method: 'POST',
+        keepalive: !!opts.keepalive,
+        body: JSON.stringify({
+          action: 'save_stopwatch',
+          userId: user.id,
+          target: target,
+          running: payload.running,
+          startedAtMs: payload.startedAtMs,
+          elapsedMs: payload.elapsedMs
+        })
+      }).then(function (r) { return r.json(); }).then(function (d) {
+        if (d && d.status === 'success' && d.stopwatch) {
+          if (user.stopwatchJson == null) user.stopwatchJson = {};
+          user.stopwatchJson[target] = d.stopwatch[target];
+          saveAppKidUserToLocal(user);
+        }
+      }).catch(function () {}).finally(function () {
+        stopwatchSyncInFlight_[target] = false;
+      });
+    }
+    function syncAllStopwatchesToServer(keepalive) {
+      syncStopwatchToServer('home', { keepalive: keepalive });
+      syncStopwatchToServer('external', { keepalive: keepalive });
+    }
+    function loadStopwatchFromServer(user) {
+      if (!user || !user.id) return Promise.resolve();
+      if (user.stopwatchJson) {
+        applyStopwatchJson_(user.stopwatchJson);
+      }
+      return fetch(GAS_API_URL, {
+        method: 'POST',
+        body: JSON.stringify({ action: 'get_stopwatch', userId: user.id })
+      }).then(function (r) { return r.json(); }).then(function (d) {
+        if (d && d.status === 'success' && d.stopwatch) {
+          user.stopwatchJson = d.stopwatch;
+          saveAppKidUserToLocal(user);
+          applyStopwatchJson_(d.stopwatch);
+        }
+      }).catch(function () {});
+    }
+    function enforceStopwatchMaxDuration_(target) {
+      const st = stopwatches[target];
+      if (!st || !st.timerId) return;
+      if (Date.now() - st.startAt >= STOPWATCH_MAX_MS_) {
+        if (st.timerId) clearInterval(st.timerId);
+        st.timerId = null;
+        st.running = false;
+        st.startAt = 0;
+        st.elapsed = 0;
+        syncStopwatchToServer(target);
+      }
+    }
     function renderStopwatch(target) {
       const el = document.getElementById(`${target}-sw-display`);
       if (!el) return;
       const st = stopwatches[target];
-      const now = st.timerId ? Date.now() : st.startAt;
-      const elapsed = st.timerId ? (now - st.startAt) : st.elapsed;
+      const elapsed = getStopwatchElapsedMs_(target);
       el.innerText = formatStopwatch(elapsed);
     }
+    function renderHomeStopwatchOrCountdown_() {
+      const normal = document.getElementById('home-stopwatch-normal');
+      const countdown = document.getElementById('home-reward-countdown');
+      if (!normal || !countdown) return;
+      if (activeRewardTicket_ && activeRewardTicket_.endsAt) {
+        const remain = new Date(activeRewardTicket_.endsAt).getTime() - Date.now();
+        if (remain > 0) {
+          normal.style.display = 'none';
+          countdown.style.display = 'block';
+          const nameEl = document.getElementById('home-reward-countdown-name');
+          const dispEl = document.getElementById('home-reward-countdown-display');
+          if (nameEl) nameEl.innerText = activeRewardTicket_.rewardName || 'ご褒美';
+          if (dispEl) dispEl.innerText = formatRewardCountdown(remain);
+          return;
+        }
+        activeRewardTicket_ = null;
+      }
+      normal.style.display = 'block';
+      countdown.style.display = 'none';
+      renderStopwatch('home');
+    }
+    function startRewardCountdownTimer_() {
+      if (rewardCountdownTimerId_) clearInterval(rewardCountdownTimerId_);
+      rewardCountdownTimerId_ = setInterval(function () {
+        renderHomeStopwatchOrCountdown_();
+      }, 1000);
+    }
+    function setActiveRewardTicket_(ticket) {
+      activeRewardTicket_ = ticket && ticket.endsAt ? ticket : null;
+      try {
+        const user = JSON.parse(localStorage.getItem('app_kid_user') || 'null');
+        if (user) {
+          user.activeRewardTicket = activeRewardTicket_;
+          saveAppKidUserToLocal(user);
+        }
+      } catch (_) {}
+      renderHomeStopwatchOrCountdown_();
+      startRewardCountdownTimer_();
+    }
+    function fetchActiveRewardTicket_(user) {
+      if (!user || !user.id) return Promise.resolve();
+      if (user.activeRewardTicket && user.activeRewardTicket.endsAt) {
+        const remain = new Date(user.activeRewardTicket.endsAt).getTime() - Date.now();
+        if (remain > 0) {
+          setActiveRewardTicket_(user.activeRewardTicket);
+        } else {
+          user.activeRewardTicket = null;
+          saveAppKidUserToLocal(user);
+        }
+      }
+      return fetch(GAS_API_URL, {
+        method: 'POST',
+        body: JSON.stringify({ action: 'get_active_reward_ticket', userId: user.id })
+      }).then(function (r) { return r.json(); }).then(function (d) {
+        if (d && d.status === 'success') {
+          setActiveRewardTicket_(d.activeTicket || null);
+        }
+      }).catch(function () {});
+    }
     function startStopwatch(target) {
+      if (target === 'home' && activeRewardTicket_) return;
       const st = stopwatches[target];
       if (!st || st.timerId) return;
-      st.startAt = Date.now() - st.elapsed;
-      st.timerId = setInterval(() => renderStopwatch(target), 200);
+      st.startAt = Date.now() - (st.elapsed || 0);
+      st.running = true;
+      st.timerId = setInterval(function () {
+        enforceStopwatchMaxDuration_(target);
+        renderStopwatch(target);
+      }, 200);
       renderStopwatch(target);
+      syncStopwatchToServer(target);
     }
     function stopStopwatch(target) {
       const st = stopwatches[target];
@@ -4024,14 +4247,20 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         st.timerId = null;
         st.elapsed = Date.now() - st.startAt;
       }
+      st.running = false;
       renderStopwatch(target);
+      syncStopwatchToServer(target);
     }
     function resetStopwatch(target) {
       const st = stopwatches[target];
       if (!st) return;
       if (st.timerId) clearInterval(st.timerId);
-      st.timerId = null; st.startAt = 0; st.elapsed = 0;
+      st.timerId = null;
+      st.startAt = 0;
+      st.elapsed = 0;
+      st.running = false;
       renderStopwatch(target);
+      syncStopwatchToServer(target);
     }
 
     function buildEnglishQuizSessionMeta() {
@@ -5249,6 +5478,11 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       syncKanjiHwHandSwitchUI();
       syncMaterialsListFromServerIfChanged();
       flushPendingFinishQuizSave(user);
+      loadStopwatchFromServer(user).then(function () {
+        return fetchActiveRewardTicket_(user);
+      }).then(function () {
+        renderHomeStopwatchOrCountdown_();
+      });
     }
 
     function toggleBtnLoading(btn, isLoading, originalText = "") { if(!btn) return ""; if(isLoading) { const text = btn.innerHTML; btn.innerHTML = "⏳ よみこみ中..."; btn.classList.add("btn-loading"); return text; } else { btn.innerHTML = originalText; btn.classList.remove("btn-loading"); } }
@@ -5713,7 +5947,8 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
                 c.innerHTML = ""; 
                 d.rewards.forEach(r => { 
                     const div = document.createElement('div'); div.className = "item-card"; 
-                    div.innerHTML = `<div class="item-title">🎁 ${r.name}</div><div style="color: gold; font-weight: bold; margin-bottom: 10px;">必要ポイント: ${r.points} Pt</div><div style="font-size: 14px; color: #aaa; margin-bottom: 15px;">${r.desc}</div><button class="submit-btn btn-orange" style="width: 100%; padding: 10px; font-size: 18px;" onclick="exchangeReward('${r.id}', '${r.name}', ${r.points}, this)">交換する</button>`; 
+                    const limitLine = r.limitMinutes > 0 ? `<div style="font-size:13px;color:#90CAF9;margin-bottom:8px;">制限時間: ${r.limitMinutes} 分</div>` : "";
+                    div.innerHTML = `<div class="item-title">🎁 ${r.name}</div><div style="color: gold; font-weight: bold; margin-bottom: 10px;">必要ポイント: ${r.points} Pt</div>${limitLine}<div style="font-size: 14px; color: #aaa; margin-bottom: 15px;">${r.desc}</div><button class="submit-btn btn-orange" style="width: 100%; padding: 10px; font-size: 18px;" onclick="exchangeReward('${r.id}', '${r.name}', ${r.points}, this)">交換する</button>`; 
                     c.appendChild(div); 
                 }); 
             } 
@@ -5762,9 +5997,11 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         if(filtered.length === 0) { c.innerHTML = "<p>表示できるアイテムがありません。</p>"; return; } 
         filtered.forEach(item => { 
             const div = document.createElement('div'); div.className = "item-card"; 
-            const isUsed = item.status === "使用済み"; 
+            const isUsed = item.status === "使用済み";
+            const limitLine = item.limitMinutes > 0 ? `<div style="font-size:13px;color:#90CAF9;">制限時間: ${item.limitMinutes} 分</div>` : "";
+            const usedLine = item.usedAt ? `<div style="font-size:12px;color:#aaa;">使用日時: ${new Date(item.usedAt).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}</div>` : "";
             const btnHtml = isUsed ? `<button class="submit-btn btn-gray" style="width: 100%; padding: 10px; font-size: 18px;" disabled>使用済み</button>` : `<button class="submit-btn btn-green" style="width: 100%; padding: 10px; font-size: 18px;" onclick="consumeReward(${item.rowIdx}, this)">使う！</button>`; 
-            div.innerHTML = `<div class="item-title">🎒 ${item.rewardName}</div><div style="font-size: 12px; color: #aaa; margin-bottom: 10px;">交換日: ${new Date(item.date).toLocaleString()}</div>${btnHtml}`; 
+            div.innerHTML = `<div class="item-title">🎒 ${item.rewardName}</div><div style="font-size: 12px; color: #aaa; margin-bottom: 6px;">交換日: ${new Date(item.date).toLocaleString()}</div>${limitLine}${usedLine}${btnHtml}`; 
             c.appendChild(div); 
         }); 
     }
@@ -5773,14 +6010,23 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
 
     function consumeReward(rowIdx, btn) { 
         if(!confirm("本当にこの景品を使いますか？\n※おうちの人に確認してもらってから押してね！")) return; 
+        const user = JSON.parse(localStorage.getItem('app_kid_user'));
         const origText = toggleBtnLoading(btn, true); 
-        fetch(GAS_API_URL, { method: 'POST', body: JSON.stringify({ action: "consume_reward", rowIdx: rowIdx }) })
+        fetch(GAS_API_URL, { method: 'POST', body: JSON.stringify({ action: "consume_reward", rowIdx: rowIdx, userId: user.id }) })
         .then(r=>r.json()).then(d=>{ 
+            toggleBtnLoading(btn, false, origText);
             if(d.status==="success") { 
                 alert(d.message); 
-                userInventoryData.find(i => i.rowIdx === rowIdx).status = "使用済み"; 
+                const item = userInventoryData.find(i => i.rowIdx === rowIdx);
+                if (item) {
+                  item.status = "使用済み";
+                  item.usedAt = d.activeTicket ? d.activeTicket.usedAt : new Date().toISOString();
+                }
+                if (d.activeTicket) setActiveRewardTicket_(d.activeTicket);
                 renderInventory(); 
-            } 
+            } else {
+                alert(d.message || "使用できませんでした");
+            }
         }).catch(e => toggleBtnLoading(btn, false, origText)); 
     }
 
@@ -5797,7 +6043,11 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
           externalMenus = d.list || [];
           renderExternalLearningForm();
           refreshMyExternalRequests();
-          resetStopwatch('external');
+          const user = JSON.parse(localStorage.getItem('app_kid_user') || 'null');
+          if (user && user.stopwatchJson && user.stopwatchJson.external) {
+            applyStopwatchState_('external', user.stopwatchJson.external);
+          }
+          if (user) loadStopwatchFromServer(user);
         }
       }).catch(e => toggleBtnLoading(btn, false, origText));
     }
@@ -6180,6 +6430,56 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       closeTrainingAdminRoutePanel();
       switchSection('section-training-admin');
       loadTrainingMenuAdmin();
+    }
+
+    function enterParentAdminNotify() {
+      if (!parentAdminPinSession) { openParentAdminMenu(); return; }
+      switchSection('section-parent-admin-notify');
+      loadParentNotifyEmails();
+    }
+
+    function loadParentNotifyEmails() {
+      const msg = document.getElementById('parent-notify-message');
+      if (msg) { msg.innerText = "読み込み中..."; msg.style.color = "#aaa"; }
+      fetch(GAS_API_URL, {
+        method: 'POST',
+        body: JSON.stringify({ action: 'get_parent_notify_emails', adminPin: parentAdminPinSession })
+      }).then(function (r) { return r.json(); }).then(function (d) {
+        if (d.status !== 'success') {
+          if (msg) { msg.innerText = d.message || '読み込みに失敗しました'; msg.style.color = '#ff8a80'; }
+          return;
+        }
+        const emails = d.emails || [];
+        for (let i = 1; i <= 4; i++) {
+          const el = document.getElementById('parent-notify-email-' + i);
+          if (el) el.value = emails[i - 1] || '';
+        }
+        if (msg) msg.innerText = '';
+      }).catch(function () {
+        if (msg) { msg.innerText = '通信エラー'; msg.style.color = '#ff8a80'; }
+      });
+    }
+
+    function saveParentNotifyEmails() {
+      const msg = document.getElementById('parent-notify-message');
+      const emails = [];
+      for (let i = 1; i <= 4; i++) {
+        const el = document.getElementById('parent-notify-email-' + i);
+        emails.push(el ? String(el.value || '').trim() : '');
+      }
+      if (msg) { msg.innerText = '保存中...'; msg.style.color = '#aaa'; }
+      fetch(GAS_API_URL, {
+        method: 'POST',
+        body: JSON.stringify({ action: 'save_parent_notify_emails', adminPin: parentAdminPinSession, emails: emails })
+      }).then(function (r) { return r.json(); }).then(function (d) {
+        if (d.status === 'success') {
+          if (msg) { msg.innerText = d.message || '保存しました'; msg.style.color = '#81C784'; }
+        } else {
+          if (msg) { msg.innerText = d.message || '保存に失敗しました'; msg.style.color = '#ff8a80'; }
+        }
+      }).catch(function () {
+        if (msg) { msg.innerText = '通信エラー'; msg.style.color = '#ff8a80'; }
+      });
     }
 
     function openExternalAdminApproval() { openParentAdminMenu(); }
@@ -13092,6 +13392,13 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
 
       doSubmit();
     }
+
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState === 'hidden') syncAllStopwatchesToServer(true);
+    });
+    window.addEventListener('pagehide', function () {
+      syncAllStopwatchesToServer(true);
+    });
 
     document.addEventListener('keydown', (e) => {
       const answerInput = document.getElementById('type-answer');
