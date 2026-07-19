@@ -2105,6 +2105,56 @@ function sendRewardEndEmail_(adminSs, userName, rewardName, usedAtDate, endsAtDa
   return sendMailToParents_(adminSs, subject, body);
 }
 
+/**
+ * スクリプトエディタから実行: MailApp 初回承認と通知メール設定の確認用。
+ * アプリ設定「通知メール_1」〜「通知メール_4」に届きます。
+ * @param {string=} kind "simple"（既定）| "start" | "end" | "both"
+ * @return {Object}
+ */
+function testParentNotifyMail_(kind) {
+  const adminSs = getAdminSpreadsheet_();
+  ensureAppSettingsDefaults_(adminSs);
+  const recipients = getParentNotifyEmails_(adminSs);
+  if (!recipients.length) {
+    throw new Error("通知メールが未登録です。アプリの「管理メニュー → 通知メール設定」で保存してください。");
+  }
+
+  const mode = String(kind || "simple").toLowerCase();
+  const now = new Date();
+  const limitMinutes = 60;
+  const endsAt = computeRewardEndsAt_(now, limitMinutes);
+  const result = { ok: true, mode: mode, recipients: recipients, sentAt: formatJstDateTime_(now), mails: [] };
+
+  if (mode === "simple" || mode === "all") {
+    MailApp.sendEmail({
+      to: recipients.join(","),
+      subject: "【学習アプリ】通知メール試し送信",
+      body:
+        "これは試し送信です。MailApp の設定が正常です。\n\n" +
+        "送信日時: " + formatJstDateTime_(now) + "（日本時間）\n" +
+        "宛先: " + recipients.join(", ") + "\n"
+    });
+    result.mails.push({ type: "simple", sent: true });
+  }
+
+  if (mode === "start" || mode === "both" || mode === "all") {
+    const startMail = sendRewardStartEmail_(adminSs, "テスト太郎", "テスト用ご褒美券", limitMinutes, endsAt);
+    result.mails.push({ type: "start", sent: !!startMail.sent, detail: startMail });
+  }
+
+  if (mode === "end" || mode === "both" || mode === "all") {
+    const endMail = sendRewardEndEmail_(adminSs, "テスト太郎", "テスト用ご褒美券", now, endsAt);
+    result.mails.push({ type: "end", sent: !!endMail.sent, detail: endMail });
+  }
+
+  if (result.mails.length === 0) {
+    throw new Error("kind は simple / start / end / both / all のいずれかを指定してください。");
+  }
+
+  console.log(JSON.stringify(result, null, 2));
+  return result;
+}
+
 function scheduleRewardEndNotificationTrigger_(inventoryRowIdx, notifyAtDate) {
   if (!notifyAtDate || isNaN(notifyAtDate.getTime())) return false;
   const props = PropertiesService.getScriptProperties();
