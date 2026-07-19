@@ -217,6 +217,7 @@ function ensureAppSettingsDefaults_(adminSs) {
   });
 
   ensureTrainingMenuAppSettings_(sheet, existingKeys, result);
+  ensureParentNotifyEmailSettings_(sheet, existingKeys, result);
 
   return result;
 }
@@ -495,8 +496,8 @@ function setupSystem() {
     const usersSheet = adminSs.getSheets()[0];
     usersSheet.setName("users");
     // 新しく「特訓進捗_JSON」列を追加しました！
-    usersSheet.appendRow(["ID", "名前", "PIN", "合計ポイント", "最終学習日時_JSON", "履歴_JSON", "日別ポイント_JSON", "特訓進捗_JSON"]);
-    usersSheet.appendRow(["user_1", "テスト太郎", "1234", 100, "{}", "{}", "{}", "{}"]);
+    usersSheet.appendRow(["ID", "名前", "PIN", "合計ポイント", "最終学習日時_JSON", "履歴_JSON", "日別ポイント_JSON", "特訓進捗_JSON", "ストップウォッチ_JSON"]);
+    usersSheet.appendRow(["user_1", "テスト太郎", "1234", 100, "{}", "{}", "{}", "{}", "{}"]);
 
     const englishHistSheet = adminSs.insertSheet("english_unit_history");
     englishHistSheet.appendRow(["userId", "unitId", "unitHistoryJson", "updatedAt"]);
@@ -505,11 +506,11 @@ function setupSystem() {
     kanjiHistSheet.appendRow(["userId", "bucket", "historyJson", "updatedAt"]);
 
     const rewardsSheet = adminSs.insertSheet("rewards");
-    rewardsSheet.appendRow(["ID", "名前", "必要ポイント", "説明"]);
-    rewardsSheet.appendRow(["r_1", "YouTube視聴1時間延長券", 50, "管理者に提示して使ってね。"]);
+    rewardsSheet.appendRow(["ID", "名前", "必要ポイント", "説明", "制限時間（分）"]);
+    rewardsSheet.appendRow(["r_1", "YouTube視聴1時間延長券", 50, "管理者に提示して使ってね。", 60]);
 
     const inventorySheet = adminSs.insertSheet("inventory");
-    inventorySheet.appendRow(["交換日時", "ユーザーID", "景品ID", "景品名", "状態"]);
+    inventorySheet.appendRow(["交換日時", "ユーザーID", "景品ID", "景品名", "状態", "使用日時", "終了通知状態"]);
 
     logMessage += "✅ 管理ブックと基本シートを作成しました。\n";
   } else {
@@ -650,6 +651,20 @@ function setupSystem() {
     logMessage += "✅ 「kanji_history」の見出し行を整えました。\n";
   }
 
+  const swEnsure = ensureUsersSheetStopwatchColumn_(adminSs);
+  if (swEnsure.headerFixed) logMessage += "✅ users に「ストップウォッチ_JSON」列を追加しました。\n";
+
+  const rewardsEnsure = ensureRewardsSheetStructure_(adminSs);
+  if (rewardsEnsure.headerFixed) logMessage += "✅ rewards に「制限時間（分）」列を追加しました。\n";
+  if (rewardsEnsure.sampleUpdated) logMessage += "✅ サンプル景品 r_1 に制限時間 60 分を設定しました。\n";
+
+  const invEnsure = ensureInventorySheetStructure_(adminSs);
+  if (invEnsure.headerFixed) logMessage += "✅ inventory に「使用日時」「終了通知状態」列を追加しました。\n";
+
+  if (ensureRewardNotificationPollTrigger_()) {
+    logMessage += "✅ ご褒美終了通知の定期チェック（5分）を登録しました。\n";
+  }
+
   console.log(logMessage);
   return logMessage;
 }
@@ -768,6 +783,11 @@ function doPost(e) {
     else if (action === "save_training_menu_routes_batch") return handleSaveTrainingMenuRoutesBatch(requestData);
     else if (action === "delete_training_menu_route") return handleDeleteTrainingMenuRoute(requestData);
     else if (action === "save_training_base_point") return handleSaveTrainingBasePoint(requestData);
+    else if (action === "get_stopwatch") return handleGetStopwatch(requestData);
+    else if (action === "save_stopwatch") return handleSaveStopwatch(requestData);
+    else if (action === "get_parent_notify_emails") return handleGetParentNotifyEmails(requestData);
+    else if (action === "save_parent_notify_emails") return handleSaveParentNotifyEmails(requestData);
+    else if (action === "get_active_reward_ticket") return handleGetActiveRewardTicket(requestData);
     
     else return sendResponse({ status: "error", message: "無効なactionです" });
   } catch (error) {
@@ -1818,7 +1838,444 @@ function computeEnglishQuestionRawPoints_(basePoint, maxDeduction) {
   return Math.max(1, bp - ded);
 }
 
-// 学習結果の保存（進捗チェックの更新を追加）
+var STOPWATCH_MAX_MS_ = 90 * 60 * 1000;
+var USERS_COL_STOPWATCH_JSON_ = 9;
+var REWARD_NOTIFY_POLL_HANDLER_ = "checkPendingRewardEndNotifications_";
+var REWARD_END_NOTIFY_HANDLER_ = "sendRewardEndNotificationForRow_";
+
+function getAdminSpreadsheet_() {
+  return SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty("ADMIN_SS_ID"));
+}
+
+function ensureSheetHeaderColumn_(sheet, colIndex, headerText) {
+  if (!sheet) return false;
+  const lastCol = Math.max(1, sheet.getLastColumn());
+  if (lastCol < colIndex) {
+    sheet.getRange(1, colIndex).setValue(headerText);
+    return true;
+  }
+  const cur = String(sheet.getRange(1, colIndex).getValue() || "").trim();
+  if (cur !== headerText) {
+    sheet.getRange(1, colIndex).setValue(headerText);
+    return true;
+  }
+  return false;
+}
+
+function ensureUsersSheetStopwatchColumn_(adminSs) {
+  const result = { headerFixed: false };
+  const sheet = adminSs.getSheetByName("users");
+  if (!sheet) return result;
+  if (ensureSheetHeaderColumn_(sheet, USERS_COL_STOPWATCH_JSON_, "ストップウォッチ_JSON")) {
+    result.headerFixed = true;
+  }
+  return result;
+}
+
+function ensureRewardsSheetStructure_(adminSs) {
+  const result = { headerFixed: false, sampleUpdated: false };
+  let sheet = adminSs.getSheetByName("rewards");
+  if (!sheet) {
+    sheet = adminSs.insertSheet("rewards");
+    sheet.appendRow(["ID", "名前", "必要ポイント", "説明", "制限時間（分）"]);
+    sheet.appendRow(["r_1", "YouTube視聴1時間延長券", 50, "管理者に提示して使ってね。", 60]);
+    result.headerFixed = true;
+    return result;
+  }
+  if (ensureSheetHeaderColumn_(sheet, 5, "制限時間（分）")) result.headerFixed = true;
+  const data = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]) === "r_1" && (!data[i][4] || Number(data[i][4]) <= 0)) {
+      sheet.getRange(i + 1, 5).setValue(60);
+      result.sampleUpdated = true;
+      break;
+    }
+  }
+  return result;
+}
+
+function ensureInventorySheetStructure_(adminSs) {
+  const result = { headerFixed: false };
+  let sheet = adminSs.getSheetByName("inventory");
+  if (!sheet) {
+    sheet = adminSs.insertSheet("inventory");
+    sheet.appendRow(["交換日時", "ユーザーID", "景品ID", "景品名", "状態", "使用日時", "終了通知状態"]);
+    result.headerFixed = true;
+    return result;
+  }
+  if (ensureSheetHeaderColumn_(sheet, 6, "使用日時")) result.headerFixed = true;
+  if (ensureSheetHeaderColumn_(sheet, 7, "終了通知状態")) result.headerFixed = true;
+  return result;
+}
+
+function ensureParentNotifyEmailSettings_(sheet, existingKeys, result) {
+  if (!sheet) return;
+  for (let i = 1; i <= 4; i++) {
+    const key = "通知メール_" + i;
+    if (existingKeys[key]) continue;
+    sheet.appendRow([key, "", ""]);
+    if (result && result.addedKeys) result.addedKeys.push(key);
+    existingKeys[key] = true;
+  }
+}
+
+function ensureRewardNotificationPollTrigger_() {
+  const triggers = ScriptApp.getProjectTriggers();
+  for (let i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() === REWARD_NOTIFY_POLL_HANDLER_) return false;
+  }
+  ScriptApp.newTrigger(REWARD_NOTIFY_POLL_HANDLER_)
+    .timeBased()
+    .everyMinutes(5)
+    .create();
+  return true;
+}
+
+function defaultStopwatchSlot_() {
+  return { running: false, startedAtMs: 0, elapsedMs: 0 };
+}
+
+function normalizeStopwatchSlot_(slot, nowMs) {
+  const out = defaultStopwatchSlot_();
+  const src = slot || {};
+  out.running = !!src.running;
+  out.startedAtMs = Number(src.startedAtMs) || 0;
+  out.elapsedMs = Math.max(0, Number(src.elapsedMs) || 0);
+  const now = nowMs == null ? Date.now() : nowMs;
+  if (out.running) {
+    if (!out.startedAtMs) out.startedAtMs = now;
+    const elapsedLive = now - out.startedAtMs;
+    if (elapsedLive >= STOPWATCH_MAX_MS_) {
+      out.running = false;
+      out.startedAtMs = 0;
+      out.elapsedMs = 0;
+    }
+  } else if (out.elapsedMs >= STOPWATCH_MAX_MS_) {
+    out.elapsedMs = 0;
+    out.startedAtMs = 0;
+  }
+  return out;
+}
+
+function normalizeStopwatchState_(state, nowMs) {
+  const src = state || {};
+  return {
+    home: normalizeStopwatchSlot_(src.home, nowMs),
+    external: normalizeStopwatchSlot_(src.external, nowMs)
+  };
+}
+
+function readStopwatchJson_(usersSheet, userRowIndex) {
+  try {
+    const raw = usersSheet.getRange(userRowIndex, USERS_COL_STOPWATCH_JSON_).getValue();
+    if (!raw || String(raw).trim() === "") return normalizeStopwatchState_({});
+    return normalizeStopwatchState_(JSON.parse(String(raw)));
+  } catch (_) {
+    return normalizeStopwatchState_({});
+  }
+}
+
+function writeStopwatchJson_(usersSheet, userRowIndex, state) {
+  const normalized = normalizeStopwatchState_(state);
+  usersSheet.getRange(userRowIndex, USERS_COL_STOPWATCH_JSON_).setValue(JSON.stringify(normalized));
+  return normalized;
+}
+
+function findUserRowIndex_(usersSheet, userId) {
+  const data = usersSheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] === userId) return i + 1;
+  }
+  return -1;
+}
+
+function findUserName_(usersSheet, userId) {
+  const data = usersSheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] === userId) return String(data[i][1] || userId);
+  }
+  return String(userId || "");
+}
+
+function getAppSettingScalar_(adminSs, key) {
+  const sheet = adminSs.getSheetByName("アプリ設定");
+  if (!sheet) return "";
+  const data = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]) === String(key)) return data[i][1];
+  }
+  return "";
+}
+
+function getParentNotifyEmails_(adminSs) {
+  const out = [];
+  for (let i = 1; i <= 4; i++) {
+    const v = String(getAppSettingScalar_(adminSs, "通知メール_" + i) || "").trim();
+    if (v && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) out.push(v);
+  }
+  return out;
+}
+
+function formatJstDateTime_(dateObj) {
+  return Utilities.formatDate(dateObj, "Asia/Tokyo", "yyyy-MM-dd HH:mm:ss");
+}
+
+function parseSheetDateTime_(value) {
+  if (value instanceof Date && !isNaN(value.getTime())) return value;
+  const s = String(value || "").trim();
+  if (!s) return null;
+  const d = new Date(s);
+  if (!isNaN(d.getTime())) return d;
+  return null;
+}
+
+function getRewardLimitMinutesById_(adminSs, rewardId) {
+  const sheet = adminSs.getSheetByName("rewards");
+  if (!sheet) return 0;
+  const data = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]) === String(rewardId)) {
+      const n = Number(data[i][4]);
+      return isNaN(n) || n <= 0 ? 0 : Math.floor(n);
+    }
+  }
+  return 0;
+}
+
+function getRewardInfoById_(adminSs, rewardId) {
+  const sheet = adminSs.getSheetByName("rewards");
+  if (!sheet) return null;
+  const data = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]) === String(rewardId)) {
+      return {
+        id: String(data[i][0]),
+        name: String(data[i][1] || ""),
+        points: Number(data[i][2]) || 0,
+        desc: String(data[i][3] || ""),
+        limitMinutes: (function () {
+          const n = Number(data[i][4]);
+          return isNaN(n) || n <= 0 ? 0 : Math.floor(n);
+        })()
+      };
+    }
+  }
+  return null;
+}
+
+function computeRewardEndsAt_(usedAtDate, limitMinutes) {
+  if (!usedAtDate || !limitMinutes) return null;
+  return new Date(usedAtDate.getTime() + limitMinutes * 60 * 1000);
+}
+
+function computeRewardNotifyAt_(usedAtDate, limitMinutes) {
+  const endsAt = computeRewardEndsAt_(usedAtDate, limitMinutes);
+  if (!endsAt) return null;
+  return new Date(endsAt.getTime() + 60 * 1000);
+}
+
+function sendMailToParents_(adminSs, subject, body) {
+  const recipients = getParentNotifyEmails_(adminSs);
+  if (!recipients.length) return { sent: false, reason: "no_recipients" };
+  MailApp.sendEmail({
+    to: recipients.join(","),
+    subject: subject,
+    body: body
+  });
+  return { sent: true, recipients: recipients };
+}
+
+function sendRewardStartEmail_(adminSs, userName, rewardName, limitMinutes, endsAtDate) {
+  const endsText = endsAtDate ? formatJstDateTime_(endsAtDate) : "";
+  const subject = "【学習アプリ】ご褒美チケット使用開始: " + rewardName;
+  const body =
+    userName + " さんが「" + rewardName + "」を使用しました。\n" +
+    "制限時間: " + limitMinutes + " 分\n" +
+    (endsText ? "終了予定: " + endsText + "（日本時間）\n" : "") +
+    "\n終了後（+1分）にもう一度お知らせします。";
+  return sendMailToParents_(adminSs, subject, body);
+}
+
+function sendRewardEndEmail_(adminSs, userName, rewardName, usedAtDate, endsAtDate) {
+  const subject = "【学習アプリ】ご褒美チケット終了: " + rewardName;
+  const body =
+    userName + " さんの「" + rewardName + "」の制限時間が終了しました。\n" +
+    "使用開始: " + (usedAtDate ? formatJstDateTime_(usedAtDate) : "不明") + "\n" +
+    "終了予定: " + (endsAtDate ? formatJstDateTime_(endsAtDate) : "不明") + "（日本時間）\n";
+  return sendMailToParents_(adminSs, subject, body);
+}
+
+function scheduleRewardEndNotificationTrigger_(inventoryRowIdx, notifyAtDate) {
+  if (!notifyAtDate || isNaN(notifyAtDate.getTime())) return false;
+  const props = PropertiesService.getScriptProperties();
+  props.setProperty("reward_end_row_" + inventoryRowIdx, String(inventoryRowIdx));
+  try {
+    ScriptApp.newTrigger(REWARD_END_NOTIFY_HANDLER_)
+      .timeBased()
+      .at(notifyAtDate)
+      .create();
+    return true;
+  } catch (e) {
+    console.warn("scheduleRewardEndNotificationTrigger_ failed", e);
+    return false;
+  }
+}
+
+function markInventoryEndNotifySent_(inventorySheet, rowIdx) {
+  inventorySheet.getRange(rowIdx, 7).setValue("送信済み");
+}
+
+function trySendInventoryEndNotification_(adminSs, inventorySheet, rowIdx) {
+  const row = inventorySheet.getRange(rowIdx, 1, 1, 7).getValues()[0];
+  const userId = String(row[1] || "");
+  const rewardId = String(row[2] || "");
+  const rewardName = String(row[3] || "");
+  const status = String(row[4] || "");
+  const usedAt = parseSheetDateTime_(row[5]);
+  const notifyStatus = String(row[6] || "");
+  if (status !== "使用済み" || notifyStatus === "送信済み" || !usedAt) return { sent: false, reason: "skip" };
+  const limitMinutes = getRewardLimitMinutesById_(adminSs, rewardId);
+  if (!limitMinutes) return { sent: false, reason: "no_limit" };
+  const notifyAt = computeRewardNotifyAt_(usedAt, limitMinutes);
+  if (!notifyAt || Date.now() < notifyAt.getTime()) return { sent: false, reason: "not_yet" };
+  const usersSheet = adminSs.getSheetByName("users");
+  const userName = findUserName_(usersSheet, userId);
+  const endsAt = computeRewardEndsAt_(usedAt, limitMinutes);
+  const mail = sendRewardEndEmail_(adminSs, userName, rewardName, usedAt, endsAt);
+  if (mail.sent) markInventoryEndNotifySent_(inventorySheet, rowIdx);
+  return mail;
+}
+
+function sendRewardEndNotificationForRow_() {
+  const props = PropertiesService.getScriptProperties();
+  const all = props.getProperties();
+  Object.keys(all).forEach(function (key) {
+    if (key.indexOf("reward_end_row_") !== 0) return;
+    const rowIdx = parseInt(String(all[key]), 10);
+    if (isNaN(rowIdx) || rowIdx < 2) return;
+    try {
+      const adminSs = getAdminSpreadsheet_();
+      const inventorySheet = adminSs.getSheetByName("inventory");
+      if (inventorySheet) trySendInventoryEndNotification_(adminSs, inventorySheet, rowIdx);
+    } catch (e) {
+      console.warn("sendRewardEndNotificationForRow_ row " + rowIdx, e);
+    }
+    props.deleteProperty(key);
+  });
+}
+
+function checkPendingRewardEndNotifications_() {
+  try {
+    const adminSs = getAdminSpreadsheet_();
+    const inventorySheet = adminSs.getSheetByName("inventory");
+    if (!inventorySheet) return;
+    const lastRow = inventorySheet.getLastRow();
+    if (lastRow < 2) return;
+    for (let rowIdx = 2; rowIdx <= lastRow; rowIdx++) {
+      trySendInventoryEndNotification_(adminSs, inventorySheet, rowIdx);
+    }
+  } catch (e) {
+    console.warn("checkPendingRewardEndNotifications_", e);
+  }
+}
+
+function buildActiveRewardTicketForUser_(adminSs, userId) {
+  const inventorySheet = adminSs.getSheetByName("inventory");
+  if (!inventorySheet) return null;
+  const lastRow = inventorySheet.getLastRow();
+  if (lastRow < 2) return null;
+  const data = inventorySheet.getRange(2, 1, lastRow - 1, 7).getValues();
+  const now = Date.now();
+  let best = null;
+  for (let i = 0; i < data.length; i++) {
+    const row = data[i];
+    if (String(row[1]) !== String(userId)) continue;
+    if (String(row[4]) !== "使用済み") continue;
+    const usedAt = parseSheetDateTime_(row[5]);
+    if (!usedAt) continue;
+    const limitMinutes = getRewardLimitMinutesById_(adminSs, String(row[2] || ""));
+    if (!limitMinutes) continue;
+    const endsAt = computeRewardEndsAt_(usedAt, limitMinutes);
+    if (!endsAt || endsAt.getTime() <= now) continue;
+    const candidate = {
+      rowIdx: i + 2,
+      rewardId: String(row[2] || ""),
+      rewardName: String(row[3] || ""),
+      usedAt: usedAt.toISOString(),
+      endsAt: endsAt.toISOString(),
+      limitMinutes: limitMinutes,
+      remainingMs: endsAt.getTime() - now
+    };
+    if (!best || candidate.endsAt > best.endsAt) best = candidate;
+  }
+  return best;
+}
+
+function handleGetStopwatch(req) {
+  const adminSs = getAdminSpreadsheet_();
+  ensureUsersSheetStopwatchColumn_(adminSs);
+  const usersSheet = adminSs.getSheetByName("users");
+  const rowIdx = findUserRowIndex_(usersSheet, req.userId);
+  if (rowIdx < 0) return sendResponse({ status: "error", message: "ユーザーが見つかりません" });
+  const state = readStopwatchJson_(usersSheet, rowIdx);
+  return sendResponse({ status: "success", stopwatch: state });
+}
+
+function handleSaveStopwatch(req) {
+  const adminSs = getAdminSpreadsheet_();
+  ensureUsersSheetStopwatchColumn_(adminSs);
+  const usersSheet = adminSs.getSheetByName("users");
+  const rowIdx = findUserRowIndex_(usersSheet, req.userId);
+  if (rowIdx < 0) return sendResponse({ status: "error", message: "ユーザーが見つかりません" });
+  const target = String(req.target || "home") === "external" ? "external" : "home";
+  const state = readStopwatchJson_(usersSheet, rowIdx);
+  state[target] = {
+    running: !!req.running,
+    startedAtMs: Number(req.startedAtMs) || 0,
+    elapsedMs: Math.max(0, Number(req.elapsedMs) || 0)
+  };
+  const saved = writeStopwatchJson_(usersSheet, rowIdx, state);
+  return sendResponse({ status: "success", stopwatch: saved });
+}
+
+function handleGetParentNotifyEmails(req) {
+  if (!verifyExternalAdminPin_(req.adminPin)) {
+    return sendResponse({ status: "error", message: "PINが正しくありません" });
+  }
+  const adminSs = getAdminSpreadsheet_();
+  ensureAppSettingsDefaults_(adminSs);
+  const emails = [];
+  for (let i = 1; i <= 4; i++) {
+    emails.push(String(getAppSettingScalar_(adminSs, "通知メール_" + i) || "").trim());
+  }
+  return sendResponse({ status: "success", emails: emails });
+}
+
+function handleSaveParentNotifyEmails(req) {
+  if (!verifyExternalAdminPin_(req.adminPin)) {
+    return sendResponse({ status: "error", message: "PINが正しくありません" });
+  }
+  const adminSs = getAdminSpreadsheet_();
+  ensureAppSettingsDefaults_(adminSs);
+  const list = Array.isArray(req.emails) ? req.emails : [];
+  for (let i = 0; i < 4; i++) {
+    const v = String(list[i] || "").trim();
+    if (v && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) {
+      return sendResponse({ status: "error", message: "メールアドレス " + (i + 1) + " の形式が正しくありません" });
+    }
+    setAppSettingValue_(adminSs, "通知メール_" + (i + 1), v);
+  }
+  return sendResponse({ status: "success", message: "通知メールを保存しました" });
+}
+
+function handleGetActiveRewardTicket(req) {
+  const adminSs = getAdminSpreadsheet_();
+  ensureInventorySheetStructure_(adminSs);
+  ensureRewardsSheetStructure_(adminSs);
+  const ticket = buildActiveRewardTicketForUser_(adminSs, req.userId);
+  return sendResponse({ status: "success", activeTicket: ticket });
+}
+
 function handleSaveLearningSession(req) {
   try {
   const props = PropertiesService.getScriptProperties();
@@ -2670,7 +3127,35 @@ function handleGetMyExternalLearningRequests(req) {
 }
 function handleGetPointsMultiplier(req) { const data = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('ADMIN_SS_ID')).getSheetByName("users").getDataRange().getValues(); let multiplier = 1.0; for (let i = 1; i < data.length; i++) { if (data[i][0] === req.userId) { const lastStudyTimeStr = JSON.parse(data[i][4] || "{}")[req.unitId]; if (lastStudyTimeStr) { const diffHours = (new Date() - new Date(lastStudyTimeStr)) / (1000 * 60 * 60); let basePercent = 10 + Math.floor(diffHours / 2) * 10; if (basePercent > 100) basePercent = 100; multiplier = basePercent / 100; } break; } } return sendResponse({ status: "success", multiplier: multiplier }); }
 function handleGetChildUsers(req) { const data = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('ADMIN_SS_ID')).getSheetByName("users").getDataRange().getValues(); const users = []; for (let i = 1; i < data.length; i++) { if (data[i][0] && i > 0) users.push({ id: data[i][0], name: data[i][1] }); } return sendResponse({ status: "success", users: users }); }
-function handleVerifyKidPin(req) { const data = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('ADMIN_SS_ID')).getSheetByName("users").getDataRange().getValues(); for (let i = 1; i < data.length; i++) { if (data[i][0] === req.userId) { if (String(data[i][2]) === String(req.pin)) { return sendResponse({ status: "success", user: { id: data[i][0], name: data[i][1], points: data[i][3], lastStudyJson: JSON.parse(data[i][4] || "{}"), historyJson: stripKanjiAndEnglishFromHistoryJson_(JSON.parse(data[i][5] || "{}")), dailyPointsJson: JSON.parse(data[i][6] || "{}") }, message: "ログイン成功" }); } else return sendResponse({ status: "error", message: "PINがちがいます" }); } } return sendResponse({ status: "error", message: "ユーザーが見つかりません" }); }
+function handleVerifyKidPin(req) {
+  const adminSs = getAdminSpreadsheet_();
+  ensureUsersSheetStopwatchColumn_(adminSs);
+  const usersSheet = adminSs.getSheetByName("users");
+  const data = usersSheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] === req.userId) {
+      if (String(data[i][2]) === String(req.pin)) {
+        const rowIdx = i + 1;
+        const stopwatch = readStopwatchJson_(usersSheet, rowIdx);
+        return sendResponse({
+          status: "success",
+          user: {
+            id: data[i][0],
+            name: data[i][1],
+            points: data[i][3],
+            lastStudyJson: JSON.parse(data[i][4] || "{}"),
+            historyJson: stripKanjiAndEnglishFromHistoryJson_(JSON.parse(data[i][5] || "{}")),
+            dailyPointsJson: JSON.parse(data[i][6] || "{}"),
+            stopwatchJson: stopwatch
+          },
+          message: "ログイン成功"
+        });
+      }
+      return sendResponse({ status: "error", message: "PINがちがいます" });
+    }
+  }
+  return sendResponse({ status: "error", message: "ユーザーが見つかりません" });
+}
 function handleChangePin(req) { const usersSheet = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('ADMIN_SS_ID')).getSheetByName("users"); const data = usersSheet.getDataRange().getValues(); for (let i = 1; i < data.length; i++) { if (data[i][0] === req.userId) { usersSheet.getRange(i + 1, 3).setValue(req.newPin); return sendResponse({ status: "success", message: "新しいPINをセットしました！" }); } } return sendResponse({ status: "error", message: "ユーザーが見つかりません" }); }
 function handleGetMaterialsList(req) {
   return sendResponse({ status: "success", materials: getMaterialsList_() });
@@ -2699,10 +3184,132 @@ function getMaterialsList_() {
   return materials;
 }
 function handleGetQuestions(req) { const data = SpreadsheetApp.openById(req.modeId).getSheetByName(req.unitName).getDataRange().getValues(); const headers = data[0]; const questions = []; for (let i = 1; i < data.length; i++) { let qObj = {}; for (let j = 0; j < headers.length; j++) qObj[headers[j]] = data[i][j]; if (qObj["通し番号"]) questions.push(qObj); } return sendResponse({ status: "success", questions: questions }); }
-function handleGetRewards(req) { const data = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('ADMIN_SS_ID')).getSheetByName("rewards").getDataRange().getValues(); const rewards = []; for (let i = 1; i < data.length; i++) { if (data[i][0] && i > 0) rewards.push({ id: data[i][0], name: data[i][1], points: Number(data[i][2]), desc: data[i][3] }); } return sendResponse({ status: "success", rewards: rewards }); }
-function handleExchangeReward(req) { const adminSs = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('ADMIN_SS_ID')); const usersSheet = adminSs.getSheetByName("users"); const usersData = usersSheet.getDataRange().getValues(); let userRow = -1; let currentPoints = 0; for (let i = 1; i < usersData.length; i++) { if (usersData[i][0] === req.userId) { userRow = i + 1; currentPoints = Number(usersData[i][3]) || 0; break; } } if (userRow === -1) return sendResponse({ status: "error", message: "ユーザーが見つかりません" }); const rewardsData = adminSs.getSheetByName("rewards").getDataRange().getValues(); let rewardData = null; for (let i = 1; i < rewardsData.length; i++) { if (rewardsData[i][0] === req.rewardId) { rewardData = { name: rewardsData[i][1], points: Number(rewardsData[i][2]) }; break; } } if (currentPoints < rewardData.points) return sendResponse({ status: "error", message: "ポイントが足りません" }); const newPoints = Math.round((currentPoints - rewardData.points) * 100) / 100; usersSheet.getRange(userRow, 4).setValue(newPoints); adminSs.getSheetByName("inventory").appendRow([new Date().toLocaleString(), req.userId, req.rewardId, rewardData.name, "未消化"]); return sendResponse({ status: "success", newPoints: newPoints, message: `${rewardData.name} をゲットしました！` }); }
-function handleGetInventory(req) { const data = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('ADMIN_SS_ID')).getSheetByName("inventory").getDataRange().getValues(); const inventory = []; for (let i = 1; i < data.length; i++) { if (data[i][1] === req.userId) { inventory.push({ rowIdx: i + 1, date: data[i][0], rewardName: data[i][3], status: data[i][4] }); } } inventory.sort((a, b) => b.rowIdx - a.rowIdx); return sendResponse({ status: "success", inventory: inventory }); }
-function handleConsumeReward(req) { SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('ADMIN_SS_ID')).getSheetByName("inventory").getRange(req.rowIdx, 5).setValue("使用済み"); return sendResponse({ status: "success", message: "景品をつかいました！" }); }
+function handleGetRewards(req) {
+  const adminSs = getAdminSpreadsheet_();
+  ensureRewardsSheetStructure_(adminSs);
+  const data = adminSs.getSheetByName("rewards").getDataRange().getValues();
+  const rewards = [];
+  for (let i = 1; i < data.length; i++) {
+    if (!data[i][0]) continue;
+    const limitMinutes = Number(data[i][4]);
+    rewards.push({
+      id: data[i][0],
+      name: data[i][1],
+      points: Number(data[i][2]),
+      desc: data[i][3],
+      limitMinutes: isNaN(limitMinutes) || limitMinutes <= 0 ? 0 : Math.floor(limitMinutes)
+    });
+  }
+  return sendResponse({ status: "success", rewards: rewards });
+}
+
+function handleExchangeReward(req) {
+  const adminSs = getAdminSpreadsheet_();
+  ensureInventorySheetStructure_(adminSs);
+  ensureRewardsSheetStructure_(adminSs);
+  const usersSheet = adminSs.getSheetByName("users");
+  const usersData = usersSheet.getDataRange().getValues();
+  let userRow = -1;
+  let currentPoints = 0;
+  for (let i = 1; i < usersData.length; i++) {
+    if (usersData[i][0] === req.userId) {
+      userRow = i + 1;
+      currentPoints = Number(usersData[i][3]) || 0;
+      break;
+    }
+  }
+  if (userRow === -1) return sendResponse({ status: "error", message: "ユーザーが見つかりません" });
+  const rewardData = getRewardInfoById_(adminSs, req.rewardId);
+  if (!rewardData) return sendResponse({ status: "error", message: "景品が見つかりません" });
+  if (currentPoints < rewardData.points) return sendResponse({ status: "error", message: "ポイントが足りません" });
+  const newPoints = Math.round((currentPoints - rewardData.points) * 100) / 100;
+  usersSheet.getRange(userRow, 4).setValue(newPoints);
+  adminSs.getSheetByName("inventory").appendRow([
+    formatJstDateTime_(new Date()),
+    req.userId,
+    req.rewardId,
+    rewardData.name,
+    "未消化",
+    "",
+    ""
+  ]);
+  return sendResponse({ status: "success", newPoints: newPoints, message: rewardData.name + " をゲットしました！" });
+}
+
+function handleGetInventory(req) {
+  const adminSs = getAdminSpreadsheet_();
+  ensureInventorySheetStructure_(adminSs);
+  ensureRewardsSheetStructure_(adminSs);
+  const data = adminSs.getSheetByName("inventory").getDataRange().getValues();
+  const inventory = [];
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][1] !== req.userId) continue;
+    const rewardId = String(data[i][2] || "");
+    const limitMinutes = getRewardLimitMinutesById_(adminSs, rewardId);
+    inventory.push({
+      rowIdx: i + 1,
+      date: data[i][0],
+      rewardId: rewardId,
+      rewardName: data[i][3],
+      status: data[i][4],
+      usedAt: data[i][5] || "",
+      limitMinutes: limitMinutes
+    });
+  }
+  inventory.sort(function (a, b) { return b.rowIdx - a.rowIdx; });
+  return sendResponse({ status: "success", inventory: inventory });
+}
+
+function handleConsumeReward(req) {
+  const adminSs = getAdminSpreadsheet_();
+  ensureInventorySheetStructure_(adminSs);
+  ensureRewardsSheetStructure_(adminSs);
+  const inventorySheet = adminSs.getSheetByName("inventory");
+  const rowIdx = parseInt(req.rowIdx, 10);
+  if (isNaN(rowIdx) || rowIdx < 2 || rowIdx > inventorySheet.getLastRow()) {
+    return sendResponse({ status: "error", message: "無効な行です" });
+  }
+  const row = inventorySheet.getRange(rowIdx, 1, 1, 7).getValues()[0];
+  if (String(row[1]) !== String(req.userId)) {
+    return sendResponse({ status: "error", message: "この景品はあなたのものではありません" });
+  }
+  if (String(row[4]) === "使用済み") {
+    return sendResponse({ status: "error", message: "すでに使用済みです" });
+  }
+  const rewardId = String(row[2] || "");
+  const rewardName = String(row[3] || "");
+  const limitMinutes = getRewardLimitMinutesById_(adminSs, rewardId);
+  const usedAt = new Date();
+  const usedAtText = formatJstDateTime_(usedAt);
+  inventorySheet.getRange(rowIdx, 5).setValue("使用済み");
+  inventorySheet.getRange(rowIdx, 6).setValue(usedAtText);
+  inventorySheet.getRange(rowIdx, 7).setValue(limitMinutes > 0 ? "未送信" : "");
+
+  let activeTicket = null;
+  if (limitMinutes > 0) {
+    const usersSheet = adminSs.getSheetByName("users");
+    const userName = findUserName_(usersSheet, req.userId);
+    const endsAt = computeRewardEndsAt_(usedAt, limitMinutes);
+    const notifyAt = computeRewardNotifyAt_(usedAt, limitMinutes);
+    try { sendRewardStartEmail_(adminSs, userName, rewardName, limitMinutes, endsAt); } catch (e) { console.warn("start email failed", e); }
+    if (notifyAt) scheduleRewardEndNotificationTrigger_(rowIdx, notifyAt);
+    activeTicket = {
+      rowIdx: rowIdx,
+      rewardId: rewardId,
+      rewardName: rewardName,
+      usedAt: usedAt.toISOString(),
+      endsAt: endsAt ? endsAt.toISOString() : "",
+      limitMinutes: limitMinutes,
+      remainingMs: endsAt ? Math.max(0, endsAt.getTime() - Date.now()) : 0
+    };
+  }
+
+  return sendResponse({
+    status: "success",
+    message: "景品をつかいました！",
+    activeTicket: activeTicket
+  });
+}
 
 // ★設定を消去する緊急用関数（不要なら後で消してもOK）
 function resetProperties() {
