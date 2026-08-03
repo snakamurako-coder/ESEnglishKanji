@@ -4342,30 +4342,62 @@ function kanjiQuizSheetParsedCacheKey_(modeId, unitName) {
 function getKanjiQuizParsedFromSpreadsheet_(modeId, unitName) {
   const cache = CacheService.getScriptCache();
   const key = kanjiQuizSheetParsedCacheKey_(modeId, unitName);
-  const hit = cache.get(key);
-  if (hit) {
+  const readCached_ = function () {
+    const hit = cache.get(key);
+    if (!hit) return null;
     try {
       return { parsed: JSON.parse(hit), sheetMissing: false };
-    } catch (e) {}
-  }
-  const ss = SpreadsheetApp.openById(modeId);
-  const sheet = ss.getSheetByName(unitName);
-  if (!sheet) return { parsed: null, sheetMissing: true };
-  let values = sheet.getDataRange().getValues();
-  let headers = values[0] || [];
-  let sheetKind = detectKanjiSheetKind_(headers, ss.getName());
-  if (sheetKind === "jukugo") {
-    ensureKanjiJukugoSheetHeaders_(sheet);
-    values = sheet.getDataRange().getValues();
-    headers = values[0] || [];
-    sheetKind = detectKanjiSheetKind_(headers, ss.getName());
-  }
-  const parsed = sheetKind === "jukugo" ? parseKanjiJukugoSheet_(sheet) : parseKanjiQuizSheet_(sheet);
-  parsed.sheetKind = sheetKind;
+    } catch (e) {
+      return null;
+    }
+  };
+  const cached0 = readCached_();
+  if (cached0) return cached0;
+
+  // セット一覧→問題取得や先読みが重なると同一シートを同時再解析しやすい。
+  // ScriptLock で直列化し、キャッシュスタンプを防ぐ。
+  const lock = LockService.getScriptLock();
+  let locked = false;
   try {
-    cache.put(key, JSON.stringify(parsed), 300);
-  } catch (e) {}
-  return { parsed: parsed, sheetMissing: false };
+    locked = lock.tryLock(28000);
+  } catch (eLock) {
+    locked = false;
+  }
+  if (!locked) {
+    // 他実行が解析中の可能性。少し待ってキャッシュ再試行してから、必要ならロックなしで続行。
+    Utilities.sleep(900);
+    const cachedWait = readCached_();
+    if (cachedWait) return cachedWait;
+  }
+  try {
+    const cached1 = readCached_();
+    if (cached1) return cached1;
+
+    const ss = SpreadsheetApp.openById(modeId);
+    const sheet = ss.getSheetByName(unitName);
+    if (!sheet) return { parsed: null, sheetMissing: true };
+    let values = sheet.getDataRange().getValues();
+    let headers = values[0] || [];
+    let sheetKind = detectKanjiSheetKind_(headers, ss.getName());
+    if (sheetKind === "jukugo") {
+      ensureKanjiJukugoSheetHeaders_(sheet);
+      values = sheet.getDataRange().getValues();
+      headers = values[0] || [];
+      sheetKind = detectKanjiSheetKind_(headers, ss.getName());
+    }
+    const parsed = sheetKind === "jukugo" ? parseKanjiJukugoSheet_(sheet) : parseKanjiQuizSheet_(sheet);
+    parsed.sheetKind = sheetKind;
+    try {
+      cache.put(key, JSON.stringify(parsed), 300);
+    } catch (e) {
+      // CacheService 上限（約100KB）超えは無視。Lock により同時再解析は抑止される。
+    }
+    return { parsed: parsed, sheetMissing: false };
+  } finally {
+    if (locked) {
+      try { lock.releaseLock(); } catch (eRel) {}
+    }
+  }
 }
 
 function handleGetKanjiQuizSets(req) {

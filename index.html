@@ -884,6 +884,103 @@
       border-color: rgba(0, 0, 0, 1);
       box-sizing: border-box;
     }
+    /**
+     * 書き取り回答カード：画面内に収める（横・縦スクロール禁止）
+     * タイトルレール分を除いた領域にカード全体をフィットさせる。
+     */
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-hw-active .kanji-quiz-drill-wrap {
+      overflow: hidden !important;
+      overflow-x: hidden !important;
+      overflow-y: hidden !important;
+      flex-wrap: nowrap !important;
+      align-items: center !important;
+      align-content: center !important;
+      justify-content: center !important;
+      gap: 0 !important;
+      padding: 6px 78px 6px 8px !important;
+    }
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-hw-active .kanji-quiz-drill-head,
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-hw-active .kanji-quiz-play-question-block,
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-hw-active #kanji-play-summary {
+      display: none !important;
+    }
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-hw-active #kanji-quiz-drill-handwriting,
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-hw-active .kanji-drill-hw-row {
+      width: min(calc(100vw - 90px), 100%) !important;
+      max-width: min(calc(100vw - 90px), 100%) !important;
+      max-height: calc(100dvh - 68px) !important;
+      height: auto !important;
+      margin: 0 !important;
+      overflow: hidden !important;
+      box-sizing: border-box !important;
+      flex: 0 1 auto;
+    }
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-hw-active .kanji-drill-hw-row {
+      gap: 4px !important;
+      padding: 4px !important;
+      justify-content: space-evenly !important;
+    }
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-hw-active .kanji-drill-hw-prefix-col,
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-hw-active .kanji-drill-hw-suffix-col {
+      max-height: min(14vh, 110px);
+      overflow: hidden;
+      margin: 0 !important;
+      font-size: clamp(15px, 3.2vh, 26px);
+      flex: 0 0 auto;
+    }
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-hw-active .kanji-drill-hw-canvas-panel {
+      width: 100%;
+      max-width: 100%;
+      min-width: 0;
+      box-sizing: border-box;
+      gap: 6px;
+      padding: 6px 8px;
+      margin: 0;
+      flex: 1 1 auto;
+      min-height: 0;
+      justify-content: center;
+    }
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-hw-active #kanji-hw-canvas-actions {
+      display: flex !important;
+      flex-direction: column !important;
+      width: clamp(40px, 9vw, 52px) !important;
+      min-width: 0 !important;
+      max-width: 56px !important;
+      flex-shrink: 1;
+      gap: 4px;
+    }
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-hw-active .kanji-drill-hw-panel-aside {
+      min-height: 0;
+      max-width: min(42%, 180px);
+      flex-shrink: 1;
+      gap: 6px;
+    }
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-hw-active #kanji-quiz-write-canvas {
+      width: min(240px, calc(100vw - 230px), 36dvh) !important;
+      height: min(240px, calc(100vw - 230px), 36dvh) !important;
+      max-width: min(240px, 46%) !important;
+      max-height: min(36dvh, 240px) !important;
+      flex: 0 1 auto;
+    }
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-hw-active #kanji-play-char-handwriting.kanji-drill-hw-ruby-box {
+      min-height: min(120px, 26dvh);
+      max-height: min(180px, 34dvh);
+      font-size: clamp(26px, 5.5vh, 44px);
+      overflow: hidden;
+      padding: 6px 8px;
+    }
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-hw-active .kanji-drill-hw-canvas-panel .kanji-drill-vbtn-small,
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-hw-active .kanji-drill-hw-panel-aside .kanji-drill-vbtn-small {
+      min-height: clamp(72px, 18vh, 140px);
+      width: clamp(40px, 9vw, 52px);
+      padding: 8px 4px;
+      font-size: 12px;
+    }
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-hw-active #kanji-quiz-hw-wrong-panel[style*="display: none"],
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-hw-active #kanji-stroke-order-play-host[style*="display: none"],
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-hw-active #kanji-play-typing-wrap[style*="display: none"] {
+      display: none !important;
+    }
     body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-drill-section .kanji-drill-hw-prefix-col,
     body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-drill-section .kanji-drill-hw-suffix-col {
       display: flex;
@@ -1226,22 +1323,44 @@
         margin: 0 8px 0 0;
       }
       /* 書き取り島：前文→マス→後文の縦積みを維持（道具島のみ横書き） */
-      body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-drill-section #kanji-quiz-drill-handwriting,
-      body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-drill-section .kanji-drill-hw-row {
+      body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-drill-section:not(.kanji-quiz-hw-active) #kanji-quiz-drill-handwriting,
+      body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-drill-section:not(.kanji-quiz-hw-active) .kanji-drill-hw-row {
         width: min(520px, 48vw) !important;
         max-width: min(520px, 48vw) !important;
         max-height: calc(100dvh - 140px);
         margin: 0 12px 0 0;
         align-self: flex-start;
       }
-      body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-drill-section .kanji-drill-hw-row {
+      body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-drill-section:not(.kanji-quiz-hw-active) .kanji-drill-hw-row {
         flex-direction: column !important;
         align-items: center !important;
         justify-content: center !important;
         gap: 8px !important;
         padding: 8px;
-        overflow: auto;
+        overflow: hidden;
         background: #fffef9;
+      }
+      body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-hw-active .kanji-quiz-drill-wrap {
+        overflow: hidden !important;
+        overflow-x: hidden !important;
+        overflow-y: hidden !important;
+        flex-wrap: nowrap !important;
+        flex-direction: row !important;
+        justify-content: center !important;
+        align-items: center !important;
+        align-content: center !important;
+        padding: 6px 88px 6px 12px !important;
+        gap: 0 !important;
+      }
+      body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-hw-active #kanji-quiz-drill-handwriting,
+      body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-hw-active .kanji-drill-hw-row {
+        width: min(calc(100vw - 108px), 100%) !important;
+        max-width: min(calc(100vw - 108px), 100%) !important;
+        max-height: calc(100dvh - 68px) !important;
+        height: auto !important;
+        overflow: hidden !important;
+        margin: 0 !important;
+        flex: 0 1 auto !important;
       }
       body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-drill-section .kanji-drill-hw-prefix-col,
       body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-drill-section .kanji-drill-hw-suffix-col {
@@ -1250,12 +1369,12 @@
         font-size: clamp(18px, 2.6vh, 28px);
         margin: 4px 0;
         max-height: min(22vh, 160px);
-        overflow: auto;
+        overflow: hidden;
       }
-      body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-drill-section #kanji-quiz-write-canvas {
-        width: min(280px, 36vw);
-        height: min(280px, 46vh);
-        max-height: min(46vh, 280px);
+      body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-hw-active #kanji-quiz-write-canvas {
+        width: min(240px, calc(100vw - 260px), 40dvh) !important;
+        height: min(240px, calc(100vw - 260px), 40dvh) !important;
+        max-height: min(40dvh, 240px) !important;
       }
       .kanji-drill-hw-canvas-panel {
         padding: 8px 10px;
@@ -1455,10 +1574,21 @@
         width: clamp(48px, 6vw, 64px);
         font-size: clamp(15px, 3vh, 20px);
       }
-      body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-drill-section #kanji-quiz-write-canvas {
+      body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-drill-section:not(.kanji-quiz-hw-active) #kanji-quiz-write-canvas {
         width: min(220px, 32vw);
         height: min(220px, 48vh);
         max-height: min(48vh, 220px);
+      }
+      body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-hw-active #kanji-quiz-write-canvas {
+        width: min(200px, calc(100vw - 280px), 36dvh) !important;
+        height: min(200px, calc(100vw - 280px), 36dvh) !important;
+        max-height: min(36dvh, 200px) !important;
+      }
+      body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-hw-active .kanji-quiz-drill-wrap {
+        overflow: hidden !important;
+        overflow-x: hidden !important;
+        overflow-y: hidden !important;
+        flex-wrap: nowrap !important;
       }
       .kanji-stroke-order-play-slot {
         width: min(340px, 40vw);
@@ -1609,7 +1739,8 @@
       text-orientation: mixed;
       direction: ltr;
       margin-top: 12px;
-      width: 650px;
+      width: min(650px, 100%);
+      max-width: min(650px, 100%);
       box-sizing: border-box;
       border-style: solid;
       border-width: 1px;
@@ -2939,7 +3070,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       return JSON.stringify(bodyObj == null ? {} : bodyObj);
     }
     function gasApiIsRetryableError(msg) {
-      return /Load failed|Failed to fetch|NetworkError|network|fetch|aborted|timeout|timed out|XHR|AbortError|Cancelled|CORS|temporarily unavailable|ECONNRESET|socket/i.test(String(msg || ""));
+      return /Load failed|Failed to fetch|NetworkError|network|fetch|aborted|timeout|timed out|XHR|AbortError|Cancelled|CORS|temporarily unavailable|ECONNRESET|socket|non-JSON|HTTP 5\d\d|HTTP 429/i.test(String(msg || ""));
     }
     function gasApiFetchOnce(bodyStr, timeoutMs, useXhr) {
       if (useXhr && typeof XMLHttpRequest !== "undefined") {
@@ -3134,16 +3265,30 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       return window.__pendingFinishFlushPromise;
     }
     function gasApiFetchJson(bodyObj, opts) {
-      return gasApiFetchText(bodyObj, opts).then(function (res) {
-        const d = gasApiParseJsonResponse(res);
-        if (!d) {
+      const o = opts || {};
+      const parseRetries = typeof o.parseRetries === "number" ? o.parseRetries : 2;
+      const delays = Array.isArray(o.retryDelaysMs) ? o.retryDelaysMs : [600, 1400, 2800];
+      function attemptParse(left, attemptIndex) {
+        // 初回は通常のネットワーク再試行。非JSONの再試行では軽めに（回数の掛け算を抑える）。
+        const textOpts = Object.assign({}, o, {
+          retries: attemptIndex === 0
+            ? (typeof o.retries === "number" ? o.retries : 2)
+            : 1
+        });
+        return gasApiFetchText(bodyObj, textOpts).then(function (res) {
+          const d = gasApiParseJsonResponse(res);
+          if (d) return d;
           const err = new Error("GAS non-JSON response HTTP " + String((res && res.status) || 0));
           err.httpStatus = res && res.status;
           err.rawText = String((res && res.text) || "").slice(0, 500);
-          throw err;
-        }
-        return d;
-      });
+          if (left <= 0) throw err;
+          const delay = delays[Math.min(attemptIndex, delays.length - 1)] || 1000;
+          return new Promise(function (resolve) { setTimeout(resolve, delay); }).then(function () {
+            return attemptParse(left - 1, attemptIndex + 1);
+          });
+        });
+      }
+      return attemptParse(parseRetries, 0);
     }
 
     let selectedUserId = null; let currentPin = ""; let isPinResetMode = false;
@@ -9133,14 +9278,63 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       };
     }
     const __kanjiQuizSetsSessionCache = Object.create(null);
+    /** 漢字ドリル問題の先読みキュー（並列禁止。GAS 同時実行・タイムアウト対策） */
+    var __kanjiQuizPrefetchGen = 0;
+    var __kanjiQuizPrefetchPaused = false;
+    var __kanjiQuizPrefetchRunning = false;
+    var __kanjiQuizPrefetchQueue = [];
+    function pauseKanjiQuizQuestionsPrefetch_() {
+      __kanjiQuizPrefetchPaused = true;
+    }
+    function resumeKanjiQuizQuestionsPrefetch_() {
+      __kanjiQuizPrefetchPaused = false;
+      pumpKanjiQuizQuestionsPrefetch_();
+    }
+    function cancelKanjiQuizQuestionsPrefetch_() {
+      __kanjiQuizPrefetchGen += 1;
+      __kanjiQuizPrefetchQueue = [];
+      __kanjiQuizPrefetchRunning = false;
+      __kanjiQuizPrefetchPaused = false;
+    }
+    function fetchKanjiQuizQuestionsPayload_(modeId, unitName, setId, opts) {
+      const o = opts || {};
+      return gasApiFetchJson(buildKanjiQuizQuestionsFetchBody_(modeId, unitName, setId), {
+        retries: typeof o.retries === "number" ? o.retries : 3,
+        timeoutMs: typeof o.timeoutMs === "number" ? o.timeoutMs : 90000,
+        xhrFallback: o.xhrFallback !== false,
+        retryDelaysMs: o.retryDelaysMs || [800, 1800, 3200]
+      });
+    }
+    function pumpKanjiQuizQuestionsPrefetch_() {
+      if (__kanjiQuizPrefetchPaused || __kanjiQuizPrefetchRunning) return;
+      var job = __kanjiQuizPrefetchQueue.shift();
+      if (!job) return;
+      __kanjiQuizPrefetchRunning = true;
+      var gen = __kanjiQuizPrefetchGen;
+      fetchKanjiQuizQuestionsPayload_(job.modeId, job.unitName, job.setId, { retries: 2, timeoutMs: 75000 })
+        .then(function (q) {
+          if (gen !== __kanjiQuizPrefetchGen) return;
+          if (q && q.status === "success") {
+            try { localStorage.setItem(job.qKey, JSON.stringify(q)); } catch (_) {}
+          }
+        })
+        .catch(function () {})
+        .then(function () {
+          if (gen !== __kanjiQuizPrefetchGen) return;
+          __kanjiQuizPrefetchRunning = false;
+          if (!__kanjiQuizPrefetchPaused) {
+            setTimeout(pumpKanjiQuizQuestionsPrefetch_, 350);
+          }
+        });
+    }
     /**
      * セット一覧表示時に、各セットの問題JSONを idle 時間で先読みしてキャッシュする。
-     * これにより、ユーザーが「セット ○」を押した瞬間の GAS 往復を消せる。
-     * すべての出題形式（書き取り・選択・タイピング・画数）に効く。
-     * 既にキャッシュ済みのセットはスキップ。失敗は無視（次回フォールバックで通常fetch）。
+     * GAS 負荷回避のため直列1本。ユーザーがセットを押したら一時停止する。
+     * 既にキャッシュ済みのセットはスキップ。失敗は無視（押下時に再試行）。
      */
     function prefetchKanjiQuizQuestionsForSets(modeId, unitName, sets) {
       if (!Array.isArray(sets) || !sets.length) return;
+      cancelKanjiQuizQuestionsPrefetch_();
       var startPrefetch = function () {
         sets.forEach(function (s) {
           var sid = String((s && s.setId) != null ? s.setId : "");
@@ -9151,18 +9345,14 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
           } catch (e) {
             return;
           }
-          fetch(GAS_API_URL, {
-            method: "POST",
-            body: JSON.stringify(buildKanjiQuizQuestionsFetchBody_(modeId, unitName, sid))
-          })
-            .then(function (r) { return r.json(); })
-            .then(function (q) {
-              if (q && q.status === "success") {
-                try { localStorage.setItem(qKey, JSON.stringify(q)); } catch (_) {}
-              }
-            })
-            .catch(function () {});
+          __kanjiQuizPrefetchQueue.push({
+            modeId: modeId,
+            unitName: unitName,
+            setId: sid,
+            qKey: qKey
+          });
         });
+        pumpKanjiQuizQuestionsPrefetch_();
       };
       try {
         if (typeof requestIdleCallback === "function") {
@@ -9257,6 +9447,8 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
               }
             };
             const qKey = kanjiQuizDrillCacheKeyQuestions(modeId, unitName, s.setId);
+            // 先読みと競合しないよう、押下中は prefetch を止める（完了/失敗後に再開）
+            pauseKanjiQuizQuestionsPrefetch_();
             const cachedQ = localStorage.getItem(qKey);
             if (cachedQ) {
               try {
@@ -9268,21 +9460,26 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
                   // 万一 startKanjiQuizPlay がキャンセル（ユーザーが警告を閉じる）された場合に戻れるよう、
                   // ここで一度復元してから呼ぶ。
                   releaseBusyThenStartFromQuestions(q, q.setId != null ? q.setId : s.setId);
+                  resumeKanjiQuizQuestionsPrefetch_();
                   return;
                 }
               } catch (e) {}
             }
-            fetch(GAS_API_URL, { method: 'POST', body: JSON.stringify(buildKanjiQuizQuestionsFetchBody_(modeId, unitName, s.setId)) })
-              .then(r => r.json()).then(q => {
-                if (q.status === "success") {
+            fetchKanjiQuizQuestionsPayload_(modeId, unitName, s.setId)
+              .then(function (q) {
+                if (q && q.status === "success") {
                   try { localStorage.setItem(qKey, JSON.stringify(q)); } catch (e) {}
                 }
-                releaseBusyThenStartFromQuestions(q, s.setId);
+                releaseBusyThenStartFromQuestions(q || { status: "error", message: "応答を解釈できませんでした。" }, s.setId);
               })
-              .catch(() => {
+              .catch(function (err) {
                 stopKanjiActionBusy(b);
                 restoreKanjiButtonGroup(__setBtnGroup);
-                alert("通信エラーが発生しました。");
+                var detail = err && err.message ? String(err.message) : "";
+                alert("通信エラーが発生しました。" + (detail ? "\n（" + detail.slice(0, 120) + "）" : "") + "\nもういちど「セット」を押してください。");
+              })
+              .then(function () {
+                resumeKanjiQuizQuestionsPrefetch_();
               });
           };
           box.appendChild(b);
@@ -9307,16 +9504,22 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
           }
         } catch (e) {}
       }
-      fetch(GAS_API_URL, { method: 'POST', body: JSON.stringify({ action: "get_kanji_quiz_sets", modeId: modeId, unitName: unitName }) })
-      .then(r => r.json()).then(d => {
-        if (d.status === "success") {
+      gasApiFetchJson({ action: "get_kanji_quiz_sets", modeId: modeId, unitName: unitName }, {
+        retries: 3,
+        timeoutMs: 90000,
+        xhrFallback: true,
+        retryDelaysMs: [800, 1800, 3200]
+      })
+      .then(function (d) {
+        if (d && d.status === "success") {
           try { localStorage.setItem(setsCacheKey, JSON.stringify(d)); } catch (e) {}
           __kanjiQuizSetsSessionCache[setsCacheKey] = d;
         }
-        renderSetsButtons(d);
-      }).catch(e => {
+        renderSetsButtons(d || { status: "error", message: "応答を解釈できませんでした。" });
+      }).catch(function (e) {
         toggleBtnLoading(btn, false, origText);
-        alert("通信エラーが発生しました。");
+        var detail = e && e.message ? String(e.message) : "";
+        alert("通信エラーが発生しました。" + (detail ? "\n（" + detail.slice(0, 120) + "）" : "") + "\nもういちど試してください。");
       });
     }
     const KANJI_QUIZ_HAND_PASS = 60;
