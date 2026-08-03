@@ -4650,15 +4650,24 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
     window.onload = () => { 
         const saved = localStorage.getItem('app_kid_user'); 
         if (inputMethodMode !== 'pen' && inputMethodMode !== 'keyboard') inputMethodMode = 'keyboard';
-        initKeyboardAndSoundSettings();
-        applyKanjiHwDominantHandToBody();
-        syncKanjiHwHandSwitchUI();
+        try { initKeyboardAndSoundSettings(); } catch (_eInit) {}
+        try { applyKanjiHwDominantHandToBody(); } catch (_eHand) {}
+        try { syncKanjiHwHandSwitchUI(); } catch (_eHandUi) {}
         if (saved) {
-          showHome(JSON.parse(saved));
-          loadKanjiHandScoreWeightsFromLocalCache();
+          try {
+            const user = JSON.parse(saved);
+            showHome(user);
+          } catch (eSaved) {
+            console.error("saved user restore failed:", eSaved);
+            try { localStorage.removeItem('app_kid_user'); } catch (_eRm) {}
+            fetchUsers();
+            return;
+          }
+          try { loadKanjiHandScoreWeightsFromLocalCache(); } catch (_eW) {}
           fetchAppSettings();
+        } else {
+          fetchUsers();
         }
-        else fetchUsers(); 
     };
 
     function fetchAppSettings() { 
@@ -5401,9 +5410,14 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       const token = `${user.id}_${draft.savedAt || 0}_${draft.currentQuestionIndex || 0}`;
       if (resumePromptShownToken === token) return;
       resumePromptShownToken = token;
-      if (confirm("途中の学習がありました。再開しますか？")) {
-        resumeQuizFromDraft({ askConfirm: false });
-      }
+      // iPad Safari: fetch/Promise 直後の confirm は画面フリーズしやすいので遅延する
+      setTimeout(function () {
+        try {
+          if (confirm("途中の学習がありました。再開しますか？")) {
+            resumeQuizFromDraft({ askConfirm: false });
+          }
+        } catch (_eConfirm) {}
+      }, 50);
     }
 
     function getKanjiQuizRecoveryDraft() {
@@ -5557,12 +5571,25 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       const token = `${user.id}_${draft.savedAt || 0}_${(draft.session || {}).index || 0}`;
       if (kanjiResumePromptShownToken === token) return;
       kanjiResumePromptShownToken = token;
-      if (confirm("途中の漢字学習がありました。再開しますか？")) {
-        resumeKanjiQuizFromDraft({ askConfirm: false });
-      }
+      // iPad Safari: 非同期直後の confirm フリーズ対策
+      setTimeout(function () {
+        try {
+          if (confirm("途中の漢字学習がありました。再開しますか？")) {
+            resumeKanjiQuizFromDraft({ askConfirm: false });
+          }
+        } catch (_eConfirm) {}
+      }, 50);
     }
 
-    function fetchUsers() { fetch(GAS_API_URL, { method: 'POST', body: JSON.stringify({ action: "get_child_users" }) }).then(r=>r.json()).then(d=>{ if(d.status==="success") renderUsers(d.users); }); }
+    function fetchUsers() {
+      fetch(GAS_API_URL, { method: 'POST', body: JSON.stringify({ action: "get_child_users" }) })
+        .then(function (r) { return r.json(); })
+        .then(function (d) { if (d && d.status === "success") renderUsers(d.users); })
+        .catch(function () {
+          const msg = document.getElementById('message');
+          if (msg) msg.innerText = "ユーザー一覧の取得に失敗しました。通信を確認してください。";
+        });
+    }
     function renderUsers(users) { const c = document.getElementById('user-container'); c.innerHTML = ""; users.forEach(u => { const div = document.createElement('div'); div.className = 'user-card'; div.onclick = () => showPinScreen(u.id, u.name, false); div.innerHTML = `<div class="user-icon">${u.name.charAt(0)}</div><div>${u.name}</div>`; c.appendChild(div); }); }
     function showPinScreen(id, name, isReset) { selectedUserId = id; isPinResetMode = isReset; currentPin = ""; updatePinDisplay(); document.getElementById('selected-user-name').innerText = name; document.getElementById('pin-instruction').innerText = isReset ? "あたらしい暗証番号（4ケタ）" : "あんしょうばんごう（4ケタ）"; switchSection('section-pin'); }
     function addPin(num) { if(currentPin.length<4){ currentPin+=num; updatePinDisplay(); if(currentPin.length===4) { if(isPinResetMode) executePinReset(); else verifyPin(); } } }
@@ -5570,9 +5597,68 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
     function clearPin() { currentPin = ""; updatePinDisplay(); }
     function updatePinDisplay() { let d=""; for(let i=0;i<4;i++) d+=(i<currentPin.length)?"● ":"_ "; document.getElementById('pin-dots').innerText=d.trim(); }
     function cancelPin() { if(isPinResetMode) showHome(JSON.parse(localStorage.getItem('app_kid_user'))); else switchSection('section-users'); }
-    function verifyPin() { document.getElementById('message').innerText = "かくにん中..."; fetch(GAS_API_URL, { method: 'POST', body: JSON.stringify({ action: "verify_kid_pin", userId: selectedUserId, pin: currentPin }) }).then(r=>r.json()).then(d=>{ if(d.status==="success"){ saveAppKidUserToLocal(d.user); showHome(d.user); } else { document.getElementById('message').innerText = d.message; currentPin=""; updatePinDisplay(); } }); }
+    function verifyPin() {
+      const msgEl = document.getElementById('message');
+      if (msgEl) msgEl.innerText = "かくにん中...";
+      fetch(GAS_API_URL, {
+        method: 'POST',
+        body: JSON.stringify({ action: "verify_kid_pin", userId: selectedUserId, pin: currentPin })
+      })
+        .then(function (r) { return r.text().then(function (t) { return { ok: r.ok, status: r.status, text: t }; }); })
+        .then(function (res) {
+          var d = null;
+          try { d = JSON.parse(res.text); } catch (_eParse) { d = null; }
+          if (!d || typeof d !== "object") {
+            throw new Error("サーバー応答が不正です (HTTP " + res.status + ")");
+          }
+          if (d.status === "success" && d.user) {
+            try { saveAppKidUserToLocal(d.user); } catch (_eSave) {}
+            // iPad: ログイン直後の UI 更新を fetch コールバックから切り離す
+            setTimeout(function () {
+              try { showHome(d.user); } catch (eHome) {
+                console.error("showHome failed:", eHome);
+                if (msgEl) msgEl.innerText = "ホーム表示に失敗しました。ページを再読み込みしてください。";
+              }
+            }, 0);
+            return;
+          }
+          if (msgEl) msgEl.innerText = d.message || "ログインに失敗しました";
+          currentPin = "";
+          updatePinDisplay();
+        })
+        .catch(function (e) {
+          console.error("verifyPin failed:", e);
+          if (msgEl) {
+            msgEl.innerText = "通信エラーです。もういちど試すか、ページを再読み込みしてください。";
+          }
+          currentPin = "";
+          updatePinDisplay();
+        });
+    }
     function preparePinReset() { const user = JSON.parse(localStorage.getItem('app_kid_user')); showPinScreen(user.id, user.name, true); }
-    function executePinReset() { document.getElementById('message').innerText = "へんこう中..."; fetch(GAS_API_URL, { method: 'POST', body: JSON.stringify({ action: "change_pin", userId: selectedUserId, newPin: currentPin }) }).then(r=>r.json()).then(d=>{ if(d.status==="success") { alert(d.message); showHome(JSON.parse(localStorage.getItem('app_kid_user'))); } else { document.getElementById('message').innerText = d.message; currentPin=""; updatePinDisplay(); } }); }
+    function executePinReset() {
+      const msgEl = document.getElementById('message');
+      if (msgEl) msgEl.innerText = "へんこう中...";
+      fetch(GAS_API_URL, { method: 'POST', body: JSON.stringify({ action: "change_pin", userId: selectedUserId, newPin: currentPin }) })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (d && d.status === "success") {
+            setTimeout(function () {
+              try { alert(d.message); } catch (_eA) {}
+              showHome(JSON.parse(localStorage.getItem('app_kid_user')));
+            }, 0);
+          } else {
+            if (msgEl) msgEl.innerText = (d && d.message) || "変更に失敗しました";
+            currentPin = "";
+            updatePinDisplay();
+          }
+        })
+        .catch(function () {
+          if (msgEl) msgEl.innerText = "通信エラーです。もういちど試してください。";
+          currentPin = "";
+          updatePinDisplay();
+        });
+    }
     function logout() {
       syncAllStopwatchesToServer(true);
       englishUnitHistoryCache = {};
@@ -5602,23 +5688,46 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
 
     // ★ 特訓ルートの読み込み処理を追加
     function showHome(user) {
-      cancelTrainingRouteAutoReturn();
-      document.body.classList.remove('kanji-study-mode');
-      resetResultScreenActionButtons();
-      switchSection('section-home');
-      document.getElementById('header-user-info').innerText = `ID: ${user.id} / ${user.name}`; document.getElementById('global-header').style.display = 'block';
-      document.getElementById('welcome-message').innerText = `${user.name} さん`; document.getElementById('user-points').innerText = user.points;
-      renderHomeResumePanel();
-      promptQuizResumeIfNeeded(user);
-      applyKanjiHwDominantHandToBody();
-      syncKanjiHwHandSwitchUI();
-      syncMaterialsListFromServerIfChanged();
-      flushPendingFinishQuizSave(user);
-      loadStopwatchFromServer(user).then(function () {
-        return fetchActiveRewardTicket_(user);
-      }).then(function () {
-        renderHomeStopwatchOrCountdown_();
-      });
+      if (!user || user.id == null) {
+        switchSection('section-users');
+        fetchUsers();
+        return;
+      }
+      try {
+        cancelTrainingRouteAutoReturn();
+        document.body.classList.remove('kanji-study-mode');
+        resetResultScreenActionButtons();
+        switchSection('section-home');
+        const headerInfo = document.getElementById('header-user-info');
+        const globalHeader = document.getElementById('global-header');
+        const welcome = document.getElementById('welcome-message');
+        const pts = document.getElementById('user-points');
+        if (headerInfo) headerInfo.innerText = "ID: " + user.id + " / " + user.name;
+        if (globalHeader) globalHeader.style.display = 'block';
+        if (welcome) welcome.innerText = user.name + " さん";
+        if (pts) pts.innerText = user.points != null ? String(user.points) : "0";
+        renderHomeResumePanel();
+        applyKanjiHwDominantHandToBody();
+        syncKanjiHwHandSwitchUI();
+        syncMaterialsListFromServerIfChanged();
+        flushPendingFinishQuizSave(user);
+        loadStopwatchFromServer(user).then(function () {
+          return fetchActiveRewardTicket_(user);
+        }).then(function () {
+          renderHomeStopwatchOrCountdown_();
+        }).catch(function () {
+          try { renderHomeStopwatchOrCountdown_(); } catch (_eSw) {}
+        });
+        // confirm 系は最後に遅延実行（ホーム描画を先に完了させる）
+        promptQuizResumeIfNeeded(user);
+      } catch (eShow) {
+        console.error("showHome error:", eShow);
+        try {
+          switchSection('section-home');
+          const globalHeader2 = document.getElementById('global-header');
+          if (globalHeader2) globalHeader2.style.display = 'block';
+        } catch (_e2) {}
+      }
     }
 
     function toggleBtnLoading(btn, isLoading, originalText = "") { if(!btn) return ""; if(isLoading) { const text = btn.innerHTML; btn.innerHTML = "⏳ よみこみ中..."; btn.classList.add("btn-loading"); return text; } else { btn.innerHTML = originalText; btn.classList.remove("btn-loading"); } }
@@ -8174,7 +8283,8 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       });
     }
     function kpApplyFilterAndRender() {
-      const q = (document.getElementById('kp-search-input')?.value || "").trim().toLowerCase();
+      const kpSearchEl = document.getElementById('kp-search-input');
+      const q = ((kpSearchEl && kpSearchEl.value) || "").trim().toLowerCase();
       const list = (kpCatalogState.setQuestions || []).filter(item => {
         const k = String(item.kanji || "");
         const fromNew = String(item.searchText || "").toLowerCase();
@@ -13932,16 +14042,20 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       resetEnFlashQuestionState_();
       resetHandwritingInputState();
       document.body.classList.remove('quiz-answer-submitting');
-      document.getElementById('section-quiz')?.classList.remove('pen-mode-active');
-      document.getElementById('quiz-answer-area')?.classList.remove('pen-mode-active');
+      const secQuizReset = document.getElementById('section-quiz');
+      const ansAreaReset = document.getElementById('quiz-answer-area');
+      if (secQuizReset) secQuizReset.classList.remove('pen-mode-active');
+      if (ansAreaReset) ansAreaReset.classList.remove('pen-mode-active');
       openSettingsScreen();
     }
     
     function finishQuiz() {
       resetResultScreenActionButtons();
       document.body.classList.remove('kanji-study-mode');
-      document.getElementById('section-quiz')?.classList.remove('pen-mode-active');
-      document.getElementById('quiz-answer-area')?.classList.remove('pen-mode-active');
+      const secQuizFinish = document.getElementById('section-quiz');
+      const ansAreaFinish = document.getElementById('quiz-answer-area');
+      if (secQuizFinish) secQuizFinish.classList.remove('pen-mode-active');
+      if (ansAreaFinish) ansAreaFinish.classList.remove('pen-mode-active');
       switchSection('section-result', { forceEnglishResult: true });
       document.getElementById('result-content').innerHTML = buildLocalFinishQuizSummaryHtml("結果を保存しています…");
       document.getElementById('result-retry-btn').style.display = "none"; document.getElementById('result-settings-btn').style.display = "none"; document.getElementById('result-home-btn').style.display = "none";

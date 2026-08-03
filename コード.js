@@ -3383,8 +3383,16 @@ function handleVerifyKidPin(req) {
   ensureUsersSheetStopwatchColumn_(adminSs);
   const usersSheet = adminSs.getSheetByName("users");
   const data = usersSheet.getDataRange().getValues();
+  const safeJsonObject_ = (raw) => {
+    try {
+      const v = JSON.parse(raw || "{}");
+      return v && typeof v === "object" && !Array.isArray(v) ? v : {};
+    } catch (e) {
+      return {};
+    }
+  };
   for (let i = 1; i < data.length; i++) {
-    if (data[i][0] === req.userId) {
+    if (String(data[i][0]) === String(req.userId)) {
       if (String(data[i][2]) === String(req.pin)) {
         const rowIdx = i + 1;
         const stopwatch = readStopwatchJson_(usersSheet, rowIdx);
@@ -3394,9 +3402,9 @@ function handleVerifyKidPin(req) {
             id: data[i][0],
             name: data[i][1],
             points: data[i][3],
-            lastStudyJson: JSON.parse(data[i][4] || "{}"),
-            historyJson: stripKanjiAndEnglishFromHistoryJson_(JSON.parse(data[i][5] || "{}")),
-            dailyPointsJson: JSON.parse(data[i][6] || "{}"),
+            lastStudyJson: safeJsonObject_(data[i][4]),
+            historyJson: stripKanjiAndEnglishFromHistoryJson_(safeJsonObject_(data[i][5])),
+            dailyPointsJson: safeJsonObject_(data[i][6]),
             stopwatchJson: stopwatch
           },
           message: "ログイン成功"
