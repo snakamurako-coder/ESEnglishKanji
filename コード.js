@@ -4239,7 +4239,7 @@ function buildStrokeOrderTraceQuizQuestion_(item) {
     type: "stroke_order_trace",
     kanji: k,
     rowIndex: item.rowIndex,
-    prompt: "お手本どおりに、書き順を守ってなぞりましょう（60点以上）。",
+    prompt: "漢字練習と同じ画面で書いて、60点以上をめざそう。",
     correctAnswer: k,
     searchText: k + " 書き順"
   };
