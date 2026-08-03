@@ -5360,6 +5360,9 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         totalEarned: Number(kanjiQuizSession.totalEarned || 0),
         newTotalPoints: kanjiQuizSession.newTotalPoints == null ? null : Number(kanjiQuizSession.newTotalPoints),
         logs: Array.isArray(kanjiQuizSession.logs) ? kanjiQuizSession.logs.slice() : [],
+        pendingScoreItems: Array.isArray(kanjiQuizSession.pendingScoreItems)
+          ? kanjiQuizSession.pendingScoreItems.slice()
+          : [],
         nigateTraining: !!kanjiQuizSession.nigateTraining,
         nigateAxis: kanjiQuizSession.nigateAxis || null,
         nigateFeedback: kanjiQuizSession.nigateFeedback ? JSON.parse(JSON.stringify(kanjiQuizSession.nigateFeedback)) : null
@@ -5437,6 +5440,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         totalEarned: Number(s.totalEarned || 0),
         newTotalPoints: s.newTotalPoints == null ? null : Number(s.newTotalPoints),
         logs: Array.isArray(s.logs) ? s.logs.slice() : [],
+        pendingScoreItems: Array.isArray(s.pendingScoreItems) ? s.pendingScoreItems.slice() : [],
         selectedChoice: null,
         nigateTraining: !!s.nigateTraining,
         nigateAxis: s.nigateAxis || null,
@@ -8492,7 +8496,8 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       const fmt = getKanjiQuizFormatMode();
       let suffix = "";
       if (fmt === "jukugo_yomi") {
-        suffix = "_c" + getKanjiQuizJukugoChoiceCount() + "_n" + (getKanjiQuizJukugoIncludeNone() ? "1" : "0");
+        // v2: 行ごとに熟語ABCのいずれか1問だけ出題
+        suffix = "_v2_c" + getKanjiQuizJukugoChoiceCount() + "_n" + (getKanjiQuizJukugoIncludeNone() ? "1" : "0");
       } else if (fmt === "stroke_order") {
         suffix = "_stroke";
       }
@@ -10293,17 +10298,17 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       const n = q && q.choiceCount ? Number(q.choiceCount) : 4;
       return roundKanjiPtOneDecimal_(base + n * perChoice + bonus);
     }
-    function renderJukugoExampleHtml_(example, targetKanji) {
+    function renderJukugoExampleHtml_(example, jukugoWord) {
       const text = String(example || "");
-      const target = String(targetKanji || "");
-      if (!text || !target) return escapeHtml(text);
-      const idx = text.indexOf(target);
+      const word = String(jukugoWord || "");
+      if (!text || !word) return escapeHtml(text);
+      const idx = text.indexOf(word);
       if (idx < 0) return escapeHtml(text);
       return escapeHtml(text.slice(0, idx)) +
         '<span style="text-decoration:underline;text-decoration-color:#e53935;text-decoration-thickness:3px;text-underline-offset:4px;font-weight:bold;">' +
-        escapeHtml(target) +
+        escapeHtml(word) +
         "</span>" +
-        escapeHtml(text.slice(idx + target.length));
+        escapeHtml(text.slice(idx + word.length));
     }
     function updateStrokeOrderDemoButton_() {
       const btn = document.getElementById("kanji-stroke-order-demo-btn");
@@ -10466,7 +10471,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
           charEl.innerText = "";
           charEl.style.display = "none";
         } else if (q.type === "jukugo_yomi") {
-          charEl.innerText = q.jukugoWord || q.kanji || "？";
+          charEl.innerText = q.kanji || "？";
           charEl.style.fontSize = "clamp(28px,6vw,40px)";
         } else if (q.type === "sentence_to_ruby") {
           charEl.innerText = "";
@@ -10479,7 +10484,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       if (promptEl) {
         if (q.type === "ruby_to_kanji" || q.type === "stroke_order_trace") promptEl.innerText = q.prompt || "";
         else if (q.type === "okurigana_shift") promptEl.innerText = "正しい送り仮名を選びましょう。";
-        else if (q.type === "jukugo_yomi") promptEl.innerText = q.prompt || "例文の下線の漢字の読み方を選びましょう。";
+        else if (q.type === "jukugo_yomi") promptEl.innerText = q.prompt || "例文の下線の熟語の読み方を選びましょう。";
         else promptEl.innerText = q.prompt || "";
       }
       const detail = document.getElementById('kanji-play-detail');
@@ -10616,7 +10621,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         } else if (q.type === "jukugo_yomi") {
           detail.innerHTML =
             '<div style="color:#222;font-size:clamp(20px,4.5vw,28px);line-height:1.8;text-align:center;margin:8px auto;">' +
-            renderJukugoExampleHtml_(q.exampleSentence, q.kanji) +
+            renderJukugoExampleHtml_(q.exampleSentence, q.jukugoWord) +
             "</div>";
         } else if (q.type === "stroke_count") {
           detail.innerHTML =
@@ -10796,6 +10801,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
           totalEarned: 0,
           newTotalPoints: null,
           logs: [],
+          pendingScoreItems: [],
           selectedChoice: null,
           nigateTraining: !!ctx.nigateTraining,
           nigateAxis: ctx.nigateAxis || null,
@@ -10879,7 +10885,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       }
       openKanjiLearningMenu();
     }
-    function showKanjiQuizResult(totalEarned, logs, isTrainingMode, newTotalPoints) {
+    function showKanjiQuizResult(totalEarned, logs, isTrainingMode, newTotalPoints, batchMeta) {
       restoreKanjiPracticeFrameIfMoved();
       document.body.classList.add('kanji-study-mode');
       switchSection('section-result');
@@ -10890,37 +10896,105 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       const sameBookBtn = document.getElementById('result-kanji-same-book-btn');
       const otherBookBtn = document.getElementById('result-kanji-other-book-btn');
       if (!rc || !retryBtn || !settingsBtn || !homeBtn) return;
-      const rows = (Array.isArray(logs) ? logs : []).map(function (v) {
-        const mark = v.isCorrect ? "○" : "×";
-        return `「${escapeHtml(v.kanji || "")}」 ${mark} ${Number(v.score || 0)}点 → +${Number(v.earned || 0).toFixed(2)}Pt`;
-      }).join("<br>");
-      const totalLine = (typeof newTotalPoints === "number" && !isNaN(newTotalPoints))
-        ? `<p style="margin-top:8px;">合計ポイント: ${Number(newTotalPoints).toFixed(2)}</p>`
-        : "";
-      var nigateBlock = "";
-      var ctxR = lastKanjiQuizContext;
-      if (ctxR && ctxR.nigateFeedbackSnapshot && ctxR.nigateTraining) {
-        var f = ctxR.nigateFeedbackSnapshot;
-        var p1 = f.strokeOrderClean
-          ? "手書きでは、かきじゅんの指摘はありませんでした。"
-          : "手書きで、かきじゅんに注意が出た回があります。";
-        var p2 = f.brushAllClear
-          ? "とめ・はね・はらいは、すべて問題なしと判定された手書きがありました（厳密モード時のみ有効です）。"
-          : "とめ・はね・はらいに注意が出た手書きがあります（厳密モード時）。";
-        nigateBlock =
-          '<div style="margin-top:14px;padding:10px;background:#f3e5f5;border-radius:8px;text-align:left;font-size:14px;line-height:1.5;color:#4a148c;"><strong>ニガテ特訓のまとめ</strong><br>' +
-          escapeHtml(p1) +
-          "<br>" +
-          escapeHtml(p2) +
-          "</div>";
+      function buildKanjiResultRowsHtml_(logRows) {
+        return (Array.isArray(logRows) ? logRows : []).map(function (v) {
+          const mark = v.isCorrect ? "○" : "×";
+          const label = v.jukugoWord
+            ? (escapeHtml(v.kanji || "") + "／" + escapeHtml(v.jukugoWord))
+            : escapeHtml(v.kanji || "");
+          return "「" + label + "」 " + mark + " " + Number(v.score || 0) + "点 → +" + Number(v.earned || 0).toFixed(2) + "Pt";
+        }).join("<br>");
       }
-      rc.innerHTML = `<h2 class="kanji-result-title">✨ 漢字セット完了！ ✨</h2>
-        <div class="kanji-result-scorebox">
-        <p class="kanji-result-pts">かくとくポイント: <span class="kanji-result-pts-val">+${Number(totalEarned || 0).toFixed(2)}</span></p>
-        <hr class="kanji-result-hr">
-        <div class="kanji-result-logs">${rows || "結果なし"}</div>
-        ${totalLine}
-        </div>` + nigateBlock;
+      function renderKanjiResultBody_(earned, logRows, totalPts, saveNoteHtml) {
+        const rows = buildKanjiResultRowsHtml_(logRows);
+        const totalLine = (typeof totalPts === "number" && !isNaN(totalPts))
+          ? '<p style="margin-top:8px;">合計ポイント: ' + Number(totalPts).toFixed(2) + "</p>"
+          : "";
+        var nigateBlock = "";
+        var ctxR = lastKanjiQuizContext;
+        if (ctxR && ctxR.nigateFeedbackSnapshot && ctxR.nigateTraining) {
+          var f = ctxR.nigateFeedbackSnapshot;
+          var p1 = f.strokeOrderClean
+            ? "手書きでは、かきじゅんの指摘はありませんでした。"
+            : "手書きで、かきじゅんに注意が出た回があります。";
+          var p2 = f.brushAllClear
+            ? "とめ・はね・はらいは、すべて問題なしと判定された手書きがありました（厳密モード時のみ有効です）。"
+            : "とめ・はね・はらいに注意が出た手書きがあります（厳密モード時）。";
+          nigateBlock =
+            '<div style="margin-top:14px;padding:10px;background:#f3e5f5;border-radius:8px;text-align:left;font-size:14px;line-height:1.5;color:#4a148c;"><strong>ニガテ特訓のまとめ</strong><br>' +
+            escapeHtml(p1) +
+            "<br>" +
+            escapeHtml(p2) +
+            "</div>";
+        }
+        rc.innerHTML =
+          '<h2 class="kanji-result-title">✨ 漢字セット完了！ ✨</h2>' +
+          '<div class="kanji-result-scorebox">' +
+          '<p class="kanji-result-pts">かくとくポイント: <span class="kanji-result-pts-val">+' +
+          Number(earned || 0).toFixed(2) +
+          "</span></p>" +
+          '<hr class="kanji-result-hr">' +
+          '<div class="kanji-result-logs">' +
+          (rows || "結果なし") +
+          "</div>" +
+          totalLine +
+          (saveNoteHtml || "") +
+          "</div>" +
+          nigateBlock;
+      }
+      renderKanjiResultBody_(
+        totalEarned,
+        logs,
+        newTotalPoints,
+        '<p id="kanji-result-save-note" style="margin-top:8px;color:#607d8b;font-size:13px;">結果を保存しています…</p>'
+      );
+      const pendingMeta = batchMeta && typeof batchMeta === "object" ? batchMeta : null;
+      if (pendingMeta && Array.isArray(pendingMeta.pendingScoreItems) && pendingMeta.pendingScoreItems.length) {
+        flushKanjiQuizBatchScores_(pendingMeta)
+          .then(function (d) {
+            const itemEarned = Array.isArray(d.itemEarned) ? d.itemEarned : [];
+            const nextLogs = (Array.isArray(logs) ? logs : []).map(function (row, i) {
+              const copy = Object.assign({}, row);
+              if (itemEarned[i] != null && !isNaN(Number(itemEarned[i]))) {
+                copy.earned = Number(itemEarned[i]);
+              }
+              return copy;
+            });
+            renderKanjiResultBody_(
+              Number(d.earnedPoints || 0),
+              nextLogs,
+              Number(d.newTotal),
+              '<p style="margin-top:8px;color:#2e7d32;font-size:13px;">結果を保存しました。</p>'
+            );
+            if (isTrainingMode) {
+              const trainMenuId =
+                (pendingMeta && pendingMeta.trainingMenuId) ||
+                (lastKanjiQuizContext && lastKanjiQuizContext.trainingMenuId) ||
+                currentTrainingMenuId;
+              if (trainMenuId) currentTrainingMenuId = trainMenuId;
+              const userNow = JSON.parse(localStorage.getItem("app_kid_user") || "null");
+              if (userNow && userNow.id) fetchTrainingRoute(userNow.id);
+              scheduleTrainingRouteAutoReturn(1200, trainMenuId);
+            }
+          })
+          .catch(function (e) {
+            console.warn("kanji batch save failed:", e);
+            const note = document.getElementById("kanji-result-save-note");
+            if (note) {
+              note.style.color = "#c62828";
+              note.textContent = "結果の保存に失敗しました。通信を確認して、同じセットをもう一度試してください。";
+            }
+          });
+      } else {
+        const note = document.getElementById("kanji-result-save-note");
+        if (note) note.remove();
+        if (isTrainingMode) {
+          scheduleTrainingRouteAutoReturn(
+            2200,
+            (lastKanjiQuizContext && lastKanjiQuizContext.trainingMenuId) || currentTrainingMenuId
+          );
+        }
+      }
       // 結果ページのボタンは、後続処理（再フェッチ・セクション切替・ホーム描画）が走るので
       // 多重タップで二重起動しないよう、押した瞬間にビジー化する。元画面に戻る場合は
       // それぞれの handler が switchSection を呼ぶため、ボタン要素は一旦非表示になる。
@@ -10967,10 +11041,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
             invalidateCache: false
           });
         });
-        scheduleTrainingRouteAutoReturn(
-          2200,
-          (lastKanjiQuizContext && lastKanjiQuizContext.trainingMenuId) || currentTrainingMenuId
-        );
+        // 自動復帰は一括保存完了後（flushKanjiQuizBatchScores_ 成功時）に行う
       } else if (lastKanjiQuizContext && lastKanjiQuizContext.nigateTraining) {
         settingsBtn.style.display = "block";
         settingsBtn.innerText = "🎯 ニガテ特訓にもどる";
@@ -11031,8 +11102,85 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       setKanjiQuizPlayHwFooterActive(false);
       switchSection(goNigate ? "section-kanji-nigate" : "section-kanji-quiz-sets");
     }
+    function estimateKanjiQuizProvisionalEarned_(scoreForServer, qType, earnedOverrideVal) {
+      if (earnedOverrideVal != null && !isNaN(Number(earnedOverrideVal))) {
+        return roundKanjiPtOneDecimal_(earnedOverrideVal);
+      }
+      const s = Number(scoreForServer) || 0;
+      if (s >= 90) return 10;
+      if (s >= 80) return 5;
+      if (s >= 70) return 4;
+      if (s >= 60) return 3;
+      if (s >= 50) return 1;
+      return 0;
+    }
+    function flushKanjiQuizBatchScores_(meta) {
+      const user = JSON.parse(localStorage.getItem("app_kid_user") || "null");
+      if (!user || !user.id) {
+        return Promise.resolve({ status: "error", message: "ログイン情報が見つかりません。" });
+      }
+      const items = Array.isArray(meta && meta.pendingScoreItems) ? meta.pendingScoreItems : [];
+      if (!items.length) {
+        return Promise.resolve({ status: "success", earnedPoints: 0, newTotal: user.points, itemEarned: [] });
+      }
+      const kanjiSetScopeId =
+        "KANJI_" + meta.modeName + "_" + meta.unitName + "_SET" + meta.setId;
+      const payload = {
+        action: "save_learning_session",
+        userId: user.id,
+        unitId: kanjiSetScopeId,
+        unitSheetName: meta.unitName,
+        isReviewMode: false,
+        isRandom: false,
+        results: [],
+        learningCategory: "kanji",
+        challengeType: "score",
+        kanjiSetScopeId: kanjiSetScopeId,
+        kanjiScoreBatch: items,
+        sessionSubmitId: "kj_batch_" + kanjiSetScopeId + "_" + Date.now()
+      };
+      if (meta.isTrainingMode) {
+        payload.trainingStepIndex = meta.trainingStepIndex;
+        payload.trainingMenuId = meta.trainingMenuId;
+      }
+      function postBatch(retryCount) {
+        return fetch(GAS_API_URL, { method: "POST", body: JSON.stringify(payload) })
+          .then(function (r) { return r.json(); })
+          .catch(function (e) {
+            const msg = String((e && (e.message || e)) || "");
+            const canRetry = retryCount > 0 && /Load failed|Failed to fetch|NetworkError|fetch/i.test(msg);
+            if (!canRetry) throw e;
+            return new Promise(function (resolve) { setTimeout(resolve, 450); }).then(function () {
+              return postBatch(retryCount - 1);
+            });
+          });
+      }
+      return postBatch(1).then(function (d) {
+        if (!d || d.status !== "success") throw new Error((d && d.message) || "一括保存に失敗");
+        if (d.kanjiChallengePatches && typeof d.kanjiChallengePatches === "object") {
+          Object.keys(d.kanjiChallengePatches).forEach(function (ch) {
+            mergeKanjiChallengePatchClient(ch, d.kanjiChallengePatches[ch]);
+          });
+        } else if (d.kanjiChallengeChar && d.kanjiChallengePatch) {
+          mergeKanjiChallengePatchClient(d.kanjiChallengeChar, d.kanjiChallengePatch);
+        }
+        if (d.trainingProgressJson) {
+          user.trainingProgressJson = d.trainingProgressJson;
+          const trainMenuId = meta.trainingMenuId || currentTrainingMenuId;
+          invalidateTrainingRouteCache(trainMenuId);
+          applyLocalTrainingProgress(d.trainingProgressJson, trainMenuId);
+        }
+        user.points = d.newTotal;
+        saveAppKidUserToLocal(user);
+        const ptsEl = document.getElementById("user-points");
+        if (ptsEl) ptsEl.innerText = String(d.newTotal);
+        try { showKanjiEarnedPointsToast(d.earnedPoints); } catch (ePt) {}
+        return d;
+      });
+    }
     function submitKanjiQuizScore() {
       if (!kanjiQuizSession) return;
+      if (__kanjiQuizSubmitInFlight) return;
       const q = kanjiQuizSession.questions[kanjiQuizSession.index];
       if (!q) return;
       if (!q.type) {
@@ -11124,7 +11272,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         }
       }
       kanjiQuizSession.selectedChoice = null;
-      const user = JSON.parse(localStorage.getItem('app_kid_user') || 'null');
+      const user = JSON.parse(localStorage.getItem("app_kid_user") || "null");
       if (!user || !user.id) {
         alert("ログイン情報が見つかりません。");
         try {
@@ -11132,45 +11280,50 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         } catch (_eSkip) {}
         return;
       }
-      if (__kanjiQuizSubmitInFlight) return;
       __kanjiQuizSubmitInFlight = true;
-      // 「こたえを決定」ボタンを送信中＝多重タップ不可＋ローディング表示にする。
-      // ruby_to_kanji（書き取り）は専用の handwriting submit ボタンが別途ビジー化されるため、
-      // ここではそのほかの形式（送りがな選択／読みタイピング／画数）でだけ意味がある。
       var __kjSubmitBtn = document.getElementById("kanji-play-submit-btn");
       if (__kjSubmitBtn && !isKanjiQuizHandwritingQuestionType_(q.type)) {
-        startKanjiActionBusy(__kjSubmitBtn, "おくっています");
+        startKanjiActionBusy(__kjSubmitBtn, "つぎへ");
       }
-      const qid = q.questionId || (`${q.kanji}_${kanjiQuizSession.index}_${q.type}`);
-      const unitId = `KANJI_${kanjiQuizSession.modeName}_${kanjiQuizSession.unitName}_SET${kanjiQuizSession.setId}_${qid}`;
-      const kanjiSetScopeId = `KANJI_${kanjiQuizSession.modeName}_${kanjiQuizSession.unitName}_SET${kanjiQuizSession.setId}`;
-      const payload = {
-        action: "save_learning_session",
-        userId: user.id,
+      const qid = q.questionId || (q.kanji + "_" + kanjiQuizSession.index + "_" + q.type);
+      const unitId =
+        "KANJI_" +
+        kanjiQuizSession.modeName +
+        "_" +
+        kanjiQuizSession.unitName +
+        "_SET" +
+        kanjiQuizSession.setId +
+        "_" +
+        qid;
+      const provisionalEarned = estimateKanjiQuizProvisionalEarned_(
+        scoreForServer,
+        q.type,
+        earnedOverrideVal
+      );
+      const pendingItem = {
         unitId: unitId,
-        unitSheetName: kanjiQuizSession.unitName,
-        isReviewMode: false,
-        isRandom: false,
-        results: [],
-        learningCategory: "kanji",
-        challengeType: "score",
         kanjiChar: q.kanji,
         score: scoreForServer,
         questionId: qid,
         questionCorrect: isCorrect,
-        kanjiSetScopeId: kanjiSetScopeId,
-        kanjiSetContinuation: kanjiQuizSession.index > 0,
         kanjiQuestionType: q.type || "",
         kanjiScriptBonusMult: scriptBonusMult
       };
       if (earnedOverrideVal != null && !isNaN(Number(earnedOverrideVal))) {
-        payload.earnedOverride = earnedOverrideVal;
+        pendingItem.earnedOverride = earnedOverrideVal;
       }
-      if (kanjiQuizSession.isTrainingMode) {
-        payload.trainingStepIndex = kanjiQuizSession.trainingStepIndex;
-        payload.trainingMenuId = kanjiQuizSession.trainingMenuId;
-      }
-      const summary = document.getElementById('kanji-play-summary');
+      if (!Array.isArray(kanjiQuizSession.pendingScoreItems)) kanjiQuizSession.pendingScoreItems = [];
+      kanjiQuizSession.pendingScoreItems.push(pendingItem);
+      kanjiQuizSession.totalEarned += provisionalEarned;
+      kanjiQuizSession.logs.push({
+        kanji: q.kanji,
+        jukugoWord: q.jukugoWord || "",
+        score: scoreForServer,
+        earned: provisionalEarned,
+        isCorrect: isCorrect,
+        qType: q.type
+      });
+      const summary = document.getElementById("kanji-play-summary");
       if (summary) {
         if (isCorrect && q.type === "sentence_to_ruby" && scriptBonusMult < 1) {
           var hintScript = q.readingKind === "on"
@@ -11179,115 +11332,31 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
           summary.innerHTML =
             '<span style="color:#FFD54F;">せいかい！（ただし表記がちがうため <strong>半分点</strong>）<br><span style="font-size:0.85em;color:#FFE082;">' +
             escapeHtml(hintScript) +
-            '</span></span>';
+            "</span></span>";
         } else if (isCorrect) {
           summary.innerHTML = '<span style="color:#69F0AE;">せいかい！</span>';
         } else {
-          summary.innerHTML =
-            '<span style="color:#FF8A80;">ざんねん… 次はがんばろう</span>';
+          summary.innerHTML = '<span style="color:#FF8A80;">ざんねん… 次はがんばろう</span>';
         }
       }
-      function postKanjiScoreWithRetry(retryCount) {
-        return fetch(GAS_API_URL, { method: 'POST', body: JSON.stringify(payload) })
-          .then(function (r) { return r.json(); })
-          .catch(function (e) {
-            const msg = String((e && (e.message || e)) || "");
-            const canRetry = retryCount > 0 && /Load failed|Failed to fetch|NetworkError|fetch/i.test(msg);
-            if (!canRetry) throw e;
-            return new Promise(function (resolve) {
-              setTimeout(resolve, 450);
-            }).then(function () {
-              return postKanjiScoreWithRetry(retryCount - 1);
-            });
-          });
-      }
-      postKanjiScoreWithRetry(1).then(d => {
-        if (d.status !== "success") throw new Error(d.message || "保存に失敗");
-        try {
-          showKanjiEarnedPointsToast(d.earnedPoints);
-        } catch (ePt) {}
-        kanjiQuizSession.totalEarned += Number(d.earnedPoints || 0);
-        kanjiQuizSession.newTotalPoints = Number(d.newTotal);
-        kanjiQuizSession.logs.push({
-          kanji: q.kanji,
-          score: scoreForServer,
-          earned: Number(d.earnedPoints || 0),
-          isCorrect: isCorrect,
-          qType: q.type
-        });
-        if (d.kanjiChallengeChar && d.kanjiChallengePatch) {
-          mergeKanjiChallengePatchClient(d.kanjiChallengeChar, d.kanjiChallengePatch);
-        }
-        if (d.trainingProgressJson) {
-          user.trainingProgressJson = d.trainingProgressJson;
-          const trainMenuId = (kanjiQuizSession && kanjiQuizSession.trainingMenuId) || currentTrainingMenuId;
-          invalidateTrainingRouteCache(trainMenuId);
-          applyLocalTrainingProgress(d.trainingProgressJson, trainMenuId);
-        }
-        user.points = d.newTotal;
-        saveAppKidUserToLocal(user);
-        const ptsEl = document.getElementById("user-points");
-        if (ptsEl) ptsEl.innerText = String(d.newTotal);
-        function advanceKanjiQuizAfterScore() {
-          try {
-            kanjiQuizClearWritePad(true);
-            kanjiQuizSetupWriteCanvas();
-          } catch (ePreAdv) {}
-          kanjiQuizSession.index += 1;
-          if (kanjiQuizSession.index >= kanjiQuizSession.questions.length) {
-            const finished = {
-              totalEarned: kanjiQuizSession.totalEarned,
-              logs: kanjiQuizSession.logs.slice(),
-              isTrainingMode: !!kanjiQuizSession.isTrainingMode,
-              newTotalPoints: Number(kanjiQuizSession.newTotalPoints)
-            };
-            const nFb = kanjiQuizSession.nigateTraining ? kanjiQuizSession.nigateFeedback : null;
-            if (lastKanjiQuizContext && nFb) {
-              lastKanjiQuizContext.nigateFeedbackSnapshot = nFb;
-            }
-            if (kanjiQuizSession.isTrainingMode) {
-              const trainMenuId = kanjiQuizSession.trainingMenuId || currentTrainingMenuId;
-              if (trainMenuId) currentTrainingMenuId = trainMenuId;
-              invalidateTrainingRouteCache(trainMenuId);
-              if (user.trainingProgressJson) {
-                applyLocalTrainingProgress(user.trainingProgressJson, trainMenuId);
-              }
-              fetchTrainingRoute(user.id);
-            }
-            kanjiQuizSession = null;
-            clearKanjiQuizRecoveryDraft();
-            showKanjiQuizResult(finished.totalEarned, finished.logs, finished.isTrainingMode, finished.newTotalPoints);
-            return;
-          }
-          saveKanjiQuizRecoveryDraft();
-          renderKanjiQuizQuestion();
-        }
-        kanjiQuizHandleNigateAfterScore(q, isCorrect, scoreForServer, advanceKanjiQuizAfterScore);
-      }).catch(e => {
-        console.warn("kanji save failed, continue quiz:", e);
-        const summaryEl = document.getElementById('kanji-play-summary');
-        if (summaryEl) {
-          summaryEl.innerHTML = '<span style="color:#FF9800;">通信が不安定です。保存はあとで再試行し、次の問題へ進みます。</span>';
-        }
-        kanjiQuizSession.logs.push({
-          kanji: q.kanji,
-          score: scoreForServer,
-          earned: 0,
-          isCorrect: isCorrect,
-          qType: q.type,
-          saveFailed: true
-        });
+      function advanceKanjiQuizAfterScore() {
         try {
           kanjiQuizClearWritePad(true);
           kanjiQuizSetupWriteCanvas();
-        } catch (ePreAdv2) {}
+        } catch (ePreAdv) {}
         kanjiQuizSession.index += 1;
         if (kanjiQuizSession.index >= kanjiQuizSession.questions.length) {
           const finished = {
             totalEarned: kanjiQuizSession.totalEarned,
             logs: kanjiQuizSession.logs.slice(),
             isTrainingMode: !!kanjiQuizSession.isTrainingMode,
-            newTotalPoints: Number(kanjiQuizSession.newTotalPoints)
+            newTotalPoints: Number(kanjiQuizSession.newTotalPoints),
+            pendingScoreItems: (kanjiQuizSession.pendingScoreItems || []).slice(),
+            modeName: kanjiQuizSession.modeName,
+            unitName: kanjiQuizSession.unitName,
+            setId: kanjiQuizSession.setId,
+            trainingStepIndex: kanjiQuizSession.trainingStepIndex,
+            trainingMenuId: kanjiQuizSession.trainingMenuId
           };
           const nFb = kanjiQuizSession.nigateTraining ? kanjiQuizSession.nigateFeedback : null;
           if (lastKanjiQuizContext && nFb) {
@@ -11296,30 +11365,32 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
           if (kanjiQuizSession.isTrainingMode) {
             const trainMenuId = kanjiQuizSession.trainingMenuId || currentTrainingMenuId;
             if (trainMenuId) currentTrainingMenuId = trainMenuId;
-            invalidateTrainingRouteCache(trainMenuId);
-            if (user.trainingProgressJson) {
-              applyLocalTrainingProgress(user.trainingProgressJson, trainMenuId);
-            }
-            fetchTrainingRoute(user.id);
           }
           kanjiQuizSession = null;
           clearKanjiQuizRecoveryDraft();
-          showKanjiQuizResult(finished.totalEarned, finished.logs, finished.isTrainingMode, finished.newTotalPoints);
+          showKanjiQuizResult(
+            finished.totalEarned,
+            finished.logs,
+            finished.isTrainingMode,
+            finished.newTotalPoints,
+            finished
+          );
           return;
         }
         saveKanjiQuizRecoveryDraft();
         renderKanjiQuizQuestion();
-      }).finally(function () {
+      }
+      try {
+        kanjiQuizHandleNigateAfterScore(q, isCorrect, scoreForServer, advanceKanjiQuizAfterScore);
+      } finally {
         __kanjiQuizSubmitInFlight = false;
-        // ボタンを必ず元のラベルに戻す（次の問題が render されると別のボタン状態が再構築されるが、
-        // たまに同じボタン要素を再利用するケースがあるため明示的に戻す）。
         try {
           if (__kjSubmitBtn) stopKanjiActionBusy(__kjSubmitBtn);
         } catch (_eRestoreBtn) {}
         try {
           stopKanjiActionBusy(document.getElementById("kanji-quiz-skip-hw-btn"));
         } catch (_eSkipHw) {}
-      });
+      }
     }
     function loadQuestionsForSettings(btn, mId, mName, uName, categoryHint) { 
       const origText = toggleBtnLoading(btn, true); 

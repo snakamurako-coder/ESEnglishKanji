@@ -2542,51 +2542,92 @@ function handleSaveLearningSession(req) {
   let sessionRawPoints = 0;
   const resultsList = Array.isArray(req.results) ? req.results : [];
   let unitHistory = {};
-  const isKanjiScoreSession = req.learningCategory === "kanji" && req.challengeType === "score" && req.kanjiChar;
+  const kanjiScoreBatch = Array.isArray(req.kanjiScoreBatch) ? req.kanjiScoreBatch : null;
+  const isKanjiScoreBatch = req.learningCategory === "kanji" && req.challengeType === "score" && kanjiScoreBatch && kanjiScoreBatch.length;
+  const isKanjiScoreSession = req.learningCategory === "kanji" && req.challengeType === "score" && req.kanjiChar && !isKanjiScoreBatch;
   let kanjiView = null;
+  let itemEarnedList = null;
+  const sheetPointPercent = parseUnitSheetPointPercent_(req.unitSheetName);
 
   if (useEnglishHistorySheet) {
     unitHistory = loadEnglishUnitHistoryWithMigration_(adminSs, req.userId, unitId, userData.historyJson[unitId]);
     if (userData.historyJson[unitId]) delete userData.historyJson[unitId];
-  } else {
+  } else if (!isKanjiScoreBatch) {
     if (!userData.historyJson[unitId]) userData.historyJson[unitId] = {};
     unitHistory = userData.historyJson[unitId];
   }
 
-  if (isKanjiScoreSession) {
-    kanjiView = buildKanjiHistoryView_(adminSs, req.userId, userData.historyJson);
-    const settings = getAppSettingsMap_(adminSs);
-    const charKey = String(req.kanjiChar);
-    const score = Number(req.score) || 0;
-    const earnedOverride = req.earnedOverride;
+  function applyOneKanjiScoreItem_(item, itemMultiplier, settings, view) {
+    const charKey = String(item.kanjiChar || "");
+    if (!charKey) return 0;
+    const score = Number(item.score) || 0;
+    const earnedOverride = item.earnedOverride;
     const hasEarnedOverride = earnedOverride != null && earnedOverride !== "" && !isNaN(Number(earnedOverride));
     let basePt = 0;
     if (hasEarnedOverride) {
       basePt = Math.round(Number(earnedOverride) * 10) / 10;
     } else {
-      basePt = getKanjiBasePointsByScore_(score, settings, req.kanjiQuestionType);
+      basePt = getKanjiBasePointsByScore_(score, settings, item.kanjiQuestionType);
     }
-    if (!kanjiView.__kanjiChallenge) kanjiView.__kanjiChallenge = {};
-    if (!kanjiView.__kanjiChallenge[charKey]) kanjiView.__kanjiChallenge[charKey] = { highScoreDates: [] };
-    const cHist = kanjiView.__kanjiChallenge[charKey];
+    if (!view.__kanjiChallenge) view.__kanjiChallenge = {};
+    if (!view.__kanjiChallenge[charKey]) view.__kanjiChallenge[charKey] = { highScoreDates: [] };
+    const cHist = view.__kanjiChallenge[charKey];
     if (!Array.isArray(cHist.highScoreDates)) cHist.highScoreDates = [];
     const recoveryRate = calcKanjiCharRecoveryRate_(cHist.highScoreDates, now, settings);
-    sessionRawPoints = Math.round(basePt * recoveryRate * 100) / 100;
-    // 手書きの実スコアなどで60未満なら高得点カウントしない（アプリ設定の「合格」相当）
+    let raw = Math.round(basePt * recoveryRate * 100) / 100;
+    let earned = Math.round((raw * itemMultiplier) * 100) / 100;
+    if (sheetPointPercent !== 100) {
+      earned = Math.round(earned * (sheetPointPercent / 100) * 100) / 100;
+    }
+    earned = Math.max(0, earned);
     if (score >= 60) cHist.highScoreDates.push(now.toISOString());
     const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     cHist.highScoreDates = cHist.highScoreDates
-      .map(v => new Date(v))
-      .filter(d => !isNaN(d.getTime()) && d >= weekAgo)
-      .map(d => d.toISOString());
-    const qHistId = req.questionId;
-    if (qHistId) {
-      if (!unitHistory[qHistId]) unitHistory[qHistId] = { results: [], times: [] };
-      unitHistory[qHistId].results.push(req.questionCorrect === true ? 1 : 0);
-      if (unitHistory[qHistId].results.length > 10) unitHistory[qHistId].results.shift();
-      unitHistory[qHistId].times.push(typeof req.timeSec === "number" ? req.timeSec : 0);
-      if (unitHistory[qHistId].times.length > 10) unitHistory[qHistId].times.shift();
+      .map(function (v) { return new Date(v); })
+      .filter(function (d) { return !isNaN(d.getTime()) && d >= weekAgo; })
+      .map(function (d) { return d.toISOString(); });
+    const itemUnitId = String(item.unitId || unitId || "");
+    const qHistId = item.questionId;
+    if (itemUnitId && qHistId) {
+      if (!userData.historyJson[itemUnitId]) userData.historyJson[itemUnitId] = {};
+      const uh = userData.historyJson[itemUnitId];
+      if (!uh[qHistId]) uh[qHistId] = { results: [], times: [] };
+      uh[qHistId].results.push(item.questionCorrect === true ? 1 : 0);
+      if (uh[qHistId].results.length > 10) uh[qHistId].results.shift();
+      uh[qHistId].times.push(typeof item.timeSec === "number" ? item.timeSec : 0);
+      if (uh[qHistId].times.length > 10) uh[qHistId].times.shift();
     }
+    return earned;
+  }
+
+  if (isKanjiScoreBatch) {
+    kanjiView = buildKanjiHistoryView_(adminSs, req.userId, userData.historyJson);
+    const settings = getAppSettingsMap_(adminSs);
+    itemEarnedList = [];
+    let batchTotal = 0;
+    kanjiScoreBatch.forEach(function (item, idx) {
+      // 従来どおり：セット先頭のみ時間減衰倍率、2問目以降は continuation 相当で 1.0
+      const itemMult = idx === 0 ? multiplier : 1.0;
+      const earned = applyOneKanjiScoreItem_(item || {}, itemMult, settings, kanjiView);
+      itemEarnedList.push(earned);
+      batchTotal += earned;
+    });
+    sessionRawPoints = batchTotal;
+  } else if (isKanjiScoreSession) {
+    kanjiView = buildKanjiHistoryView_(adminSs, req.userId, userData.historyJson);
+    const settings = getAppSettingsMap_(adminSs);
+    const oneEarned = applyOneKanjiScoreItem_({
+      kanjiChar: req.kanjiChar,
+      score: req.score,
+      earnedOverride: req.earnedOverride,
+      kanjiQuestionType: req.kanjiQuestionType,
+      questionId: req.questionId,
+      questionCorrect: req.questionCorrect,
+      timeSec: req.timeSec,
+      unitId: unitId
+    }, multiplier, settings, kanjiView);
+    sessionRawPoints = oneEarned;
+    itemEarnedList = [oneEarned];
   } else {
     resultsList.forEach(function (res, idx) {
       if (res && res.isCorrect) {
@@ -2601,16 +2642,21 @@ function handleSaveLearningSession(req) {
     saveEnglishUnitHistory_(adminSs, req.userId, unitId, unitHistory, now.toISOString());
   }
 
-  if (isKanjiScoreSession && kanjiView) {
+  if ((isKanjiScoreSession || isKanjiScoreBatch) && kanjiView) {
     persistKanjiHistoryView_(adminSs, req.userId, kanjiView, now.toISOString());
   }
 
   stripKanjiAndEnglishFromHistoryJson_(userData.historyJson);
 
-  let earnedPoints = Math.round((sessionRawPoints * multiplier) * 100) / 100;
-  const sheetPointPercent = parseUnitSheetPointPercent_(req.unitSheetName);
-  if (sheetPointPercent !== 100) {
-    earnedPoints = Math.round(earnedPoints * (sheetPointPercent / 100) * 100) / 100;
+  let earnedPoints;
+  if (isKanjiScoreSession || isKanjiScoreBatch) {
+    // applyOneKanjiScoreItem_ 側で倍率・シート補正済み
+    earnedPoints = Math.round(Number(sessionRawPoints) * 100) / 100;
+  } else {
+    earnedPoints = Math.round((sessionRawPoints * multiplier) * 100) / 100;
+    if (sheetPointPercent !== 100) {
+      earnedPoints = Math.round(earnedPoints * (sheetPointPercent / 100) * 100) / 100;
+    }
   }
   earnedPoints = Math.max(0, earnedPoints);
   const newTotalPoints = Math.round((userData.points + earnedPoints) * 100) / 100;
@@ -2645,6 +2691,7 @@ function handleSaveLearningSession(req) {
     bonusApplied: req.isRandom,
     sheetPointPercent: sheetPointPercent
   };
+  if (itemEarnedList) resp.itemEarned = itemEarnedList;
   if (lastStudyKey) {
     resp.lastStudyKey = lastStudyKey;
     resp.lastStudyAt = now.toISOString();
@@ -2652,12 +2699,17 @@ function handleSaveLearningSession(req) {
   if (req.trainingStepIndex) {
     resp.trainingProgressJson = userData.trainingProgressJson;
   }
-  if (req.learningCategory === "kanji" && req.challengeType === "score" && req.kanjiChar && kanjiView) {
-    const charKey = String(req.kanjiChar);
+  if ((isKanjiScoreSession || isKanjiScoreBatch) && kanjiView) {
     const kRoot = kanjiView.__kanjiChallenge || {};
-    if (kRoot[charKey]) {
-      resp.kanjiChallengeChar = charKey;
-      resp.kanjiChallengePatch = kRoot[charKey];
+    if (isKanjiScoreBatch) {
+      resp.kanjiChallengePatches = {};
+      kanjiScoreBatch.forEach(function (item) {
+        const ck = String((item && item.kanjiChar) || "");
+        if (ck && kRoot[ck]) resp.kanjiChallengePatches[ck] = kRoot[ck];
+      });
+    } else if (req.kanjiChar && kRoot[String(req.kanjiChar)]) {
+      resp.kanjiChallengeChar = String(req.kanjiChar);
+      resp.kanjiChallengePatch = kRoot[String(req.kanjiChar)];
     }
   }
   return sendResponse(resp);
@@ -4075,6 +4127,11 @@ function parseKanjiJukugoSheet_(sheet) {
         category: category || "未分類",
         example: example
       });
+      // セット内のターゲット漢字一覧用（先頭行だけだと欠ける）
+      if (!groupsMap[setId].targetKanjiList) groupsMap[setId].targetKanjiList = [];
+      if (groupsMap[setId].targetKanjiList.indexOf(targetKanji) < 0) {
+        groupsMap[setId].targetKanjiList.push(targetKanji);
+      }
     });
   }
   const groups = order.map(function (setId) {
@@ -4159,10 +4216,11 @@ function buildJukugoYomiQuizQuestion_(entry, pool, opts) {
     type: "jukugo_yomi",
     kanji: entry.targetKanji,
     rowIndex: entry.rowIndex,
+    slot: entry.slot || "",
     jukugoWord: entry.word,
     category: entry.category,
     exampleSentence: entry.example,
-    prompt: "例文の下線の漢字の読み方を選びましょう。",
+    prompt: "例文の下線の熟語の読み方を選びましょう。",
     choices: choices,
     choicesDisplay: choicesDisplay,
     correctAnswer: correctAnswer,
@@ -4233,10 +4291,24 @@ function buildStrokeOrderQuizProblemList_(group) {
 function buildJukugoQuizProblemList_(group, opts) {
   const entries = group.entries || [];
   if (!entries.length) return [];
+  // 同じ行の熟語ABCのうち、1回のセット取り組みではいずれか1つだけ出題する
+  const byRow = {};
+  const rowOrder = [];
+  entries.forEach(function (entry) {
+    const key = String(entry.rowIndex);
+    if (!byRow[key]) {
+      byRow[key] = [];
+      rowOrder.push(key);
+    }
+    byRow[key].push(entry);
+  });
   const pool = collectJukugoReadingPool_(entries);
   const list = [];
-  entries.forEach(function (entry) {
-    const q = buildJukugoYomiQuizQuestion_(entry, pool, opts);
+  rowOrder.forEach(function (key) {
+    const candidates = byRow[key];
+    if (!candidates || !candidates.length) return;
+    const pick = candidates[Math.floor(Math.random() * candidates.length)];
+    const q = buildJukugoYomiQuizQuestion_(pick, pool, opts);
     if (q) list.push(q);
   });
   const shuffled = shuffleKanjiQuizArray_(list);
@@ -4244,7 +4316,7 @@ function buildJukugoQuizProblemList_(group, opts) {
     const base = Object.assign({}, q);
     base.questionIndex = i;
     base.questionId =
-      "JUKUGO_Q_" + String(group.setId) + "_" + q.rowIndex + "_" + q.type + "_" + i;
+      "JUKUGO_Q_" + String(group.setId) + "_" + q.rowIndex + "_" + (q.slot || "") + "_" + q.type + "_" + i;
     return base;
   });
 }
@@ -4299,7 +4371,18 @@ function handleGetKanjiQuizSets(req) {
     const sheetKind = parsed.sheetKind || "standard";
     const sets = parsed.groups.map(function (g) {
       if (sheetKind === "jukugo") {
-        return { setId: g.setId, count: g.entries.length, kanjiList: [g.targetKanji] };
+        const rowSeen = {};
+        let rowCount = 0;
+        (g.entries || []).forEach(function (e) {
+          const rk = String(e.rowIndex);
+          if (rowSeen[rk]) return;
+          rowSeen[rk] = true;
+          rowCount++;
+        });
+        const kanjiList = Array.isArray(g.targetKanjiList) && g.targetKanjiList.length
+          ? g.targetKanjiList.slice()
+          : [g.targetKanji].filter(Boolean);
+        return { setId: g.setId, count: rowCount, kanjiList: kanjiList };
       }
       return { setId: g.setId, count: g.items.length, kanjiList: g.items.map(function (it) { return it.kanji; }) };
     });
