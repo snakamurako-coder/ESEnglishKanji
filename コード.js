@@ -62,6 +62,11 @@ function getDefaultAppSettingsRows_() {
     ["漢字基本Pt_画数_70以上", 4],
     ["漢字基本Pt_画数_60以上", 3],
     ["漢字基本Pt_画数_50以上", 1],
+    ["漢字書き順_画数倍率", 1],
+    ["漢字書き順_練習点", 5],
+    ["漢字熟語読み_基礎点", 1],
+    ["漢字熟語読み_選択肢倍率", 1],
+    ["漢字熟語読み_無し選択肢ボーナス", 2],
     ["trajectory", 40],
     ["startEnd", 15],
     ["structure", 20],
@@ -485,6 +490,9 @@ function setupSystem() {
       props.setProperty('KANJI_SHEET_ID', info.sheetId);
       logMessage += "✅ KANJI_SHEET_ID をサンプルブックに設定しました。\n";
     }
+    const jukugoInfo = ensureKanjiJukugoSampleBook_(kanjiFolder);
+    if (jukugoInfo.created) logMessage += "✅ 漢字熟語ブックを作成しました。\n";
+    if (jukugoInfo.headerFixed) logMessage += "✅ 漢字熟語ブックの見出し行を整えました。\n";
   }
 
   let adminSs;
@@ -725,6 +733,67 @@ function ensureKanjiSampleBook_(kanjiFolder) {
       [1, "王", "×", "×", "×", "×", "×", "×", "×", "×", "×", "×", "×", "×", "おう", "王さまにあう。", "王女さまをみる。", "×", "×", "×", "×", "×", "×", "×", "×", "×"],
       [1, "音", "おと", "音がなる。", "足音をきく。", "ね", "虫の音をきく。", "本音をいう。", "×", "×", "×", "×", "×", "×", "おん", "はつ音がよい。", "おん楽をきく。", "×", "×", "×", "×", "×", "×", "×", "×", "×"],
       [1, "下", "した", "下をむく。", "くつ下をはく。", "さ", "あたまを下げる。", "手を下げる。", "くだ", "さかを下る。", "川を下る。", "お", "山を下りる。", "木から下りる。", "か", "上下する。", "下きゅう生だ。", "げ", "下こうする。", "下しゃする。", "×", "×", "×", "×", "×", "×"]
+    ];
+    sheet.getRange(2, 1, rows.length, header.length).setValues(rows);
+  }
+  return out;
+}
+
+function ensureKanjiJukugoSampleBook_(kanjiFolder) {
+  const out = { created: false, headerFixed: false, sheetId: "" };
+  const bookName = "漢字熟語ブック";
+  let sampleFile = null;
+  const files = kanjiFolder.getFilesByType(MimeType.GOOGLE_SHEETS);
+  while (files.hasNext()) {
+    const f = files.next();
+    if (String(f.getName()) === bookName) {
+      sampleFile = f;
+      break;
+    }
+  }
+  let ss;
+  if (!sampleFile) {
+    ss = SpreadsheetApp.create(bookName);
+    sampleFile = DriveApp.getFileById(ss.getId());
+    sampleFile.moveTo(kanjiFolder);
+    out.created = true;
+  } else {
+    ss = SpreadsheetApp.openById(sampleFile.getId());
+  }
+  out.sheetId = ss.getId();
+
+  let sheet = ss.getSheetByName("小１");
+  if (!sheet) {
+    sheet = ss.getSheets()[0] || ss.insertSheet("小１");
+    sheet.setName("小１");
+  }
+  const header = [
+    "セット", "ターゲット漢字",
+    "漢字熟語A", "A読み", "A区分", "A例文",
+    "漢字熟語B", "B読み", "B区分", "B例文",
+    "漢字熟語C", "C読み", "C区分", "C例文"
+  ];
+  const data = sheet.getDataRange().getValues();
+  const headNow = (data[0] || []).map(function (v) { return String(v || "").trim(); });
+  const sameHeader = headNow.length >= header.length && header.every(function (h, i) { return headNow[i] === h; });
+  if (!sameHeader) {
+    sheet.clear();
+    sheet.getRange(1, 1, 1, header.length).setValues([header]);
+    out.headerFixed = true;
+  }
+  const hasRows = sheet.getLastRow() > 1;
+  if (!hasRows) {
+    const rows = [
+      [1, "引", "引力", "いんりょく", "漢語", "引力がはたらく。", "引く", "ひく", "和語", "つなを引く。", "万引き", "まんびき", "混種語", "万引きはわるいことだ。"],
+      [1, "羽", "羽毛", "うもう", "漢語", "羽毛のふとん。", "羽", "はね", "和語", "鳥の羽。", "白羽", "しらは", "和語", "白羽の矢。"],
+      [1, "雲", "雲海", "うんかい", "漢語", "雲海を見る。", "雲", "くも", "和語", "白い雲。", "雨雲", "あまぐも", "和語", "雨雲が出る。"],
+      [1, "園", "公園", "こうえん", "漢語", "公園であそぶ。", "園", "その", "和語", "花の園。", "花園", "はなぞの", "和語", "花園を歩く。"],
+      [1, "遠", "遠足", "えんそく", "漢語", "遠足に行く。", "遠い", "とおい", "和語", "遠い国。", "遠出", "とおで", "和語", "休みに遠出する。"],
+      [1, "何", "何回", "なんかい", "混種語", "何回も言う。", "何", "なに,なん", "和語", "何を食べる。", "何日", "なんにち", "混種語", "何日かかかる。"],
+      [1, "科", "理科", "りか", "漢語", "理科の時間。", "学科", "がっか", "漢語", "学科のテスト。", "×", "×", "×", "×"],
+      [1, "夏", "春夏", "しゅんか", "漢語", "春夏と秋冬。", "夏", "なつ", "和語", "夏の海。", "夏休み", "なつやすみ", "和語", "夏休みがくる。"],
+      [1, "家", "家来", "けらい", "漢語", "王の家来。", "家", "いえ,や", "和語", "新しい家。", "大家", "おおや", "和語", "大家に話す。"],
+      [1, "歌", "歌手", "かしゅ", "漢語", "歌手になる。", "歌う", "うたう", "和語", "歌を歌う。", "校歌", "こうか", "漢語", "校歌を歌う。"]
     ];
     sheet.getRange(2, 1, rows.length, header.length).setValues(rows);
   }
@@ -2414,7 +2483,14 @@ function handleSaveLearningSession(req) {
     const settings = getAppSettingsMap_(adminSs);
     const charKey = String(req.kanjiChar);
     const score = Number(req.score) || 0;
-    const basePt = getKanjiBasePointsByScore_(score, settings, req.kanjiQuestionType);
+    const earnedOverride = req.earnedOverride;
+    const hasEarnedOverride = earnedOverride != null && earnedOverride !== "" && !isNaN(Number(earnedOverride));
+    let basePt = 0;
+    if (hasEarnedOverride) {
+      basePt = Math.round(Number(earnedOverride) * 10) / 10;
+    } else {
+      basePt = getKanjiBasePointsByScore_(score, settings, req.kanjiQuestionType);
+    }
     if (!kanjiView.__kanjiChallenge) kanjiView.__kanjiChallenge = {};
     if (!kanjiView.__kanjiChallenge[charKey]) kanjiView.__kanjiChallenge[charKey] = { highScoreDates: [] };
     const cHist = kanjiView.__kanjiChallenge[charKey];
@@ -3825,7 +3901,7 @@ function buildSentenceToRubyQuizQuestion_(item) {
  * 3タイプを偏りなく混在（各バケットをシャッフル後ラウンドロビン）
  */
 function mergeKanjiQuizBucketsBalanced_(buckets) {
-  const order = ["okurigana_shift", "ruby_to_kanji", "sentence_to_ruby"];
+  const order = ["okurigana_shift", "ruby_to_kanji", "sentence_to_ruby", "stroke_order_trace"];
   const queues = order.map(function (key) {
     return shuffleKanjiQuizArray_(buckets[key] || []).slice();
   });
@@ -3843,11 +3919,195 @@ function mergeKanjiQuizBucketsBalanced_(buckets) {
   return out;
 }
 
+var JUKUGO_NONE_ANSWER_ = "__NONE__";
+var JUKUGO_NONE_LABEL_ = "この中に回答はない";
+
+function detectKanjiSheetKindFromHeaders_(headers) {
+  const h = (headers || []).map(function (v) { return String(v || "").trim(); });
+  if (h.indexOf("ターゲット漢字") >= 0 && h.indexOf("漢字熟語A") >= 0) return "jukugo";
+  return "standard";
+}
+
+function jukugoCellText_(v) {
+  const s = String(v || "").trim();
+  if (!s || s === "×" || s === "x" || s === "X") return "";
+  return s;
+}
+
+function normalizeJukugoReading_(s) {
+  return String(s || "").trim().replace(/\s+/g, "");
+}
+
+function splitJukugoReadings_(s) {
+  return String(s || "").split(/[,，、]/).map(normalizeJukugoReading_).filter(Boolean);
+}
+
+function parseKanjiJukugoSheet_(sheet) {
+  const values = sheet.getDataRange().getValues();
+  if (!values || values.length < 2) return { groups: [], sheetKind: "jukugo" };
+  const headers = values[0].map(function (v) { return String(v || "").trim(); });
+  const idxSet = headers.indexOf("セット");
+  const idxTarget = headers.indexOf("ターゲット漢字");
+  if (idxSet < 0 || idxTarget < 0) {
+    throw new Error("漢字熟語シートの見出しに「セット」「ターゲット漢字」が必要です。");
+  }
+  const slotDefs = [
+    { word: "漢字熟語A", reading: "A読み", category: "A区分", example: "A例文" },
+    { word: "漢字熟語B", reading: "B読み", category: "B区分", example: "B例文" },
+    { word: "漢字熟語C", reading: "C読み", category: "C区分", example: "C例文" }
+  ].map(function (def) {
+    return {
+      wordIdx: headers.indexOf(def.word),
+      readingIdx: headers.indexOf(def.reading),
+      categoryIdx: headers.indexOf(def.category),
+      exampleIdx: headers.indexOf(def.example)
+    };
+  });
+  const groupsMap = {};
+  const order = [];
+  for (let r = 1; r < values.length; r++) {
+    const row = values[r];
+    const setRaw = jukugoCellText_(row[idxSet]);
+    const targetKanji = jukugoCellText_(row[idxTarget]);
+    if (!setRaw || !targetKanji) continue;
+    const setId = setRaw;
+    if (!groupsMap[setId]) {
+      groupsMap[setId] = { setId: setId, targetKanji: targetKanji, entries: [] };
+      order.push(setId);
+    }
+    slotDefs.forEach(function (slot, slotIndex) {
+      if (slot.wordIdx < 0 || slot.readingIdx < 0) return;
+      const word = jukugoCellText_(row[slot.wordIdx]);
+      const reading = jukugoCellText_(row[slot.readingIdx]);
+      const category = slot.categoryIdx >= 0 ? jukugoCellText_(row[slot.categoryIdx]) : "";
+      const example = slot.exampleIdx >= 0 ? jukugoCellText_(row[slot.exampleIdx]) : "";
+      if (!word || !reading || !example) return;
+      groupsMap[setId].entries.push({
+        rowIndex: r + 1,
+        slot: String.fromCharCode(65 + slotIndex),
+        targetKanji: targetKanji,
+        word: word,
+        reading: reading,
+        category: category || "未分類",
+        example: example
+      });
+    });
+  }
+  const groups = order.map(function (setId) {
+    return groupsMap[setId];
+  }).filter(function (g) { return g.entries.length > 0; });
+  return { groups: groups, sheetKind: "jukugo" };
+}
+
+function collectJukugoReadingPool_(entries) {
+  const pool = [];
+  (entries || []).forEach(function (entry) {
+    splitJukugoReadings_(entry.reading).forEach(function (r) {
+      pool.push({ reading: r, category: entry.category || "", targetKanji: entry.targetKanji });
+    });
+  });
+  return pool;
+}
+
+function pickJukugoDummyReadings_(pool, correctReadings, category, count) {
+  const exclude = {};
+  (correctReadings || []).forEach(function (r) { exclude[r] = true; });
+  const sameCat = [];
+  const otherCat = [];
+  (pool || []).forEach(function (p) {
+    const r = normalizeJukugoReading_(p.reading);
+    if (!r || exclude[r]) return;
+    if (p.category === category) sameCat.push(r);
+    else otherCat.push(r);
+  });
+  const uniq = function (arr) {
+    const seen = {};
+    const out = [];
+    arr.forEach(function (r) {
+      if (seen[r]) return;
+      seen[r] = true;
+      out.push(r);
+    });
+    return out;
+  };
+  let candidates = uniq(sameCat);
+  if (candidates.length < count) {
+    candidates = candidates.concat(uniq(otherCat).filter(function (r) { return candidates.indexOf(r) < 0; }));
+  }
+  candidates = shuffleKanjiQuizArray_(candidates);
+  return candidates.slice(0, count);
+}
+
+function buildJukugoYomiQuizQuestion_(entry, pool, opts) {
+  if (!entry) return null;
+  opts = opts || {};
+  const choiceCount = Math.min(8, Math.max(3, parseInt(opts.choiceCount, 10) || 4));
+  const includeNone = !!opts.includeNoneOption;
+  const correctReadings = splitJukugoReadings_(entry.reading);
+  const correctPrimary = correctReadings[0] || "";
+  if (!correctPrimary) return null;
+  const useNoneCorrect = includeNone && Math.random() < 0.30;
+  let readingChoices = [];
+  let correctAnswer = correctPrimary;
+  if (useNoneCorrect) {
+    readingChoices = pickJukugoDummyReadings_(pool, correctReadings, entry.category, choiceCount);
+    correctAnswer = JUKUGO_NONE_ANSWER_;
+  } else {
+    const dummyCount = Math.max(0, choiceCount - 1);
+    const dummies = pickJukugoDummyReadings_(pool, correctReadings, entry.category, dummyCount);
+    readingChoices = [correctPrimary].concat(dummies);
+    while (readingChoices.length < choiceCount) {
+      const extra = pickJukugoDummyReadings_(pool, readingChoices.concat(correctReadings), entry.category, 1);
+      if (!extra.length) break;
+      readingChoices.push(extra[0]);
+    }
+    readingChoices = readingChoices.slice(0, choiceCount);
+    correctAnswer = correctPrimary;
+  }
+  readingChoices = shuffleKanjiQuizArray_(readingChoices);
+  const choices = readingChoices.slice();
+  const choicesDisplay = readingChoices.slice();
+  if (includeNone) {
+    choices.push(JUKUGO_NONE_ANSWER_);
+    choicesDisplay.push(JUKUGO_NONE_LABEL_);
+  }
+  return {
+    type: "jukugo_yomi",
+    kanji: entry.targetKanji,
+    rowIndex: entry.rowIndex,
+    jukugoWord: entry.word,
+    category: entry.category,
+    exampleSentence: entry.example,
+    prompt: "例文の下線の漢字の読み方を選びましょう。",
+    choices: choices,
+    choicesDisplay: choicesDisplay,
+    correctAnswer: correctAnswer,
+    correctReadings: correctReadings,
+    includeNoneOption: includeNone,
+    noneIsCorrect: useNoneCorrect,
+    choiceCount: choiceCount,
+    searchText: [entry.targetKanji, entry.word, correctPrimary, entry.example].join(" ")
+  };
+}
+
+function buildStrokeOrderTraceQuizQuestion_(item) {
+  const k = String(item.kanji || "");
+  if (!k) return null;
+  return {
+    type: "stroke_order_trace",
+    kanji: k,
+    rowIndex: item.rowIndex,
+    prompt: "お手本どおりに、書き順を守ってなぞりましょう（60点以上）。",
+    correctAnswer: k,
+    searchText: k + " 書き順"
+  };
+}
+
 function buildKanjiQuizProblemList_(group) {
   const items = group.items || [];
   if (!items.length) return [];
   const dummyPoolByKanji = collectOkuriganaDummyPoolByKanjiKanjiQuiz_(items);
-  const buckets = { okurigana_shift: [], ruby_to_kanji: [], sentence_to_ruby: [] };
+  const buckets = { okurigana_shift: [], ruby_to_kanji: [], sentence_to_ruby: [], stroke_order_trace: [] };
   items.forEach(function (item) {
     const o = buildOkuriganaShiftQuizQuestion_(item, dummyPoolByKanji);
     if (o) buckets.okurigana_shift.push(o);
@@ -3855,6 +4115,8 @@ function buildKanjiQuizProblemList_(group) {
     if (r2) buckets.ruby_to_kanji.push(r2);
     const r3 = buildSentenceToRubyQuizQuestion_(item);
     if (r3) buckets.sentence_to_ruby.push(r3);
+    const r4 = buildStrokeOrderTraceQuizQuestion_(item);
+    if (r4) buckets.stroke_order_trace.push(r4);
   });
   const merged = shuffleKanjiQuizArray_(mergeKanjiQuizBucketsBalanced_(buckets));
   return merged.map(function (q, i) {
@@ -3862,6 +4124,43 @@ function buildKanjiQuizProblemList_(group) {
     base.questionIndex = i;
     base.questionId =
       "KANJI_Q_" + String(group.setId) + "_" + q.rowIndex + "_" + q.type + "_" + i;
+    return base;
+  });
+}
+
+function buildStrokeOrderQuizProblemList_(group) {
+  const items = group.items || [];
+  if (!items.length) return [];
+  const list = [];
+  items.forEach(function (item) {
+    const q = buildStrokeOrderTraceQuizQuestion_(item);
+    if (q) list.push(q);
+  });
+  const shuffled = shuffleKanjiQuizArray_(list);
+  return shuffled.map(function (q, i) {
+    const base = Object.assign({}, q);
+    base.questionIndex = i;
+    base.questionId =
+      "KANJI_Q_" + String(group.setId) + "_" + q.rowIndex + "_" + q.type + "_" + i;
+    return base;
+  });
+}
+
+function buildJukugoQuizProblemList_(group, opts) {
+  const entries = group.entries || [];
+  if (!entries.length) return [];
+  const pool = collectJukugoReadingPool_(entries);
+  const list = [];
+  entries.forEach(function (entry) {
+    const q = buildJukugoYomiQuizQuestion_(entry, pool, opts);
+    if (q) list.push(q);
+  });
+  const shuffled = shuffleKanjiQuizArray_(list);
+  return shuffled.map(function (q, i) {
+    const base = Object.assign({}, q);
+    base.questionIndex = i;
+    base.questionId =
+      "JUKUGO_Q_" + String(group.setId) + "_" + q.rowIndex + "_" + q.type + "_" + i;
     return base;
   });
 }
@@ -3887,7 +4186,11 @@ function getKanjiQuizParsedFromSpreadsheet_(modeId, unitName) {
   }
   const sheet = SpreadsheetApp.openById(modeId).getSheetByName(unitName);
   if (!sheet) return { parsed: null, sheetMissing: true };
-  const parsed = parseKanjiQuizSheet_(sheet);
+  const values = sheet.getDataRange().getValues();
+  const headers = values[0] || [];
+  const sheetKind = detectKanjiSheetKindFromHeaders_(headers);
+  const parsed = sheetKind === "jukugo" ? parseKanjiJukugoSheet_(sheet) : parseKanjiQuizSheet_(sheet);
+  parsed.sheetKind = sheetKind;
   try {
     cache.put(key, JSON.stringify(parsed), 300);
   } catch (e) {}
@@ -3902,12 +4205,14 @@ function handleGetKanjiQuizSets(req) {
     const got = getKanjiQuizParsedFromSpreadsheet_(modeId, unitName);
     if (got.sheetMissing) return sendResponse({ status: "error", message: "指定シートが見つかりません。" });
     const parsed = got.parsed;
-    const sets = parsed.groups.map(g => ({
-      setId: g.setId,
-      count: g.items.length,
-      kanjiList: g.items.map(it => it.kanji)
-    }));
-    return sendResponse({ status: "success", sets });
+    const sheetKind = parsed.sheetKind || "standard";
+    const sets = parsed.groups.map(function (g) {
+      if (sheetKind === "jukugo") {
+        return { setId: g.setId, count: g.entries.length, kanjiList: [g.targetKanji] };
+      }
+      return { setId: g.setId, count: g.items.length, kanjiList: g.items.map(function (it) { return it.kanji; }) };
+    });
+    return sendResponse({ status: "success", sets: sets, sheetKind: sheetKind });
   } catch (e) {
     return sendResponse({ status: "error", message: "漢字セット取得に失敗しました: " + e.message });
   }
@@ -3922,12 +4227,24 @@ function handleGetKanjiQuizQuestions(req) {
     const got = getKanjiQuizParsedFromSpreadsheet_(modeId, unitName);
     if (got.sheetMissing) return sendResponse({ status: "error", message: "指定シートが見つかりません。" });
     const parsed = got.parsed;
-    const group = parsed.groups.find(g => String(g.setId) === setId);
+    const sheetKind = parsed.sheetKind || "standard";
+    const group = parsed.groups.find(function (g) { return String(g.setId) === setId; });
     if (!group) return sendResponse({ status: "error", message: "指定セットが見つかりません。" });
-    const questions = buildKanjiQuizProblemList_(group);
+    let questions;
+    if (sheetKind === "jukugo") {
+      questions = buildJukugoQuizProblemList_(group, {
+        choiceCount: req.choiceCount,
+        includeNoneOption: !!req.includeNoneOption
+      });
+    } else if (String(req.formatMode || "") === "stroke_order") {
+      questions = buildStrokeOrderQuizProblemList_(group);
+    } else {
+      questions = buildKanjiQuizProblemList_(group);
+    }
     return sendResponse({
       status: "success",
-      setId,
+      setId: setId,
+      sheetKind: sheetKind,
       questions: questions
     });
   } catch (e) {
