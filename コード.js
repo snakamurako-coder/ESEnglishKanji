@@ -3926,11 +3926,10 @@ function buildOkuriganaShiftQuizQuestion_(item, dummyPoolByKanji) {
   if (uniq.length < 2) return null;
   const examples = Array.isArray(r.examples) ? r.examples : [];
   /**
-   * 例文選定は「正解の表層形（correct = 漢字＋送り仮名）を含む例文」だけに限定する。
-   * 旧実装は correct が見つからないとき漢字単独でもフォールバックしていたが、
-   * 例えば correct="上がる" で例文 "上を見る"（「上」が名詞用法）のように
-   * 別用法で漢字を使った文が拾われ、置換結果が崩壊する問題があったため廃止。
-   * 該当例文がなければ contextExample を空のまま返し、設問は漢字一文字＋選択肢のみで構成する。
+   * 例文選定：
+   * 1) 正解の表層形（correct）を含む例文を最優先
+   * 2) 無ければ漢字を含む例文へフォールバック（学習画面で例文を必ず見せる）
+   * 読み置換に失敗しても漢字入り例文はそのまま残す（旧実装はここで空にして消していた）。
    */
   var contextExample = "";
   for (var ei = 0; ei < examples.length; ei++) {
@@ -3940,10 +3939,22 @@ function buildOkuriganaShiftQuizQuestion_(item, dummyPoolByKanji) {
       break;
     }
   }
+  if (!contextExample) {
+    for (var ej = 0; ej < examples.length; ej++) {
+      var ex2 = String(examples[ej] || "");
+      if (ex2.indexOf(k) >= 0) {
+        contextExample = ex2;
+        break;
+      }
+    }
+  }
   var contextSentenceReading = contextExample
     ? replaceKanjiWithReadingInExample_(contextExample, k, reading, correct)
     : "";
-  if (!contextSentenceReading) contextExample = "";
+  // 置換できなくても例文表示用に原文を使う
+  if (!contextSentenceReading && contextExample) {
+    contextSentenceReading = contextExample;
+  }
   var choicesDisplayMap = {};
   if (contextExample) {
     uniq.forEach(function (c) {
