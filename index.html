@@ -2131,51 +2131,17 @@
         gap: 8px;
         max-width: 100%;
       }
-      /* 書き順：縦書き紙面の1列として配置。iframeだけ横書き島 */
-      body.kanji-study-mode .kanji-quiz-drill-wrap #kanji-stroke-order-play-host {
-        writing-mode: vertical-rl !important;
-        text-orientation: upright !important;
-        direction: rtl;
-        width: auto !important;
-        max-width: none !important;
-        max-height: calc(100dvh - 140px);
-        margin: 0 12px 0 0;
-        flex-direction: row;
-        flex-wrap: wrap;
-        align-items: flex-start;
-        align-content: flex-start;
-        gap: 10px 12px;
-      }
-      .kanji-stroke-order-target,
-      .kanji-stroke-order-hint {
-        writing-mode: vertical-rl !important;
-        text-orientation: upright !important;
-        text-align: start;
-        max-height: calc(100dvh - 160px);
-      }
-      .kanji-stroke-order-target {
-        font-size: clamp(44px, 8vh, 80px);
-        letter-spacing: 0.08em;
-      }
-      .kanji-stroke-order-hint {
-        font-size: clamp(13px, 1.8vh, 16px);
-        line-height: 1.55;
-        max-height: min(48vh, 18em);
-      }
-      .kanji-stroke-order-play-slot {
-        writing-mode: horizontal-tb;
-        text-orientation: mixed;
-        direction: ltr;
-        width: min(420px, 42vw);
-        min-height: min(420px, 68dvh);
-        max-height: calc(100dvh - 150px);
-      }
-      .kanji-stroke-order-play-slot iframe {
-        min-height: min(400px, 64dvh);
+      body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-stroke-order-active #kanji-stroke-order-play-host {
+        width: min(220px, 30vw);
+        max-width: min(220px, 30vw);
       }
       body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-stroke-order-active .kanji-stroke-order-play-slot {
-        width: min(340px, 32vw);
-        min-height: min(340px, 58dvh);
+        width: min(200px, 28vw);
+        min-height: min(200px, 28vw);
+        max-height: min(280px, 50dvh);
+      }
+      body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-stroke-order-active .kanji-stroke-order-play-slot iframe {
+        min-height: min(180px, 26vw);
       }
       body.kanji-study-mode .kanji-quiz-drill-wrap #kanji-quiz-hw-wrong-panel {
         writing-mode: horizontal-tb !important;
@@ -2373,11 +2339,6 @@
         width: min(220px, 32vw);
         height: min(220px, 48vh);
         max-height: min(48vh, 220px);
-      }
-      .kanji-stroke-order-play-slot {
-        width: min(340px, 40vw);
-        min-height: min(320px, 62dvh);
-        max-height: calc(100dvh - 120px);
       }
       body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-drill-section:not(.kanji-quiz-hw-active) #kanji-play-typing-wrap .kanji-yomi-sentence-block,
       body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-drill-section:not(.kanji-quiz-hw-active) #kanji-play-typing-wrap textarea.kanji-yomi-type-input-vertical {
@@ -2688,32 +2649,69 @@
       max-height: min(48vh, 18em);
     }
     body.kanji-study-mode .kanji-quiz-drill-wrap #kanji-stroke-order-play-host {
-      writing-mode: vertical-rl !important;
-      text-orientation: upright !important;
-      align-self: flex-start;
+      align-self: center;
     }
-    /* 書き順：手書きカード + 常時お手本 */
+    /* 書き順：お手本は手書きカード内（横並び）。外に並べると overflow:hidden で消える */
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-stroke-order-active .kanji-drill-hw-write-stack {
+      flex-direction: row !important;
+      flex-wrap: nowrap !important;
+      align-items: center !important;
+      justify-content: center !important;
+      gap: 10px !important;
+      width: auto !important;
+      max-width: 100% !important;
+    }
     body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-stroke-order-active #kanji-stroke-order-play-host {
       display: flex !important;
-      order: 2;
+      writing-mode: horizontal-tb !important;
+      text-orientation: mixed !important;
+      direction: ltr;
+      flex-direction: column;
       flex: 0 0 auto;
-      align-self: center !important;
-      max-height: calc(100dvh - 120px);
+      align-items: center;
+      justify-content: flex-start;
+      gap: 6px;
+      width: min(250px, 38vw);
+      max-width: min(250px, 38vw);
+      max-height: calc(100dvh - 140px);
+      margin: 0;
+      order: 0;
+      overflow: hidden;
     }
-    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-stroke-order-active.kanji-quiz-hw-active #kanji-quiz-drill-handwriting,
-    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-stroke-order-active.kanji-quiz-hw-active .kanji-drill-hw-row {
-      width: min(640px, calc(100% - 280px)) !important;
-      max-width: min(640px, calc(100% - 280px)) !important;
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-stroke-order-active .kanji-stroke-order-target,
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-stroke-order-active .kanji-stroke-order-hint {
+      writing-mode: horizontal-tb !important;
+      text-orientation: mixed !important;
+      max-height: none;
+      text-align: center;
+    }
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-stroke-order-active .kanji-stroke-order-target {
+      font-size: clamp(28px, 5vh, 44px);
+      letter-spacing: 0.04em;
+    }
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-stroke-order-active .kanji-stroke-order-hint {
+      font-size: clamp(11px, 1.6vh, 13px);
+      line-height: 1.35;
+      max-width: 100%;
     }
     body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-stroke-order-active .kanji-stroke-order-play-slot {
-      width: min(360px, 36vw);
-      min-height: min(360px, 52dvh);
-      max-height: calc(100dvh - 150px);
+      width: min(230px, 36vw);
+      min-height: min(230px, 36vw);
+      max-height: min(320px, 46dvh);
     }
     body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-stroke-order-active .kanji-stroke-order-play-slot iframe {
-      min-height: min(340px, 48dvh);
+      min-height: min(210px, 34vw);
     }
-    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-stroke-order-active #kanji-play-char-handwriting {
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-stroke-order-active.kanji-quiz-hw-active .kanji-drill-hw-canvas-ruby-row {
+      --kanji-hw-canvas-size: min(260px, 38vmin);
+    }
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-stroke-order-active #kanji-play-char-handwriting,
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-stroke-order-active #kanji-drill-hw-prefix-col,
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-stroke-order-active #kanji-drill-hw-suffix-col {
+      display: none !important;
+    }
+    /* 誤答パネル表示中はカード内お手本を隠す（誤答パネル側でデモ） */
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-wrong-visible #kanji-stroke-order-play-host {
       display: none !important;
     }
     /* 誤答お手本ブロック：横書き隔離（サイドバイサイド時は .kanji-quiz-wrong-visible が上書き） */
@@ -3749,11 +3747,6 @@
         <p class="kanji-quiz-hw-wrong-stroke-label">かきじゅん（みょうじ）</p>
         <div id="kanji-quiz-wrong-model-wrap" class="kanji-quiz-wrong-model-wrap"></div>
       </div>
-      <div id="kanji-stroke-order-play-host" class="kanji-stroke-order-play-host" style="display:none;" aria-label="お手本">
-        <div id="kanji-stroke-order-target" class="kanji-stroke-order-target" aria-hidden="true"></div>
-        <p id="kanji-stroke-order-hint" class="kanji-stroke-order-hint">お手本を見ながら書いて、60点以上をめざそう。</p>
-        <div id="kanji-stroke-order-play-slot" class="kanji-stroke-order-play-slot" title="お手本表示"></div>
-      </div>
       <div id="kanji-quiz-drill-handwriting" class="kanji-drill-hw-row" style="display:none;">
           <div class="kanji-drill-hw-canvas-panel">
             <!-- 操作ボタン群（掌が当たらない側へ利き手設定で移動）。次へもここに含める -->
@@ -3769,8 +3762,14 @@
               grid:
                 前後文脈は記述欄列のみ（横中央＝記述欄基準）
                 ルビは記述欄セルと同じ行（縦中央＝記述欄基準）
+              書き順：お手本は手書きカード内に同居（外に並べると overflow で画面外へ消える）
             -->
             <div class="kanji-drill-hw-write-stack">
+              <div id="kanji-stroke-order-play-host" class="kanji-stroke-order-play-host" style="display:none;" aria-label="お手本">
+                <div id="kanji-stroke-order-target" class="kanji-stroke-order-target" aria-hidden="true"></div>
+                <p id="kanji-stroke-order-hint" class="kanji-stroke-order-hint">お手本を見ながら書いて、60点以上をめざそう。</p>
+                <div id="kanji-stroke-order-play-slot" class="kanji-stroke-order-play-slot" title="お手本表示"></div>
+              </div>
               <div class="kanji-drill-hw-canvas-ruby-row">
                 <div class="kanji-drill-hw-prefix-col" id="kanji-drill-hw-prefix-col" aria-hidden="false">
                   <span class="kanji-drill-q-marker" id="kanji-drill-q-marker"></span><span id="kanji-drill-ctx-prefix" class="kanji-drill-context-inline"></span>
@@ -11858,8 +11857,8 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       applyKpQuizWrongPanelCompactMode(frame, true);
       frame.style.width = "100%";
       frame.style.maxWidth = "100%";
-      frame.style.minHeight = "360px";
-      frame.style.height = "400px";
+      frame.style.minHeight = "220px";
+      frame.style.height = "260px";
       patchKanjiFrameForQuizPostMessage(frame);
       if (!selectKanjiCharInQuizFrame(ch)) return false;
       try {
@@ -11870,6 +11869,9 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         try {
           if (frame.contentWindow) {
             frame.contentWindow.postMessage({ type: "quizSwitchMode", mode: "demo" }, "*");
+          }
+          if (kpPinWrongPanelViewToModeButtons_(frame)) {
+            frame.dataset.kpWrongViewPinned = "1";
           }
           kpResizeFrameToContent();
         } catch (_eR) {}
@@ -12837,45 +12839,55 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
           summary.innerHTML =
             "<span style=\"color:#607d8b;font-size:clamp(12px,3vw,14px);\">お手本を じゅんびしています…</span>";
         }
-        ensureKanjiHwFrameReadyOnce().then(function () {
-          const sec = document.getElementById("section-kanji-quiz-play");
-          if (!sec || !sec.classList.contains("active")) {
+        ensureKanjiHwFrameReadyOnce()
+          .then(function () {
+            const sec = document.getElementById("section-kanji-quiz-play");
+            if (!sec || !sec.classList.contains("active")) {
+              if (summary) summary.innerHTML = "";
+              return;
+            }
+            if (!kanjiQuizSession || kanjiQuizSession.index !== idxAtRender) {
+              if (summary) summary.innerHTML = "";
+              return;
+            }
+            const qNow = kanjiQuizSession.questions[kanjiQuizSession.index];
+            if (!qNow || qNow.type !== "stroke_order_trace") {
+              if (summary) summary.innerHTML = "";
+              return;
+            }
+            /* お手本スロットにターゲット漢字を装填して常時表示 */
+            if (!mountStrokeOrderQuizPlayFrame_(t0)) {
+              if (summary) {
+                summary.innerHTML =
+                  '<span style="color:#FF8A80;font-size:clamp(12px,3vw,14px);">お手本を出せませんでした。マスに書いて採点できます。</span>';
+              }
+              return;
+            }
+            [220, 560].forEach(function (delayMs) {
+              setTimeout(function () {
+                if (!kanjiQuizSession || kanjiQuizSession.index !== idxAtRender) return;
+                const qLate = kanjiQuizSession.questions[kanjiQuizSession.index];
+                if (!qLate || qLate.type !== "stroke_order_trace") return;
+                const secLate = document.getElementById("section-kanji-quiz-play");
+                if (secLate && secLate.classList.contains("kanji-quiz-wrong-visible")) return;
+                const frLate = document.getElementById("kp-pro-frame");
+                if (frLate) patchKanjiFrameForQuizPostMessage(frLate);
+                mountStrokeOrderQuizPlayFrame_(t0);
+              }, delayMs);
+            });
+            updateStrokeOrderHint_("ready");
+            kanjiQuizSyncPenUiFromStrokeParams();
+            kanjiQuizClearWritePad(true);
+            kanjiQuizSetupWriteCanvas();
+            kanjiQuizScheduleWriteCanvasReflow();
             if (summary) summary.innerHTML = "";
-            return;
-          }
-          if (!kanjiQuizSession || kanjiQuizSession.index !== idxAtRender) {
-            if (summary) summary.innerHTML = "";
-            return;
-          }
-          const qNow = kanjiQuizSession.questions[kanjiQuizSession.index];
-          if (!qNow || qNow.type !== "stroke_order_trace") {
-            if (summary) summary.innerHTML = "";
-            return;
-          }
-          /* お手本スロットにターゲット漢字を装填して常時表示 */
-          if (!mountStrokeOrderQuizPlayFrame_(t0)) {
-            if (summary) summary.innerHTML = "";
-            return;
-          }
-          [220, 560].forEach(function (delayMs) {
-            setTimeout(function () {
-              if (!kanjiQuizSession || kanjiQuizSession.index !== idxAtRender) return;
-              const qLate = kanjiQuizSession.questions[kanjiQuizSession.index];
-              if (!qLate || qLate.type !== "stroke_order_trace") return;
-              const secLate = document.getElementById("section-kanji-quiz-play");
-              if (secLate && secLate.classList.contains("kanji-quiz-wrong-visible")) return;
-              const frLate = document.getElementById("kp-pro-frame");
-              if (frLate) patchKanjiFrameForQuizPostMessage(frLate);
-              mountStrokeOrderQuizPlayFrame_(t0);
-            }, delayMs);
+          })
+          .catch(function () {
+            if (summary) {
+              summary.innerHTML =
+                '<span style="color:#FF8A80;font-size:clamp(12px,3vw,14px);">お手本のじゅんびに失敗しました。マスに書いて採点できます。</span>';
+            }
           });
-          updateStrokeOrderHint_("ready");
-          kanjiQuizSyncPenUiFromStrokeParams();
-          kanjiQuizClearWritePad(true);
-          kanjiQuizSetupWriteCanvas();
-          kanjiQuizScheduleWriteCanvasReflow();
-          if (summary) summary.innerHTML = "";
-        });
       } else if (q.type === "ruby_to_kanji") {
         try {
           kanjiQuizHideWrongFeedback();
