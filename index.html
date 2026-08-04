@@ -191,12 +191,12 @@
       100% { transform: rotate(360deg); }
     }
 
-    /* セット選択 → 学習開始までのロード表示 */
+    /* セット選択 → 学習開始までのロード表示（非表示時は display:none で確実にクリックを通す） */
     #kanji-quiz-set-loading-overlay {
       position: fixed;
       inset: 0;
       z-index: 9200;
-      display: flex;
+      display: none;
       align-items: center;
       justify-content: center;
       padding: 24px;
@@ -206,13 +206,13 @@
       text-orientation: mixed;
       opacity: 0;
       visibility: hidden;
-      transition: opacity 0.18s ease, visibility 0.18s ease;
-      pointer-events: none;
+      pointer-events: none !important;
     }
     #kanji-quiz-set-loading-overlay.is-visible {
+      display: flex;
       opacity: 1;
       visibility: visible;
-      pointer-events: auto;
+      pointer-events: auto !important;
     }
     .kanji-quiz-set-loading-card {
       min-width: min(280px, 86vw);
@@ -363,7 +363,7 @@
       margin: 0 auto;
     }
 
-    /* 漢字学習フロー：国語教材風・縦書き・右上ブロック */
+    /* 漢字学習フロー：国語教材風・縦書き・左上ヘッダー */
     body.kanji-study-mode {
       text-align: center;
       background: #f5f2eb;
@@ -501,9 +501,9 @@
     }
 
     body.kanji-study-mode #global-header {
-      left: auto;
-      right: 14px;
-      text-align: right;
+      left: 14px;
+      right: auto;
+      text-align: left;
       color: #555;
       font-size: clamp(13px, 3vw, 16px);
     }
@@ -1039,6 +1039,19 @@
     body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-choices-active #kanji-play-choices .kanji-drill-choice-btn::before {
       content: none !important;
     }
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-choices-active #kanji-play-choices .kanji-drill-choice-btn.is-correct-choice {
+      background: #e8f5e9 !important; /* 薄緑 */
+      color: #1b5e20 !important; /* 濃い緑 */
+      border-color: #2e7d32 !important;
+      box-shadow: 0 0 0 2px rgba(46, 125, 50, 0.28) !important;
+      font-weight: 900 !important;
+    }
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-choices-active #kanji-play-choices .kanji-drill-choice-btn.is-wrong-choice {
+      background: #ffcdd2 !important;
+      color: #b71c1c !important;
+      border-color: #c62828 !important;
+      box-shadow: 0 0 0 2px rgba(198, 40, 40, 0.35) !important;
+    }
     /**
      * 熟語読み（選択）：
      * - 出題文と例文は縦書きで別行（右→左に改行）
@@ -1098,6 +1111,20 @@
       font-size: clamp(28px, 5.5vw, 42px);
       font-weight: 800;
       color: #1a237e;
+      /* vertical-rl では flex-direction:row ＝画面上で上→下（同一縦列） */
+      display: flex !important;
+      flex-direction: row !important;
+      flex-wrap: nowrap !important;
+      align-items: center !important;
+      justify-content: flex-start !important;
+      gap: 0.45em;
+      max-height: calc(100dvh - 100px) !important;
+      overflow-x: visible !important;
+      overflow-y: auto !important;
+    }
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-jukugo-active #kanji-play-detail .jukugo-yomi-stem-head {
+      display: inline;
+      flex: 0 0 auto;
     }
     /* 例文（問題文）：大きく・上詰め */
     body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-jukugo-active #kanji-play-detail .jukugo-yomi-example {
@@ -1128,27 +1155,57 @@
       max-width: 4.5em;
       align-self: flex-start !important;
     }
+    /* 例文＝出題文（prompt）の左・選択肢の右（row-reverse で order 大＝左） */
     body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-choices-active:not(.kanji-quiz-jukugo-active) #kanji-play-detail {
       order: 30;
+      display: block !important;
+      visibility: visible !important;
+      opacity: 1 !important;
       flex: 0 0 auto !important;
+      width: max-content !important;
+      max-width: none !important;
+      min-width: 0 !important;
       margin: 0 !important;
       align-self: flex-start !important;
+      overflow: visible !important;
+      z-index: 6;
     }
-    /* 送り仮名の例文ブロック：大きく・上詰め（余白の高い箱にしない） */
-    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-choices-active:not(.kanji-quiz-jukugo-active) #kanji-play-detail .kanji-okurigana-vertical-wrap {
-      margin: 0 !important;
+    /* 送り仮名の例文ブロック：大きく・上詰め（width:100% で画面外へ飛ぶのを防ぐ） */
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-choices-active:not(.kanji-quiz-jukugo-active) #kanji-play-detail .kanji-okurigana-vertical-wrap,
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-choices-active:not(.kanji-quiz-jukugo-active) #kanji-play-detail .kanji-okurigana-example {
+      display: block !important;
+      writing-mode: vertical-rl !important;
+      text-orientation: upright !important;
+      width: max-content !important;
       max-width: none !important;
-      display: flex !important;
-      align-items: flex-start !important;
-      justify-content: flex-start !important;
+      min-width: 0 !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      box-sizing: border-box !important;
+      color: #222;
+    }
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-choices-active:not(.kanji-quiz-jukugo-active) #kanji-play-detail .kanji-okurigana-example-label {
+      display: inline;
+      font-size: 0.55em;
+      font-weight: 700;
+      color: #607d8b;
+      margin: 0 0 0.35em 0;
     }
     body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-choices-active:not(.kanji-quiz-jukugo-active) #kanji-play-detail .kanji-yomi-sentence-block,
-    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-choices-active:not(.kanji-quiz-jukugo-active) #kanji-play-detail .kanji-okurigana-vertical-wrap .kanji-yomi-sentence-block {
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-choices-active:not(.kanji-quiz-jukugo-active) #kanji-play-detail .kanji-okurigana-vertical-wrap .kanji-yomi-sentence-block,
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-choices-active:not(.kanji-quiz-jukugo-active) #kanji-play-detail .kanji-okurigana-example .kanji-yomi-sentence-block {
+      writing-mode: vertical-rl !important;
+      text-orientation: upright !important;
+      display: block !important;
+      visibility: visible !important;
+      opacity: 1 !important;
       font-size: clamp(34px, 6.8vw, 52px) !important;
       font-weight: 800 !important;
       line-height: 1.45 !important;
+      color: #1a237e !important;
       width: clamp(3.4em, 8vw, 4.8em) !important;
       min-width: 3.2em !important;
+      max-width: none !important;
       min-height: 0 !important;
       height: max-content !important;
       max-height: calc(100dvh - 110px) !important;
@@ -1156,6 +1213,9 @@
       padding: 6px 8px !important;
       align-self: flex-start !important;
       overflow: visible !important;
+      background: transparent !important;
+      border: none !important;
+      box-shadow: none !important;
     }
     body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-choices-active:not(.kanji-quiz-jukugo-active) #kanji-play-choices {
       order: 40;
@@ -1533,6 +1593,9 @@
       overflow: hidden;
       position: relative;
       width: 100%;
+      z-index: 1;
+      /* 問題面の溢れクリックがフッターより上に乗らないよう隔離 */
+      isolation: isolate;
     }
     body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-drill-section .kanji-quiz-drill-wrap {
       flex: 1 1 auto;
@@ -1561,7 +1624,7 @@
       position: relative;
       left: auto;
       top: auto;
-      z-index: 400;
+      z-index: 10050; /* 選択肢の縦カードより手前で「ちゅうだん」等を確実に押せる */
       writing-mode: horizontal-tb;
       text-orientation: mixed;
       direction: ltr;
@@ -1575,6 +1638,7 @@
       border-top: 2px solid #c9c2b8;
       padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px));
       box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.08);
+      pointer-events: auto !important;
     }
     /**
      * 誤答確認：横書き flex で左＝問題カード / 右＝ざんねん練習。
@@ -1725,6 +1789,9 @@
       line-height: 1.25;
       white-space: nowrap;
       flex: 0 0 auto;
+      pointer-events: auto !important;
+      position: relative;
+      z-index: 1;
     }
     body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-drill-section .kanji-quiz-play-footer-bar #kanji-quiz-layout-refresh-btn {
       max-width: none;
@@ -2989,14 +3056,100 @@
       box-shadow: 0 0 0 2px rgba(21, 101, 192, 0.35);
     }
     #section-kanji-quiz-play.kanji-quiz-drill-section .kanji-drill-choice-btn.is-correct-choice {
-      border-color: #2e7d32;
-      background: #c8e6c9;
-      box-shadow: 0 0 0 2px rgba(46, 125, 50, 0.35);
+      border-color: #2e7d32 !important;
+      background: #e8f5e9 !important; /* 薄緑 */
+      color: #1b5e20 !important; /* 濃い緑 */
+      box-shadow: 0 0 0 2px rgba(46, 125, 50, 0.28);
+      font-weight: 900;
     }
     #section-kanji-quiz-play.kanji-quiz-drill-section .kanji-drill-choice-btn.is-wrong-choice {
       border-color: #c62828;
       background: #ffcdd2;
       box-shadow: 0 0 0 2px rgba(198, 40, 40, 0.35);
+    }
+    /* 選択式の正誤判定：出題＋漢字と同じ縦列に続ける */
+    .kanji-choice-verdict {
+      display: none;
+      writing-mode: vertical-rl;
+      text-orientation: upright;
+      padding: 0;
+      margin: 0;
+      box-sizing: border-box;
+    }
+    /* 中身（◎／読み）を親の縦列フレックスへ直接参加させる */
+    .kanji-choice-verdict.is-visible {
+      display: contents !important;
+    }
+    .kanji-choice-verdict-mark {
+      font-size: clamp(36px, 7vw, 56px);
+      font-weight: 900;
+      line-height: 1;
+      flex: 0 0 auto;
+    }
+    .kanji-choice-verdict.is-correct .kanji-choice-verdict-mark {
+      color: #e53935; /* 正解◎＝赤 */
+    }
+    .kanji-choice-verdict.is-wrong .kanji-choice-verdict-mark {
+      color: #1565c0; /* 不正解×＝青 */
+    }
+    .kanji-choice-verdict-answer {
+      font-size: clamp(22px, 4.2vw, 32px);
+      font-weight: 800;
+      color: #1a237e;
+      line-height: 1.45;
+      letter-spacing: 0.06em;
+      white-space: nowrap;
+      flex: 0 0 auto;
+    }
+    /* フッターから移設した縦カード「次へ」（出題列の続き） */
+    .kanji-choice-next-btn {
+      display: none;
+      writing-mode: vertical-rl !important;
+      text-orientation: upright !important;
+      width: clamp(2.2em, 4.2vw, 2.8em) !important;
+      min-width: 2.2em !important;
+      min-height: 3.2em !important;
+      height: max-content !important;
+      max-height: none !important;
+      padding: 0.55em 0.28em !important;
+      margin: 0 !important;
+      font-size: clamp(16px, 2.6vw, 22px) !important;
+      font-weight: 800 !important;
+      letter-spacing: 0.12em;
+      line-height: 1.35 !important;
+      color: #fff !important;
+      background: #43a047 !important;
+      border: 3px solid #2e7d32 !important;
+      border-radius: 12px !important;
+      box-shadow: 0 3px 0 rgba(46, 125, 50, 0.35);
+      cursor: pointer;
+      flex: 0 0 auto !important;
+      box-sizing: border-box !important;
+      touch-action: manipulation;
+      align-self: center;
+    }
+    .kanji-choice-next-btn.is-visible {
+      display: inline-flex !important;
+      align-items: center;
+      justify-content: center;
+    }
+    /* 送り仮名：ターゲット漢字列（#kanji-play-char）と同じ縦列へ */
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-choices-active:not(.kanji-quiz-jukugo-active) #kanji-play-char.kanji-choice-stem-host {
+      display: flex !important;
+      flex-direction: row !important; /* vertical-rl で上→下 */
+      flex-wrap: nowrap !important;
+      align-items: center !important;
+      justify-content: flex-start !important;
+      gap: 0.45em;
+      max-height: calc(100dvh - 120px);
+      overflow: visible !important;
+    }
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-choices-active:not(.kanji-quiz-jukugo-active) #kanji-play-char .kanji-choice-stem-head {
+      flex: 0 0 auto;
+    }
+    /* 選択式フィードバック中はフッターの提出ボタンを使わない */
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-choices-active.kanji-choice-feedback-active #kanji-play-submit-btn {
+      display: none !important;
     }
     #section-kanji-quiz-play.kanji-quiz-drill-section .kanji-drill-choice-btn.is-choice-disabled {
       pointer-events: none;
@@ -3552,12 +3705,13 @@
     </div>
     <div id="kanji-quiz-sets-container" class="kanji-quiz-sets-stack"></div>
     </div>
-    <div id="kanji-quiz-set-loading-overlay" aria-hidden="true" role="status" aria-live="polite">
-      <div class="kanji-quiz-set-loading-card">
-        <div class="kanji-quiz-set-loading-spinner" aria-hidden="true"></div>
-        <p id="kanji-quiz-set-loading-title" class="kanji-quiz-set-loading-title">もんだいを じゅんびしています<span class="kanji-quiz-set-loading-dots" aria-hidden="true"><span>.</span><span>.</span><span>.</span></span></p>
-        <p id="kanji-quiz-set-loading-sub" class="kanji-quiz-set-loading-sub">そのまま まってね</p>
-      </div>
+  </div>
+  <!-- body直下に置き、非表示セクション内の fixed が操作を奪うのを防ぐ -->
+  <div id="kanji-quiz-set-loading-overlay" aria-hidden="true" role="status" aria-live="polite">
+    <div class="kanji-quiz-set-loading-card">
+      <div class="kanji-quiz-set-loading-spinner" aria-hidden="true"></div>
+      <p id="kanji-quiz-set-loading-title" class="kanji-quiz-set-loading-title">もんだいを じゅんびしています<span class="kanji-quiz-set-loading-dots" aria-hidden="true"><span>.</span><span>.</span><span>.</span></span></p>
+      <p id="kanji-quiz-set-loading-sub" class="kanji-quiz-set-loading-sub">そのまま まってね</p>
     </div>
   </div>
   <div id="section-kanji-quiz-play" class="section kanji-quiz-drill-section">
@@ -3621,6 +3775,11 @@
         <div class="kanji-quiz-drill-reading" id="kanji-play-char"></div>
         <div id="kanji-play-prompt"></div>
         <div id="kanji-play-detail"></div>
+        <div id="kanji-choice-verdict" class="kanji-choice-verdict" style="display:none;" aria-live="polite">
+          <span id="kanji-choice-verdict-mark" class="kanji-choice-verdict-mark"></span>
+          <span id="kanji-choice-verdict-answer" class="kanji-choice-verdict-answer"></span>
+        </div>
+        <button type="button" id="kanji-choice-next-btn" class="kanji-choice-next-btn" style="display:none;">次へ</button>
         <div id="kanji-play-choices" class="kanji-yomi-choices-rail" style="display:none;"></div>
       </div>
       <div id="kanji-play-typing-wrap" class="kanji-quiz-ui-horizontal kanji-yomi-typing-wrap" style="margin-top:12px;display:none;flex-direction:column;align-items:center;width:100%;max-width:980px;margin-left:auto;margin-right:auto;box-sizing:border-box;">
@@ -3650,7 +3809,7 @@
           <button type="button" class="kanji-drill-vbtn-small" id="kanji-pen-fine" onclick="kanjiQuizSetPenWidth(4)">ほそめ</button>
         </div>
         <button type="button" id="kanji-quiz-layout-refresh-btn" class="kanji-drill-vbtn-small" onclick="kanjiQuizRefreshHandwritingLayout()" title="表示がずれたとき、レイアウトを取り直します">🔄 画面をなおす</button>
-        <button type="button" class="kanji-drill-vbtn-small" style="background:#f44336;color:#fff;border-color:#d32f2f;" onclick="cancelKanjiQuizPlay()">ちゅうだん</button>
+        <button type="button" id="kanji-quiz-cancel-btn" class="kanji-drill-vbtn-small" style="background:#f44336;color:#fff;border-color:#d32f2f;">ちゅうだん</button>
         <button type="button" class="kanji-drill-vbtn-small submit-btn-small" id="kanji-play-submit-btn" style="display:none;">こたえを決定</button>
         <button type="button" class="kanji-drill-vbtn-small" style="background:#5c6bc0;color:#fff;border-color:#3949ab;" onclick="kanjiQuizPlayGoHome()">🏠 ホームにもどる</button>
       </div>
@@ -3867,7 +4026,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
   </script>
   <script>
     // ▼ GASのURLを貼り付けてください（※前回と同じURLならそのままで大丈夫） ▼
-    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzsM5ADb931oSyPVeSpt-jeNoIJ1tZhQhVHPgAVAtUU6kbaYBw35_NEe_a0R_hjrPZ53w/exec";
+    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxbHgFMazdPabkhgtu0MYmF0LPQoqA1Kc91HWI_cjG-SAPUpO0i3TqJ0KS0XrlDct1aJw/exec";
     const LS_PENDING_FINISH_SAVE = "app_pending_finish_quiz_save_v1";
     const LS_FLUSHED_SUBMIT_IDS = "app_flushed_submit_ids_v1";
     const PENDING_FINISH_FLUSH_MAX_ATTEMPTS = 5;
@@ -10178,18 +10337,67 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
     }
     function rebuildOkuriganaQuestionByAlgorithm_(q) {
       const src = q && typeof q === "object" ? q : {};
+      const srcSentence =
+        src.sentence ||
+        src.exampleSentence ||
+        src.exampleSentenceRaw ||
+        src.contextSentenceReading ||
+        "";
       const generated = generate_okurigana_quiz({
         kanji: src.kanji,
-        reading: src.readingDisplay || src.reading || "",
-        sentence: src.sentence || src.exampleSentence || ""
+        reading: src.readingDisplay || src.reading || src.readingHint || "",
+        sentence: srcSentence
       });
-      if (!generated) return src;
+      if (!generated) return ensureOkuriganaExampleFields_(src);
       const out = Object.assign({}, src);
       out.kanji = generated.target_kanji;
       out.correctAnswer = generated.correct_option;
       out.choices = generated.options.slice();
       out.questionSentence = generated.question_sentence;
-      return out;
+      // 例文表示用フィールドを必ず埋める
+      const plainEx = String(generated.question_sentence || "")
+        .replace(/[【】]/g, "")
+        .trim();
+      if (plainEx) {
+        if (!out.exampleSentenceRaw) out.exampleSentenceRaw = plainEx;
+        if (!out.sentence) out.sentence = plainEx;
+        if (!out.contextSentenceReading) {
+          // 出題用は読み置換文があればそれを、無ければ漢字入り例文
+          out.contextSentenceReading = String(src.contextSentenceReading || "").trim() || plainEx;
+        }
+      }
+      return ensureOkuriganaExampleFields_(out);
+    }
+    /** 送り仮名選択：表示用例文フィールドが空なら取りうる値から埋める */
+    function ensureOkuriganaExampleFields_(q) {
+      if (!q || typeof q !== "object") return q;
+      var raw = String(q.exampleSentenceRaw || q.sentence || q.exampleSentence || "").trim();
+      var readingSent = String(q.contextSentenceReading || "").trim();
+      if (!raw && q.choicesDisplayMap && typeof q.choicesDisplayMap === "object") {
+        var ans = String(q.correctAnswer || "");
+        if (ans && q.choicesDisplayMap[ans]) {
+          raw = String(q.choicesDisplayMap[ans] || "").trim();
+        }
+        if (!raw) {
+          var keys = Object.keys(q.choicesDisplayMap);
+          for (var i = 0; i < keys.length; i++) {
+            var v = String(q.choicesDisplayMap[keys[i]] || "").trim();
+            if (v) {
+              raw = v;
+              break;
+            }
+          }
+        }
+      }
+      if (!raw && q.questionSentence) {
+        raw = String(q.questionSentence || "")
+          .replace(/[【】]/g, "")
+          .trim();
+      }
+      if (raw && !q.exampleSentenceRaw) q.exampleSentenceRaw = raw;
+      if (raw && !q.sentence) q.sentence = raw;
+      if (!readingSent && raw) q.contextSentenceReading = raw;
+      return q;
     }
     function prepareKanjiQuizQuestionsForPlay(rawList) {
       var mode = getKanjiQuizFormatMode();
@@ -10217,6 +10425,9 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         suffix = "_v2_c" + getKanjiQuizJukugoChoiceCount() + "_n" + (getKanjiQuizJukugoIncludeNone() ? "1" : "0");
       } else if (fmt === "stroke_order") {
         suffix = "_stroke";
+      } else if (fmt === "select_kana") {
+        // 例文付き送り仮名選択のキャッシュ更新用
+        suffix = "_okuri_ex2";
       }
       return (
         "app_cached_kanji_quiz_questions_" +
@@ -11140,12 +11351,16 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       }
       el.classList.add("is-visible");
       el.setAttribute("aria-hidden", "false");
+      el.style.display = "flex";
+      el.style.pointerEvents = "auto";
     }
     function hideKanjiQuizSetLoadingOverlay_() {
       var el = document.getElementById("kanji-quiz-set-loading-overlay");
       if (!el) return;
       el.classList.remove("is-visible");
       el.setAttribute("aria-hidden", "true");
+      el.style.display = "none";
+      el.style.pointerEvents = "none";
     }
     function startKanjiActionBusy(btn, label) {
       if (!btn) return null;
@@ -12132,7 +12347,8 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       return '<div class="kanji-yomi-sentence-block">' + before + mid + after + "</div>";
     }
     /**
-     * おくりがな選択：例文中のターゲット語を読み（訓）に置き換えた文を縦書き表示。読み部分に下線。
+     * おくりがな選択：例文中のターゲット語を読み（訓）に置き換えた文を縦書き表示。
+     * 読み部分に下線は付けない（下線があると答えの範囲がばれるため）。
      * GAS から contextSentenceReading が来ていない（旧版互換）場合のみ exampleSentenceRaw から再構成する。
      * 再構成時は GAS 側 replaceKanjiWithReadingInExample_ と同じ規則：
      *   - surfaceForm（correctAnswer）が文中にある  → 全長を reading に置換
@@ -12142,6 +12358,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
      */
     function kanjiOkuriganaFormatSentenceBlockHtml(q) {
       if (!q) return "";
+      ensureOkuriganaExampleFields_(q);
       let s = String(q.contextSentenceReading || "").trim();
       if (!s && q.exampleSentenceRaw && q.kanji && q.readingHint) {
         const raw = String(q.exampleSentenceRaw || "");
@@ -12160,24 +12377,52 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
               const okuri = surf.slice(k.length);
               if (okuri && raw.slice(idx + k.length).startsWith(okuri)) {
                 s = raw.slice(0, idx) + rd + raw.slice(idx + k.length + okuri.length);
+              } else {
+                // 送り仮名が一致しなくても例文は出す（漢字入り原文）
+                s = raw;
               }
+            } else {
+              s = raw;
+            }
+          } else {
+            s = raw;
+          }
+        }
+      }
+      // 読み置換が取れない場合でも、例文があれば漢字入りのまま表示する
+      if (!s) {
+        s = String(q.exampleSentenceRaw || q.sentence || q.exampleSentence || "").trim();
+      }
+      if (!s && q.choicesDisplayMap && typeof q.choicesDisplayMap === "object") {
+        var ansKey = String(q.correctAnswer || "");
+        if (ansKey && q.choicesDisplayMap[ansKey]) {
+          s = String(q.choicesDisplayMap[ansKey] || "").trim();
+        }
+        if (!s) {
+          var mapKeys = Object.keys(q.choicesDisplayMap);
+          for (var mi = 0; mi < mapKeys.length; mi++) {
+            var mv = String(q.choicesDisplayMap[mapKeys[mi]] || "").trim();
+            if (mv) {
+              s = mv;
+              break;
             }
           }
         }
       }
+      if (!s && q.questionSentence) {
+        s = String(q.questionSentence || "")
+          .replace(/[【】]/g, "")
+          .trim();
+      }
       if (!s) return "";
-      const reading = String(q.readingHint || "").trim();
-      if (!reading) {
-        return '<div class="kanji-yomi-sentence-block">' + escapeHtml(s) + "</div>";
-      }
-      const idx = s.indexOf(reading);
-      if (idx < 0) {
-        return '<div class="kanji-yomi-sentence-block">' + escapeHtml(s) + "</div>";
-      }
-      const before = escapeHtml(s.slice(0, idx));
-      const mid = '<span class="kanji-yomi-underline-target">' + escapeHtml(reading) + "</span>";
-      const after = escapeHtml(s.slice(idx + reading.length));
-      return '<div class="kanji-yomi-sentence-block">' + before + mid + after + "</div>";
+      // 例文全体をそのまま表示（読み部分への下線・強調はしない）
+      return (
+        '<div class="kanji-okurigana-example">' +
+        '<span class="kanji-okurigana-example-label">例文</span>' +
+        '<div class="kanji-yomi-sentence-block">' +
+        escapeHtml(s) +
+        "</div></div>"
+      );
     }
     function kanjiYomiBindTypingInputOnce() {
       const el = document.getElementById("kanji-play-yomi-input");
@@ -12377,9 +12622,14 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       if (secShell) {
         secShell.classList.remove("kanji-quiz-jukugo-active");
         secShell.classList.remove("kanji-quiz-choices-active");
+        secShell.classList.remove("kanji-choice-feedback-active");
       }
+      try {
+        hideChoiceQuizVerdict_();
+      } catch (_eVerdict) {}
       const charEl = document.getElementById("kanji-play-char");
       if (charEl) {
+        charEl.classList.remove("kanji-choice-stem-host");
         charEl.style.display = "";
         charEl.style.fontSize = "";
         charEl.innerText = "";
@@ -12508,15 +12758,22 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         charEl.style.display = "";
         charEl.style.fontWeight = "";
         charEl.style.color = "";
+        charEl.classList.remove("kanji-choice-stem-host");
         if (q.type === "okurigana_shift" || q.type === "stroke_count") {
-          charEl.innerText = q.kanji || "？";
           charEl.style.whiteSpace = "";
           charEl.style.lineHeight = "";
           charEl.style.maxWidth = "";
           charEl.style.marginLeft = "";
           charEl.style.marginRight = "";
           charEl.style.textAlign = "";
-          if (q.type === "stroke_count") {
+          if (q.type === "okurigana_shift") {
+            charEl.classList.add("kanji-choice-stem-host");
+            charEl.innerHTML =
+              '<span class="kanji-choice-stem-head">' +
+              escapeHtml(q.kanji || "？") +
+              "</span>";
+          } else {
+            charEl.innerText = q.kanji || "？";
             charEl.style.fontSize = "clamp(72px,18vw,120px)";
           }
         } else if (q.type === "ruby_to_kanji" || q.type === "stroke_order_trace") {
@@ -12722,12 +12979,10 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       if (detail) {
         if (q.type === "okurigana_shift") {
           var okuriBoxHtml = kanjiOkuriganaFormatSentenceBlockHtml(q);
-          var okuriBoxWrap = okuriBoxHtml
-            ? '<div class="kanji-okurigana-vertical-wrap" style="display:flex;justify-content:center;align-items:flex-start;width:100%;margin:8px auto 0;">' +
-              okuriBoxHtml +
-              "</div>"
+          // width:100% は横フレックス内で画面幅まで膨らみ例文が視界外へ飛ぶため付けない
+          detail.innerHTML = okuriBoxHtml
+            ? '<div class="kanji-okurigana-vertical-wrap">' + okuriBoxHtml + "</div>"
             : "";
-          detail.innerHTML = okuriBoxWrap;
         } else if (q.type === "ruby_to_kanji" || q.type === "stroke_order_trace") {
           detail.innerHTML = "";
         } else if (q.type === "jukugo_yomi") {
@@ -12735,9 +12990,9 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
           const targetKanji = String(q.kanji || "");
           detail.innerHTML =
             '<div class="jukugo-yomi-qpair">' +
-            '<div class="jukugo-yomi-stem"><span class="jukugo-yomi-label">出題</span>' +
+            '<div class="jukugo-yomi-stem"><span class="jukugo-yomi-stem-head"><span class="jukugo-yomi-label">出題</span>' +
             escapeHtml(targetKanji) +
-            "</div>" +
+            "</span></div>" +
             '<div class="jukugo-yomi-example"><span class="jukugo-yomi-label">例文</span>' +
             renderJukugoExampleHtml_(q.exampleSentence, q.jukugoWord) +
             "</div></div>";
@@ -12832,7 +13087,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
             b.onclick = function (e) {
               e.preventDefault();
               if (!kanjiQuizSession) return;
-              if (q.type === "jukugo_yomi") {
+              if (q.type === "jukugo_yomi" || q.type === "okurigana_shift") {
                 if (kanjiQuizSession.jukugoAnswerLocked) return;
                 kanjiQuizSession.jukugoAnswerLocked = true;
                 kanjiQuizSession.selectedChoice = c;
@@ -12977,7 +13232,11 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
           nigateTraining: !!ctx.nigateTraining,
           nigateAxis: ctx.nigateAxis || null
         };
+        hideKanjiQuizSetLoadingOverlay_();
         switchSection("section-kanji-quiz-play");
+        try {
+          bindKanjiQuizCancelBtnOnce_();
+        } catch (_eBind2) {}
         saveKanjiQuizRecoveryDraft();
         renderKanjiQuizQuestion();
     }
@@ -13236,6 +13495,18 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       }
     }
     function cancelKanjiQuizPlay() {
+      try {
+        hideKanjiQuizSetLoadingOverlay_();
+      } catch (_eHide) {}
+      // 確認ダイアログ中に自動「次へ」が進まないよう先に止める
+      try {
+        clearKanjiJukugoAutoNext_();
+        clearKanjiStrokeOrderAutoNext_();
+      } catch (_eT) {}
+      if (kanjiQuizSession) {
+        kanjiQuizSession.jukugoPendingAdvance = null;
+        kanjiQuizSession.strokeOrderPendingAdvance = null;
+      }
       var goNigate = !!(lastKanjiQuizContext && lastKanjiQuizContext.nigateTraining);
       if (!kanjiQuizSession) {
         restoreKanjiPracticeFrameIfMoved();
@@ -13245,7 +13516,6 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         return;
       }
       if (!confirm("このセットを中断しますか？")) return;
-      clearKanjiJukugoAutoNext_();
       kanjiQuizSession = null;
       lastKanjiQuizContext = null;
       clearKanjiHwFrameReadyCache();
@@ -13257,6 +13527,26 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       setKanjiQuizPlayHwFooterActive(false);
       switchSection(goNigate ? "section-kanji-nigate" : "section-kanji-quiz-sets");
     }
+    window.cancelKanjiQuizPlay = cancelKanjiQuizPlay;
+    function bindKanjiQuizCancelBtnOnce_() {
+      var btn = document.getElementById("kanji-quiz-cancel-btn");
+      if (!btn || btn.dataset.boundCancel === "1") return;
+      btn.dataset.boundCancel = "1";
+      btn.addEventListener(
+        "click",
+        function (e) {
+          if (e) {
+            e.preventDefault();
+            e.stopPropagation();
+          }
+          cancelKanjiQuizPlay();
+        },
+        true
+      );
+    }
+    try {
+      bindKanjiQuizCancelBtnOnce_();
+    } catch (_eBindCancel) {}
     let kanjiJukugoAutoNextTimer_ = null;
     function clearKanjiJukugoAutoNext_() {
       if (kanjiJukugoAutoNextTimer_ != null) {
@@ -13290,11 +13580,28 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       if (!box) return;
       const selectedVal = String(selected || "");
       const correctVal = String((q && q.correctAnswer) || "");
+      const correctSet = {};
+      const noneIsAns =
+        q &&
+        q.type === "jukugo_yomi" &&
+        (q.noneIsCorrect || correctVal === JUKUGO_NONE_ANSWER_);
+      if (noneIsAns) {
+        // 「この中に回答はない」が正答のときは、その選択肢だけを緑にする
+        correctSet[JUKUGO_NONE_ANSWER_] = true;
+      } else {
+        if (correctVal) correctSet[correctVal] = true;
+        if (q && q.type === "jukugo_yomi" && Array.isArray(q.correctReadings)) {
+          q.correctReadings.forEach(function (r) {
+            const s = String(r || "");
+            if (s) correctSet[s] = true;
+          });
+        }
+      }
       Array.from(box.querySelectorAll(".kanji-drill-choice-btn")).forEach(function (btn) {
         const val = String(btn.dataset.choiceValue || "");
         btn.classList.add("is-choice-disabled");
         btn.classList.remove("is-selected-choice", "is-correct-choice", "is-wrong-choice");
-        if (val === correctVal) {
+        if (correctSet[val]) {
           btn.classList.add("is-correct-choice");
         } else if (val === selectedVal && !isCorrect) {
           btn.classList.add("is-wrong-choice");
@@ -13302,8 +13609,100 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         btn.disabled = true;
       });
     }
+    function formatChoiceQuizCorrectReadingLabel_(q) {
+      if (!q) return "";
+      if (q.type === "jukugo_yomi") {
+        if (Array.isArray(q.correctReadings) && q.correctReadings.length) {
+          return q.correctReadings
+            .map(function (r) {
+              return String(r || "").trim();
+            })
+            .filter(Boolean)
+            .join("・");
+        }
+        const ans = String(q.correctAnswer || "");
+        if (ans && ans !== JUKUGO_NONE_ANSWER_) {
+          if (Array.isArray(q.choices) && Array.isArray(q.choicesDisplay)) {
+            const idx = q.choices.indexOf(ans);
+            if (idx >= 0 && q.choicesDisplay[idx]) return String(q.choicesDisplay[idx]);
+          }
+          return ans;
+        }
+        return "この中に回答はない";
+      }
+      if (q.type === "okurigana_shift") {
+        return String(q.correctAnswer || "");
+      }
+      return "";
+    }
+    function restoreChoiceQuizFeedbackNodes_() {
+      const verdict = document.getElementById("kanji-choice-verdict");
+      const nextBtn = document.getElementById("kanji-choice-next-btn");
+      const choices = document.getElementById("kanji-play-choices");
+      const host = choices && choices.parentNode;
+      if (!host) return;
+      if (verdict && verdict.parentNode !== host) {
+        host.insertBefore(verdict, choices);
+      }
+      if (nextBtn && nextBtn.parentNode !== host) {
+        host.insertBefore(nextBtn, choices);
+      }
+    }
+    function hideChoiceQuizVerdict_() {
+      restoreChoiceQuizFeedbackNodes_();
+      const verdict = document.getElementById("kanji-choice-verdict");
+      const mark = document.getElementById("kanji-choice-verdict-mark");
+      const answer = document.getElementById("kanji-choice-verdict-answer");
+      const nextBtn = document.getElementById("kanji-choice-next-btn");
+      const sec = document.getElementById("section-kanji-quiz-play");
+      if (verdict) {
+        verdict.classList.remove("is-visible", "is-correct", "is-wrong");
+        verdict.style.display = "none";
+      }
+      if (mark) {
+        mark.textContent = "";
+        mark.style.color = "";
+      }
+      if (answer) answer.textContent = "";
+      if (nextBtn) {
+        nextBtn.classList.remove("is-visible");
+        nextBtn.style.display = "none";
+        nextBtn.onclick = null;
+      }
+      if (sec) sec.classList.remove("kanji-choice-feedback-active");
+    }
+    function showChoiceQuizVerdict_(q, isCorrect) {
+      const verdict = document.getElementById("kanji-choice-verdict");
+      const mark = document.getElementById("kanji-choice-verdict-mark");
+      const answer = document.getElementById("kanji-choice-verdict-answer");
+      const nextBtn = document.getElementById("kanji-choice-next-btn");
+      if (!verdict || !mark || !answer) return;
+      mark.textContent = isCorrect ? "◎" : "×";
+      // display:contents 時でも色が確実に付くよう直指定
+      mark.style.color = isCorrect ? "#e53935" : "#1565c0";
+      answer.textContent = formatChoiceQuizCorrectReadingLabel_(q);
+      verdict.classList.toggle("is-correct", !!isCorrect);
+      verdict.classList.toggle("is-wrong", !isCorrect);
+      verdict.classList.add("is-visible");
+      verdict.style.display = "";
+      // 出題＋ターゲット漢字と同じ縦列へ：出題 → ◎/× → 正解読み → 次へ
+      var stemHost = null;
+      if (q && q.type === "jukugo_yomi") {
+        stemHost = document.querySelector("#kanji-play-detail .jukugo-yomi-stem");
+      } else if (q && q.type === "okurigana_shift") {
+        stemHost = document.getElementById("kanji-play-char");
+      }
+      if (stemHost) {
+        stemHost.appendChild(verdict);
+        if (nextBtn) stemHost.appendChild(nextBtn);
+      } else {
+        restoreChoiceQuizFeedbackNodes_();
+      }
+    }
     function showJukugoYomiNextControls_(advanceFn) {
       const subBtn = document.getElementById("kanji-play-submit-btn");
+      const nextBtn = document.getElementById("kanji-choice-next-btn");
+      const sec = document.getElementById("section-kanji-quiz-play");
       if (!kanjiQuizSession) return;
       clearKanjiJukugoAutoNext_();
       var advanced = false;
@@ -13316,15 +13715,31 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
           subBtn.style.display = "none";
           subBtn.textContent = "こたえを決定";
         }
+        if (nextBtn) {
+          nextBtn.classList.remove("is-visible");
+          nextBtn.style.display = "none";
+          nextBtn.onclick = null;
+        }
+        if (sec) sec.classList.remove("kanji-choice-feedback-active");
         advanceFn();
       }
       kanjiQuizSession.jukugoPendingAdvance = goNext;
+      if (sec) sec.classList.add("kanji-choice-feedback-active");
       if (subBtn) {
-        subBtn.style.display = "inline-block";
-        subBtn.textContent = "次の問題へ";
+        subBtn.style.display = "none";
+        subBtn.textContent = "こたえを決定";
         stopKanjiActionBusy(subBtn);
       }
-      kanjiJukugoAutoNextTimer_ = setTimeout(goNext, 2000);
+      if (nextBtn) {
+        nextBtn.textContent = "次へ";
+        nextBtn.classList.add("is-visible");
+        nextBtn.style.display = "inline-flex";
+        nextBtn.onclick = function (e) {
+          if (e) e.preventDefault();
+          goNext();
+        };
+      }
+      kanjiJukugoAutoNextTimer_ = setTimeout(goNext, 4000);
     }
     function estimateKanjiQuizProvisionalEarned_(scoreForServer, qType, earnedOverrideVal) {
       if (earnedOverrideVal != null && !isNaN(Number(earnedOverrideVal))) {
@@ -13418,6 +13833,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         userRaw = kanjiQuizSession.selectedChoice != null ? String(kanjiQuizSession.selectedChoice) : "";
         if (!userRaw) {
           alert("選択肢を選んでください。");
+          kanjiQuizSession.jukugoAnswerLocked = false;
           return;
         }
         isCorrect = normalizeKanjiQuizInput(userRaw) === normalizeKanjiQuizInput(q.correctAnswer);
@@ -13501,12 +13917,16 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         }
       }
       const selectedForFeedback =
-        q.type === "jukugo_yomi" && userRaw ? String(userRaw) : "";
+        (q.type === "jukugo_yomi" || q.type === "okurigana_shift") && userRaw
+          ? String(userRaw)
+          : "";
       kanjiQuizSession.selectedChoice = null;
       const user = JSON.parse(localStorage.getItem("app_kid_user") || "null");
       if (!user || !user.id) {
         alert("ログイン情報が見つかりません。");
-        if (q.type === "jukugo_yomi") kanjiQuizSession.jukugoAnswerLocked = false;
+        if (q.type === "jukugo_yomi" || q.type === "okurigana_shift") {
+          kanjiQuizSession.jukugoAnswerLocked = false;
+        }
         try {
           stopKanjiActionBusy(document.getElementById("kanji-quiz-skip-hw-btn"));
         } catch (_eSkip) {}
@@ -13514,7 +13934,9 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       }
       __kanjiQuizSubmitInFlight = true;
       var __kjSubmitBtn = document.getElementById("kanji-play-submit-btn");
-      if (__kjSubmitBtn && !isKanjiQuizHandwritingQuestionType_(q.type) && q.type !== "jukugo_yomi") {
+      var __isChoiceFeedbackQ =
+        q.type === "jukugo_yomi" || q.type === "okurigana_shift";
+      if (__kjSubmitBtn && !isKanjiQuizHandwritingQuestionType_(q.type) && !__isChoiceFeedbackQ) {
         startKanjiActionBusy(__kjSubmitBtn, "つぎへ");
       }
       const qid = q.questionId || (q.kanji + "_" + kanjiQuizSession.index + "_" + q.type);
@@ -13578,23 +14000,19 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
             soNote +
             '</span>' +
             '<span style="display:block;margin-top:4px;color:#607d8b;font-size:0.9em;">つぎの漢字へ自動でうつります…</span>';
+        } else if (q.type === "jukugo_yomi" || q.type === "okurigana_shift") {
+          // 正誤は出題横の判定パネルへ表示するため、フッター要約は出さない
+          summary.innerHTML = "";
         } else if (isCorrect) {
           summary.innerHTML = '<span style="color:#69F0AE;">せいかい！</span>';
-        } else if (q.type === "jukugo_yomi") {
-          summary.innerHTML =
-            '<span style="color:#FF8A80;">ざんねん…</span>' +
-            '<span style="display:block;margin-top:4px;color:#607d8b;font-size:0.9em;">2秒後に次へ（または「次の問題へ」）</span>';
         } else {
           summary.innerHTML = '<span style="color:#FF8A80;">ざんねん… 次はがんばろう</span>';
         }
       }
-      if (q.type === "jukugo_yomi") {
+      if (q.type === "jukugo_yomi" || q.type === "okurigana_shift") {
         applyJukugoYomiChoiceFeedback_(q, selectedForFeedback, isCorrect);
-        if (summary && isCorrect) {
-          summary.innerHTML =
-            '<span style="color:#69F0AE;">せいかい！</span>' +
-            '<span style="display:block;margin-top:4px;color:#607d8b;font-size:0.9em;">2秒後に次へ（または「次の問題へ」）</span>';
-        }
+        showChoiceQuizVerdict_(q, isCorrect);
+        if (summary) summary.innerHTML = "";
       }
       function advanceKanjiQuizAfterScore() {
         try {
@@ -13642,7 +14060,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         kanjiQuizHandleNigateAfterScore(q, isCorrect, scoreForServer, advanceKanjiQuizAfterScore);
       }
       try {
-        if (q.type === "jukugo_yomi") {
+        if (q.type === "jukugo_yomi" || q.type === "okurigana_shift") {
           showJukugoYomiNextControls_(runAdvanceAfterScore_);
         } else if (q.type === "stroke_order_trace") {
           showStrokeOrderAutoNext_(runAdvanceAfterScore_);
@@ -13652,7 +14070,9 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       } finally {
         __kanjiQuizSubmitInFlight = false;
         try {
-          if (__kjSubmitBtn && q.type !== "jukugo_yomi") stopKanjiActionBusy(__kjSubmitBtn);
+          if (__kjSubmitBtn && q.type !== "jukugo_yomi" && q.type !== "okurigana_shift") {
+            stopKanjiActionBusy(__kjSubmitBtn);
+          }
         } catch (_eRestoreBtn) {}
         try {
           stopKanjiActionBusy(document.getElementById("kanji-quiz-skip-hw-btn"));
