@@ -4086,8 +4086,7 @@ function splitJukugoReadings_(s) {
   return String(s || "").split(/[,，、]/).map(normalizeJukugoReading_).filter(Boolean);
 }
 
-function parseKanjiJukugoSheet_(sheet) {
-  const values = sheet.getDataRange().getValues();
+function parseKanjiJukugoSheetFromValues_(values) {
   if (!values || values.length < 2) return { groups: [], sheetKind: "jukugo" };
   const headers = values[0].map(function (v) { return String(v || "").trim(); });
   const idxSet = headers.indexOf("セット");
@@ -4146,6 +4145,10 @@ function parseKanjiJukugoSheet_(sheet) {
     return groupsMap[setId];
   }).filter(function (g) { return g.entries.length > 0; });
   return { groups: groups, sheetKind: "jukugo" };
+}
+
+function parseKanjiJukugoSheet_(sheet) {
+  return parseKanjiJukugoSheetFromValues_(sheet.getDataRange().getValues());
 }
 
 function collectJukugoReadingPool_(entries) {
@@ -4339,19 +4342,87 @@ function kanjiQuizSheetParsedCacheKey_(modeId, unitName) {
   return "kq_sh_" + Utilities.base64EncodeWebSafe(digest).slice(0, 36);
 }
 
+/** CacheService は1キー約100KB。熟語シートは例文込みで超えやすいのでセット単位に分割する */
+var KANJI_QUIZ_PARSED_CACHE_TTL_SEC_ = 300;
+var KANJI_QUIZ_PARSED_CACHE_SOFT_MAX_CHARS_ = 90000;
+
+function readKanjiQuizParsedCache_(cache, key) {
+  const hit = cache.get(key);
+  if (!hit) return null;
+  try {
+    const meta = JSON.parse(hit);
+    if (!meta || typeof meta !== "object") return null;
+    if (!meta.chunked) {
+      if (!meta.groups) return null;
+      return { parsed: meta, sheetMissing: false };
+    }
+    const n = parseInt(meta.groupCount, 10) || 0;
+    if (n <= 0) return { parsed: { groups: [], sheetKind: meta.sheetKind || "jukugo" }, sheetMissing: false };
+    const keys = [];
+    for (let i = 0; i < n; i++) keys.push(key + "_g" + i);
+    const bag = cache.getAll(keys);
+    const groups = [];
+    for (let i = 0; i < n; i++) {
+      const raw = bag[key + "_g" + i];
+      if (!raw) return null; // 欠けている場合は再解析
+      groups.push(JSON.parse(raw));
+    }
+    return {
+      parsed: { groups: groups, sheetKind: meta.sheetKind || "jukugo" },
+      sheetMissing: false
+    };
+  } catch (e) {
+    return null;
+  }
+}
+
+function writeKanjiQuizParsedCache_(cache, key, parsed) {
+  try {
+    const json = JSON.stringify(parsed);
+    if (json.length <= KANJI_QUIZ_PARSED_CACHE_SOFT_MAX_CHARS_) {
+      cache.put(key, json, KANJI_QUIZ_PARSED_CACHE_TTL_SEC_);
+      return;
+    }
+    const groups = Array.isArray(parsed.groups) ? parsed.groups : [];
+    const meta = {
+      chunked: true,
+      sheetKind: parsed.sheetKind || "standard",
+      groupCount: groups.length
+    };
+    cache.put(key, JSON.stringify(meta), KANJI_QUIZ_PARSED_CACHE_TTL_SEC_);
+    // putAll は最大100件。セット数がそれを超える場合は分割投入する
+    const CHUNK = 90;
+    for (let offset = 0; offset < groups.length; offset += CHUNK) {
+      const batch = {};
+      const end = Math.min(groups.length, offset + CHUNK);
+      for (let i = offset; i < end; i++) {
+        batch[key + "_g" + i] = JSON.stringify(groups[i]);
+      }
+      cache.putAll(batch, KANJI_QUIZ_PARSED_CACHE_TTL_SEC_);
+    }
+  } catch (e) {
+    // それでも載せられない場合は無視（次回も再解析）。Lock で同時再解析は抑止される。
+  }
+}
+
+/**
+ * 取得パスでは見出しが揃っているとき追加読み書きしない。
+ * ファイル名から熟語と判定したが必須列が欠けるときだけ見出しを直す（サンプル行追加はしない）。
+ */
+function maybeRepairJukugoHeadersOnGet_(sheet, headers) {
+  const head = (headers || []).map(function (v) { return String(v || "").trim(); });
+  if (head.indexOf("セット") >= 0 && head.indexOf("ターゲット漢字") >= 0) {
+    return { repaired: false, values: null };
+  }
+  const header = getKanjiJukugoSheetHeaderRow_();
+  sheet.getRange(1, 1, 1, header.length).setValues([header]);
+  return { repaired: true, values: sheet.getDataRange().getValues() };
+}
+
 function getKanjiQuizParsedFromSpreadsheet_(modeId, unitName) {
   const cache = CacheService.getScriptCache();
   const key = kanjiQuizSheetParsedCacheKey_(modeId, unitName);
-  const readCached_ = function () {
-    const hit = cache.get(key);
-    if (!hit) return null;
-    try {
-      return { parsed: JSON.parse(hit), sheetMissing: false };
-    } catch (e) {
-      return null;
-    }
-  };
-  const cached0 = readCached_();
+  const cached0 = readKanjiQuizParsedCache_(cache, key);
   if (cached0) return cached0;
 
   // セット一覧→問題取得や先読みが重なると同一シートを同時再解析しやすい。
@@ -4366,32 +4437,33 @@ function getKanjiQuizParsedFromSpreadsheet_(modeId, unitName) {
   if (!locked) {
     // 他実行が解析中の可能性。少し待ってキャッシュ再試行してから、必要ならロックなしで続行。
     Utilities.sleep(900);
-    const cachedWait = readCached_();
+    const cachedWait = readKanjiQuizParsedCache_(cache, key);
     if (cachedWait) return cachedWait;
   }
   try {
-    const cached1 = readCached_();
+    const cached1 = readKanjiQuizParsedCache_(cache, key);
     if (cached1) return cached1;
 
     const ss = SpreadsheetApp.openById(modeId);
     const sheet = ss.getSheetByName(unitName);
     if (!sheet) return { parsed: null, sheetMissing: true };
+    // 熟語シートでも getDataRange は原則1回だけ（ensure の三重読みをやめる）
     let values = sheet.getDataRange().getValues();
     let headers = values[0] || [];
     let sheetKind = detectKanjiSheetKind_(headers, ss.getName());
     if (sheetKind === "jukugo") {
-      ensureKanjiJukugoSheetHeaders_(sheet);
-      values = sheet.getDataRange().getValues();
-      headers = values[0] || [];
-      sheetKind = detectKanjiSheetKind_(headers, ss.getName());
+      const fix = maybeRepairJukugoHeadersOnGet_(sheet, headers);
+      if (fix.repaired && fix.values) {
+        values = fix.values;
+        headers = values[0] || [];
+        sheetKind = detectKanjiSheetKind_(headers, ss.getName());
+      }
     }
-    const parsed = sheetKind === "jukugo" ? parseKanjiJukugoSheet_(sheet) : parseKanjiQuizSheet_(sheet);
+    const parsed = sheetKind === "jukugo"
+      ? parseKanjiJukugoSheetFromValues_(values)
+      : parseKanjiQuizSheet_(sheet);
     parsed.sheetKind = sheetKind;
-    try {
-      cache.put(key, JSON.stringify(parsed), 300);
-    } catch (e) {
-      // CacheService 上限（約100KB）超えは無視。Lock により同時再解析は抑止される。
-    }
+    writeKanjiQuizParsedCache_(cache, key, parsed);
     return { parsed: parsed, sheetMissing: false };
   } finally {
     if (locked) {
