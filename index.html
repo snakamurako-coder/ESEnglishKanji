@@ -2173,23 +2173,9 @@
       .kanji-stroke-order-play-slot iframe {
         min-height: min(400px, 64dvh);
       }
-      .kanji-stroke-order-play-actions {
-        writing-mode: vertical-rl;
-        text-orientation: upright;
-        flex-direction: row;
-        flex-wrap: wrap;
-        align-content: flex-start;
-        justify-content: flex-start;
-        max-height: calc(100dvh - 150px);
-        gap: 8px;
-      }
-      .kanji-stroke-order-play-actions .kanji-drill-vbtn-small {
-        writing-mode: vertical-rl !important;
-        text-orientation: upright !important;
-        min-height: clamp(110px, 28vh, 200px) !important;
-        width: 48px !important;
-        padding: 10px 6px !important;
-        font-size: 13px !important;
+      body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-stroke-order-active .kanji-stroke-order-play-slot {
+        width: min(340px, 32vw);
+        min-height: min(340px, 58dvh);
       }
       body.kanji-study-mode .kanji-quiz-drill-wrap #kanji-quiz-hw-wrong-panel {
         writing-mode: horizontal-tb !important;
@@ -2688,17 +2674,7 @@
       border: none !important;
       min-height: min(400px, 54dvh);
       box-sizing: border-box;
-    }
-    .kanji-stroke-order-play-actions {
-      writing-mode: vertical-rl;
-      text-orientation: upright;
-      display: flex;
-      flex-direction: row;
-      flex-wrap: wrap;
-      align-content: flex-start;
-      justify-content: flex-start;
-      gap: 8px;
-      max-height: calc(100dvh - 160px);
+      pointer-events: none; /* お手本閲覧専用。書くのはホスト canvas */
     }
     .kanji-stroke-order-hint {
       writing-mode: vertical-rl;
@@ -2715,6 +2691,30 @@
       writing-mode: vertical-rl !important;
       text-orientation: upright !important;
       align-self: flex-start;
+    }
+    /* 書き順：手書きカード + 常時お手本 */
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-stroke-order-active #kanji-stroke-order-play-host {
+      display: flex !important;
+      order: 2;
+      flex: 0 0 auto;
+      align-self: center !important;
+      max-height: calc(100dvh - 120px);
+    }
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-stroke-order-active.kanji-quiz-hw-active #kanji-quiz-drill-handwriting,
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-stroke-order-active.kanji-quiz-hw-active .kanji-drill-hw-row {
+      width: min(640px, calc(100% - 280px)) !important;
+      max-width: min(640px, calc(100% - 280px)) !important;
+    }
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-stroke-order-active .kanji-stroke-order-play-slot {
+      width: min(360px, 36vw);
+      min-height: min(360px, 52dvh);
+      max-height: calc(100dvh - 150px);
+    }
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-stroke-order-active .kanji-stroke-order-play-slot iframe {
+      min-height: min(340px, 48dvh);
+    }
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-stroke-order-active #kanji-play-char-handwriting {
+      display: none !important;
     }
     /* 誤答お手本ブロック：横書き隔離（サイドバイサイド時は .kanji-quiz-wrong-visible が上書き） */
     body.kanji-study-mode .kanji-quiz-drill-wrap #kanji-quiz-hw-wrong-panel {
@@ -3070,36 +3070,59 @@
     /* 選択式の正誤判定：出題＋漢字と同じ縦列に続ける */
     .kanji-choice-verdict {
       display: none;
-      writing-mode: vertical-rl;
-      text-orientation: upright;
+      writing-mode: vertical-rl !important;
+      text-orientation: upright !important;
       padding: 0;
       margin: 0;
       box-sizing: border-box;
+      flex: 0 0 auto !important;
     }
-    /* 中身（◎／読み）を親の縦列フレックスへ直接参加させる */
+    /*
+     * display:contents は環境によって子（◎／読み）が消えるため使わない。
+     * vertical-rl + flex-direction:row ＝画面上で上→下（出題列の続き）。
+     */
     .kanji-choice-verdict.is-visible {
-      display: contents !important;
+      display: flex !important;
+      flex-direction: row !important;
+      flex-wrap: nowrap !important;
+      align-items: center !important;
+      justify-content: flex-start !important;
+      gap: 0.45em;
     }
     .kanji-choice-verdict-mark {
       font-size: clamp(36px, 7vw, 56px);
       font-weight: 900;
       line-height: 1;
-      flex: 0 0 auto;
+      flex: 0 0 auto !important;
     }
     .kanji-choice-verdict.is-correct .kanji-choice-verdict-mark {
-      color: #e53935; /* 正解◎＝赤 */
+      color: #e53935 !important; /* 正解◎＝赤 */
     }
     .kanji-choice-verdict.is-wrong .kanji-choice-verdict-mark {
-      color: #1565c0; /* 不正解×＝青 */
+      color: #1565c0 !important; /* 不正解×＝青 */
     }
     .kanji-choice-verdict-answer {
       font-size: clamp(22px, 4.2vw, 32px);
       font-weight: 800;
-      color: #1a237e;
+      color: #1a237e !important;
       line-height: 1.45;
       letter-spacing: 0.06em;
       white-space: nowrap;
-      flex: 0 0 auto;
+      flex: 0 0 auto !important;
+    }
+    /* 出題列内に入れた判定・次へが #kanji-play-detail * に潰されないように */
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-choices-active #kanji-play-detail .kanji-choice-verdict.is-visible,
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-choices-active #kanji-play-char .kanji-choice-verdict.is-visible {
+      display: flex !important;
+      flex-direction: row !important;
+      writing-mode: vertical-rl !important;
+      text-orientation: upright !important;
+    }
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-choices-active #kanji-play-detail .kanji-choice-next-btn.is-visible,
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-choices-active #kanji-play-char .kanji-choice-next-btn.is-visible {
+      display: inline-flex !important;
+      writing-mode: vertical-rl !important;
+      text-orientation: upright !important;
     }
     /* フッターから移設した縦カード「次へ」（出題列の続き） */
     .kanji-choice-next-btn {
@@ -3726,16 +3749,10 @@
         <p class="kanji-quiz-hw-wrong-stroke-label">かきじゅん（みょうじ）</p>
         <div id="kanji-quiz-wrong-model-wrap" class="kanji-quiz-wrong-model-wrap"></div>
       </div>
-      <div id="kanji-stroke-order-play-host" class="kanji-stroke-order-play-host" style="display:none;">
+      <div id="kanji-stroke-order-play-host" class="kanji-stroke-order-play-host" style="display:none;" aria-label="お手本">
         <div id="kanji-stroke-order-target" class="kanji-stroke-order-target" aria-hidden="true"></div>
-        <p id="kanji-stroke-order-hint" class="kanji-stroke-order-hint">お手本どおりに書いて、60点以上をめざそう。書き順デモも使えます。</p>
-        <div id="kanji-stroke-order-play-slot" class="kanji-stroke-order-play-slot"></div>
-        <div class="kanji-stroke-order-play-actions">
-          <button type="button" id="kanji-stroke-order-eval-btn" class="kanji-drill-vbtn-small submit-btn-small" onclick="kanjiStrokeOrderRunEvaluate()">これで採点</button>
-          <button type="button" id="kanji-stroke-order-demo-btn" class="kanji-drill-vbtn-small" onclick="kanjiQuizPlayStrokeOrderDemo()">書き順デモ再生</button>
-          <button type="button" class="kanji-drill-vbtn-small" onclick="kanjiStrokeOrderClearDrawing()">書き直す</button>
-          <button type="button" class="kanji-drill-vbtn-small submit-btn-small" id="kanji-stroke-order-skip-btn" onclick="kanjiQuizSkipHandwritingQuestion(this)">⏭️ 次へ（ふせいかい）</button>
-        </div>
+        <p id="kanji-stroke-order-hint" class="kanji-stroke-order-hint">お手本を見ながら書いて、60点以上をめざそう。</p>
+        <div id="kanji-stroke-order-play-slot" class="kanji-stroke-order-play-slot" title="お手本表示"></div>
       </div>
       <div id="kanji-quiz-drill-handwriting" class="kanji-drill-hw-row" style="display:none;">
           <div class="kanji-drill-hw-canvas-panel">
@@ -9597,8 +9614,11 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
     function kpFrameInWrongModelWrap_(frame) {
       return frame && frame.parentElement && frame.parentElement.id === "kanji-quiz-wrong-model-wrap";
     }
+    function kpFrameInStrokeOrderPlaySlot_(frame) {
+      return frame && frame.parentElement && frame.parentElement.id === "kanji-stroke-order-play-slot";
+    }
     function kpComputeFrameHeight_(frame, bodyH, htmlH) {
-      if (kpFrameInWrongModelWrap_(frame)) {
+      if (kpFrameInWrongModelWrap_(frame) || kpFrameInStrokeOrderPlaySlot_(frame)) {
         const cap = Math.min(window.innerHeight * 0.82, 820);
         return Math.min(Math.max(bodyH, htmlH, 320), cap) + 8;
       }
@@ -11469,9 +11489,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         kanjiQuizSession.questions &&
         kanjiQuizSession.questions[kanjiQuizSession.index];
       const isStrokeBusy = qBusy && qBusy.type === "stroke_order_trace";
-      const btn = document.getElementById(
-        isStrokeBusy ? "kanji-stroke-order-eval-btn" : "kanji-hw-submit-btn"
-      );
+      const btn = document.getElementById("kanji-hw-submit-btn");
       const idleLabel = isStrokeBusy ? "これで採点" : "これでかいとう";
       kanjiQuizHandSubmitBusy = !!isBusy;
       if (kanjiQuizHandSubmitAnimTimer) {
@@ -11575,20 +11593,9 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         queueKanjiHandwritingWeakSignalForQuestion(q, sc);
         if (q.type === "stroke_order_trace") {
           kanjiQuizSession.strokeOrderFailedOnce = true;
-          updateStrokeOrderDemoButton_();
           updateStrokeOrderHint_("practice", sc);
-          const sumFail = document.getElementById("kanji-play-summary");
-          if (sumFail) {
-            sumFail.innerHTML =
-              '<span style="color:#FF8A80;font-weight:700;">ざんねん… 練習して60点以上をめざそう</span>';
-          }
-          // 練習UIのままデモ再生→採点モードへ戻す（誤答パネルへiframeを移さない）
-          postStrokeOrderQuizFrameMessage_({ type: "quizPlayStrokeOrderDemo" });
-          setTimeout(function () {
-            postStrokeOrderQuizFrameMessage_({ type: "quizSwitchMode", mode: "score" });
-          }, 3200);
-          return;
         }
+        // 書き順も「書いて答える」と同じ誤答パネル＋書き順デモ
         kanjiQuizShowHandwritingWrongFeedback(sc);
         return;
       }
@@ -11632,11 +11639,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
 
       // 多重タップ防止（保存往復が完了するまでロック）。次の問題で renderKanjiQuizQuestion が
       // パネル全体を作り直すため、明示的に解除しなくても次画面では正常に押せる状態に戻る。
-      var skipBtn =
-        btn ||
-        document.getElementById(
-          q.type === "stroke_order_trace" ? "kanji-stroke-order-skip-btn" : "kanji-quiz-skip-hw-btn"
-        );
+      var skipBtn = btn || document.getElementById("kanji-quiz-skip-hw-btn");
       if (skipBtn) {
         if (skipBtn.dataset.kjBusyOriginalLabel != null) return;
         startKanjiActionBusy(skipBtn, "おくっています");
@@ -11851,24 +11854,31 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         playSlot.innerHTML = "";
         playSlot.appendChild(frame);
       }
+      /* お手本表示用にコンパクト化（ツール群を隠し、漢字練習の「お手本表示」相当を常時提示） */
       applyKpQuizWrongPanelCompactMode(frame, true);
       frame.style.width = "100%";
       frame.style.maxWidth = "100%";
-      frame.style.minHeight = "480px";
-      frame.style.height = "520px";
+      frame.style.minHeight = "360px";
+      frame.style.height = "400px";
       patchKanjiFrameForQuizPostMessage(frame);
       if (!selectKanjiCharInQuizFrame(ch)) return false;
       try {
-        frame.contentWindow.postMessage({ type: "quizSwitchMode", mode: "score" }, "*");
         frame.contentWindow.postMessage({ type: "quizClearDrawing" }, "*");
+        frame.contentWindow.postMessage({ type: "quizSwitchMode", mode: "demo" }, "*");
       } catch (_eClr) {}
       setTimeout(function () {
         try {
+          if (frame.contentWindow) {
+            frame.contentWindow.postMessage({ type: "quizSwitchMode", mode: "demo" }, "*");
+          }
           kpResizeFrameToContent();
         } catch (_eR) {}
       }, 80);
       setTimeout(function () {
         try {
+          if (frame.contentWindow) {
+            frame.contentWindow.postMessage({ type: "quizSwitchMode", mode: "demo" }, "*");
+          }
           kpResizeFrameToContent();
         } catch (_eR2) {}
       }, 400);
@@ -11885,33 +11895,13 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       }
     }
     function kanjiStrokeOrderRunEvaluate() {
-      if (kanjiQuizHandSubmitBusy) return;
-      if (!kanjiQuizSession) return;
-      const q = kanjiQuizSession.questions[kanjiQuizSession.index];
-      if (!q || q.type !== "stroke_order_trace") return;
-      const sec = document.getElementById("section-kanji-quiz-play");
-      if (!sec || !sec.classList.contains("active")) return;
-      if (__kanjiQuizSubmitInFlight) return;
-      if (kanjiQuizSession.rubyHandComplete || kanjiQuizSession.strokeOrderPendingAdvance) return;
-      setKanjiQuizHandSubmitBusy(true);
-      kanjiQuizEnsureScoreListener();
-      ensureKanjiHwFrameReadyOnce()
-        .then(function () {
-          const frame = document.getElementById("kp-pro-frame");
-          if (frame) patchKanjiFrameForQuizPostMessage(frame);
-          if (!postStrokeOrderQuizFrameMessage_({ type: "quizRunEvaluate", trace: false })) {
-            setKanjiQuizHandSubmitBusy(false);
-            alert("さいてんようのびゅうが みつかりません。");
-          }
-        })
-        .catch(function () {
-          setKanjiQuizHandSubmitBusy(false);
-          alert("さいてんのじゅんびに しっぱいしました。もういちどためしてください。");
-        });
+      /* 手書きキャンバス採点に統一 */
+      kanjiQuizRunHandwritingAnswer();
     }
     function kanjiStrokeOrderClearDrawing() {
-      postStrokeOrderQuizFrameMessage_({ type: "quizClearDrawing" });
-      postStrokeOrderQuizFrameMessage_({ type: "quizSwitchMode", mode: "score" });
+      try {
+        kanjiQuizClearWritePad(true);
+      } catch (_e) {}
     }
     function updateStrokeOrderHint_(mode, sc) {
       const hint = document.getElementById("kanji-stroke-order-hint");
@@ -11921,7 +11911,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         hint.innerHTML =
           "ざんねん" +
           (sc != null && !isNaN(Number(sc)) ? "（" + sc + "てん）" : "") +
-          "。書き順デモを見て練習し、もういちど60点以上で <strong>練習点 " +
+          "。お手本の書き順を見て、もういちど60点以上で <strong>練習点 " +
           pts +
           "点</strong> ゲット！";
         return;
@@ -11930,7 +11920,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         hint.textContent = "せいかい！ 次の漢字へ自動でうつります…";
         return;
       }
-      hint.textContent = "お手本どおりに書いて、60点以上をめざそう。書き順デモも使えます。";
+      hint.textContent = "お手本を見ながら書いて、60点以上をめざそう。";
     }
     var __kanjiHandScoreToastTimer = null;
     var __kanjiEarnedPtsToastTimer = null;
@@ -12493,7 +12483,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       if (type === "ruby_to_kanji") return "問題タイプ: よみ→かんじ（しゅどく）";
       if (type === "sentence_to_ruby") return "問題タイプ: れいぶん→よみ（タイピング）";
       if (type === "stroke_count") return "問題タイプ: かくすう";
-      if (type === "stroke_order_trace") return "問題タイプ: 書き順（練習と同じ画面）";
+      if (type === "stroke_order_trace") return "問題タイプ: 書き順（お手本を見て書く）";
       if (type === "jukugo_yomi") return "問題タイプ: 熟語の読み（選択）";
       return "";
     }
@@ -12544,27 +12534,17 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         escapeHtml(text.slice(idx + word.length));
     }
     function updateStrokeOrderDemoButton_() {
+      /* デモ再生ボタンは廃止。誤答時のみ書いて答えると同じお手本パネルを出す */
       const btn = document.getElementById("kanji-stroke-order-demo-btn");
-      if (!btn) return;
-      const q = kanjiQuizSession && kanjiQuizSession.questions[kanjiQuizSession.index];
-      const show = q && q.type === "stroke_order_trace";
-      btn.style.display = show ? "inline-block" : "none";
-      // 漢字練習と同様、いつでもデモ再生可能
-      btn.disabled = !show;
+      if (btn) btn.style.display = "none";
     }
     function kanjiQuizPlayStrokeOrderDemo() {
+      /* 互換用。誤答パネル経由で再生する */
       if (!kanjiQuizSession) return;
       const q = kanjiQuizSession.questions[kanjiQuizSession.index];
       if (!q || q.type !== "stroke_order_trace") return;
-      const host = document.getElementById("kanji-stroke-order-play-host");
-      const playSlot = document.getElementById("kanji-stroke-order-play-slot");
-      const frame = document.getElementById("kp-pro-frame");
-      if (host && playSlot && frame && frame.parentElement !== playSlot) {
-        mountStrokeOrderQuizPlayFrame_(q.kanji);
-      } else if (q.kanji) {
-        selectKanjiCharInQuizFrame(q.kanji);
-      }
-      postStrokeOrderQuizFrameMessage_({ type: "quizPlayStrokeOrderDemo" });
+      const ch = String(q.kanji || "");
+      if (ch) kanjiQuizMountWrongModelFrameForChar(ch);
     }
     function setKanjiQuizPlayHwFooterActive(on) {
       const sec = document.getElementById("section-kanji-quiz-play");
@@ -12623,6 +12603,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         secShell.classList.remove("kanji-quiz-jukugo-active");
         secShell.classList.remove("kanji-quiz-choices-active");
         secShell.classList.remove("kanji-choice-feedback-active");
+        secShell.classList.remove("kanji-quiz-stroke-order-active");
       }
       try {
         hideChoiceQuizVerdict_();
@@ -12687,9 +12668,6 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       if (charHand) charHand.textContent = "";
       const badge = document.getElementById("kanji-play-type-badge");
       if (badge) badge.innerText = "";
-      try {
-        stopKanjiActionBusy(document.getElementById("kanji-stroke-order-skip-btn"));
-      } catch (_eSoSkip) {}
       try {
         kanjiQuizSyncPenUiFromStrokeParams();
       } catch (e) {}
@@ -12792,7 +12770,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       const promptEl = document.getElementById('kanji-play-prompt');
       if (promptEl) {
         if (q.type === "stroke_order_trace") {
-          promptEl.innerText = "漢字練習と同じ画面で書いて、60点以上をめざそう。";
+          promptEl.innerText = "お手本を見ながら書いて、60点以上をめざそう。";
         } else if (q.type === "ruby_to_kanji") {
           promptEl.innerText = q.prompt || "";
         } else if (q.type === "okurigana_shift") promptEl.innerText = "正しい送り仮名を選びましょう。";
@@ -12819,10 +12797,16 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         try {
           kanjiQuizHideWrongFeedback();
         } catch (e) {}
-        if (drillHand) drillHand.style.display = "none";
-        setKanjiQuizPlayHwFooterActive(false);
+        if (secPlay) secPlay.classList.add("kanji-quiz-stroke-order-active");
+        if (drillHand) drillHand.style.display = "flex";
+        setKanjiQuizPlayHwFooterActive(true);
+        const cvsActionsSo = document.getElementById("kanji-hw-canvas-actions");
+        if (cvsActionsSo) cvsActionsSo.style.display = "flex";
+        const skipHwSo = document.getElementById("kanji-quiz-skip-hw-btn");
+        if (skipHwSo) skipHwSo.textContent = "次へ（ふせいかい）";
         updateStrokeOrderHint_("ready");
         updateStrokeOrderDemoButton_();
+        setKanjiQuizHandSubmitBusy(false);
         kanjiQuizEnsureScoreListener();
         const idxAtRender = kanjiQuizSession.index;
         const targets = [String(q.kanji || "")].filter(Boolean);
@@ -12836,14 +12820,22 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
           alert("手書き対象の漢字が見つかりません。");
           return;
         }
-        if (markerEl) markerEl.textContent = "";
+        if (markerEl) markerEl.textContent = kanjiQuizCircledQuestionNum(kanjiQuizSession.index + 1);
         if (prefixEl) prefixEl.textContent = "";
         if (suffixEl) suffixEl.textContent = "";
-        if (charHand) charHand.textContent = "";
+        if (charHand) {
+          charHand.textContent = "";
+          charHand.style.opacity = "";
+          charHand.style.fontSize = "";
+        }
         const t0 = targets[0];
+        kanjiQuizSyncPenUiFromStrokeParams();
+        kanjiQuizClearWritePad(false);
+        kanjiQuizSetupWriteCanvas();
+        kanjiQuizScheduleWriteCanvasReflow();
         if (summary) {
           summary.innerHTML =
-            "<span style=\"color:#607d8b;font-size:clamp(12px,3vw,14px);\">漢字練習画面を じゅんびしています…</span>";
+            "<span style=\"color:#607d8b;font-size:clamp(12px,3vw,14px);\">お手本を じゅんびしています…</span>";
         }
         ensureKanjiHwFrameReadyOnce().then(function () {
           const sec = document.getElementById("section-kanji-quiz-play");
@@ -12860,6 +12852,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
             if (summary) summary.innerHTML = "";
             return;
           }
+          /* お手本スロットにターゲット漢字を装填して常時表示 */
           if (!mountStrokeOrderQuizPlayFrame_(t0)) {
             if (summary) summary.innerHTML = "";
             return;
@@ -12869,13 +12862,18 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
               if (!kanjiQuizSession || kanjiQuizSession.index !== idxAtRender) return;
               const qLate = kanjiQuizSession.questions[kanjiQuizSession.index];
               if (!qLate || qLate.type !== "stroke_order_trace") return;
+              const secLate = document.getElementById("section-kanji-quiz-play");
+              if (secLate && secLate.classList.contains("kanji-quiz-wrong-visible")) return;
               const frLate = document.getElementById("kp-pro-frame");
               if (frLate) patchKanjiFrameForQuizPostMessage(frLate);
               mountStrokeOrderQuizPlayFrame_(t0);
             }, delayMs);
           });
           updateStrokeOrderHint_("ready");
-          updateStrokeOrderDemoButton_();
+          kanjiQuizSyncPenUiFromStrokeParams();
+          kanjiQuizClearWritePad(true);
+          kanjiQuizSetupWriteCanvas();
+          kanjiQuizScheduleWriteCanvasReflow();
           if (summary) summary.innerHTML = "";
         });
       } else if (q.type === "ruby_to_kanji") {
@@ -12889,7 +12887,10 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         setKanjiQuizPlayHwFooterActive(true);
         const cvsActions = document.getElementById("kanji-hw-canvas-actions");
         if (cvsActions) cvsActions.style.display = "flex";
+        const skipHwRuby = document.getElementById("kanji-quiz-skip-hw-btn");
+        if (skipHwRuby) skipHwRuby.textContent = "次へ";
         updateStrokeOrderDemoButton_();
+        setKanjiQuizHandSubmitBusy(false);
         kanjiQuizEnsureScoreListener();
         const idxAtRender = kanjiQuizSession.index;
         const targets = kanjiQuizHanOnlyChars(q.correctAnswer || q.kanji);
@@ -13677,20 +13678,23 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       const answer = document.getElementById("kanji-choice-verdict-answer");
       const nextBtn = document.getElementById("kanji-choice-next-btn");
       if (!verdict || !mark || !answer) return;
+      // 中身が外側へ持ち出されていた場合は verdict 内へ戻す
+      if (mark.parentNode !== verdict) verdict.appendChild(mark);
+      if (answer.parentNode !== verdict) verdict.appendChild(answer);
       mark.textContent = isCorrect ? "◎" : "×";
-      // display:contents 時でも色が確実に付くよう直指定
       mark.style.color = isCorrect ? "#e53935" : "#1565c0";
       answer.textContent = formatChoiceQuizCorrectReadingLabel_(q);
       verdict.classList.toggle("is-correct", !!isCorrect);
       verdict.classList.toggle("is-wrong", !isCorrect);
       verdict.classList.add("is-visible");
-      verdict.style.display = "";
+      verdict.style.display = "flex";
       // 出題＋ターゲット漢字と同じ縦列へ：出題 → ◎/× → 正解読み → 次へ
       var stemHost = null;
       if (q && q.type === "jukugo_yomi") {
         stemHost = document.querySelector("#kanji-play-detail .jukugo-yomi-stem");
       } else if (q && q.type === "okurigana_shift") {
         stemHost = document.getElementById("kanji-play-char");
+        if (stemHost) stemHost.classList.add("kanji-choice-stem-host");
       }
       if (stemHost) {
         stemHost.appendChild(verdict);
@@ -13841,7 +13845,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         if (!kanjiQuizSession.rubyHandComplete) {
           alert(
             q.type === "stroke_order_trace"
-              ? "漢字を書いて、「これで採点」でこたえてください。"
+              ? "お手本を見ながら漢字を書いて、「これで採点」でこたえてください。"
               : "かくかんじを マスにかき、「これでかいとう」で こたえてください。"
           );
           return;
@@ -14077,9 +14081,6 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         try {
           stopKanjiActionBusy(document.getElementById("kanji-quiz-skip-hw-btn"));
         } catch (_eSkipHw) {}
-        try {
-          stopKanjiActionBusy(document.getElementById("kanji-stroke-order-skip-btn"));
-        } catch (_eSkipSo) {}
       }
     }
     function loadQuestionsForSettings(btn, mId, mName, uName, categoryHint) { 
