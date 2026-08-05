@@ -1,1 +1,5 @@
 .clasp.json
+# promote-to-root が作る一時バックアップ（コミットしない）
+_backup*/
+# 抽出スクリプトの中間成果物
+**/_app-legacy-stripped.js

@@ -1,0 +1,20 @@
+{
+  "original": {
+    "indexHtmlLines": 17043,
+    "indexHtmlKb": 837,
+    "gasLines": 4587,
+    "gasKb": 193
+  },
+  "root": {
+    "indexHtmlLines": 525,
+    "indexHtmlKb": 46,
+    "cssLines": 3725,
+    "appJsLines": 12667,
+    "adapterAndInfraLines": 318,
+    "splitModuleLines": 12595,
+    "kpPracticeKb": 61,
+    "gasLines": 4480,
+    "gasKb": 189,
+    "migrateOnceLines": 150
+  }
+}
