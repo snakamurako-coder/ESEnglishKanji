@@ -1,4 +1,6 @@
 # Promote codereduction -> project root (UTF-8)
+# 注意: 作成する _backup-before-promote-* は .gitignore 対象。Git に追加しないこと。
+# promote 後の正本はリポジトリルート（codereduction は再適用用）。
 param(
   [switch]$WhatIf
 )
