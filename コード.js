@@ -4263,7 +4263,15 @@ function buildStrokeOrderTraceQuizQuestion_(item) {
     rowIndex: item.rowIndex,
     prompt: "漢字練習と同じ画面で書いて、60点以上をめざそう。",
     correctAnswer: k,
-    searchText: k + " 書き順"
+    searchText: k + " 書き順",
+    readings: (item.readings || []).map(function (r) {
+      return {
+        label: r.label,
+        kind: r.kind,
+        reading: r.reading,
+        examples: (r.examples || []).slice()
+      };
+    })
   };
 }
 
