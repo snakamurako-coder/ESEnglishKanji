@@ -1150,7 +1150,14 @@
         } catch (_) { SafeStorage.remove(cacheKey); }
       }
       showLoading(true, "KanjiVG.txt ???...");
-      window.__kpKanjiInflight = fetch('../KanjiVG.txt')
+      window.__kpKanjiInflight = fetch((function () {
+        try {
+          // assets/ 配下でもルートの KanjiVG.txt を確実に取る
+          return new URL('../KanjiVG.txt', window.location.href).href;
+        } catch (_e) {
+          return '../KanjiVG.txt';
+        }
+      })())
       .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.text(); })
       .then(text => {
         const data = parseKanjiVgTsv(text);

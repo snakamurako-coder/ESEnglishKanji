@@ -1,5 +1,5 @@
 // ▼ GASのURLを貼り付けてください（※前回と同じURLならそのままで大丈夫） ▼
-    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbyfD4P7uj4MhlTkBe0RlazHG40eHerBMkj6EmJpe3dcMraNKg-rekdJ0rcyZ4aOUYfIqA/exec";
+    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxll664xMVHu8aOMASTCRpECaCBBkTxYa8ffEvCigrS4xdxYQeMSu2_BeUWF1gEyCPyaw/exec";
     const LS_PENDING_FINISH_SAVE = "app_pending_finish_quiz_save_v1";
     const LS_FLUSHED_SUBMIT_IDS = "app_flushed_submit_ids_v1";
     const PENDING_FINISH_FLUSH_MAX_ATTEMPTS = 5;
@@ -3810,20 +3810,27 @@
     }
 
     function fetchRewardsList_() {
+        const apply = function (d) {
+          if (d && d.status === "success") {
+            __rewardsListCache = d.rewards || [];
+            __rewardsListCacheAt = Date.now();
+          }
+          return d;
+        };
+        if (typeof gasApiFetchJson === "function") {
+          return gasApiFetchJson({ action: "get_rewards" }, { retries: 2, timeoutMs: 60000, retryDelaysMs: [500, 1200] })
+            .then(apply);
+        }
         return fetch(GAS_API_URL, { method: 'POST', body: JSON.stringify({ action: "get_rewards" }) })
           .then(r => r.json())
-          .then(d => {
-            if (d && d.status === "success") {
-              __rewardsListCache = d.rewards || [];
-              __rewardsListCacheAt = Date.now();
-            }
-            return d;
-          });
+          .then(apply);
     }
 
     function loadRewards(btn) {
         const origText = toggleBtnLoading(btn, true);
+        try { hideKanjiQuizSetLoadingOverlay_(); } catch (_e) {}
         switchSection('section-rewards');
+        const box = document.getElementById('rewards-container');
         const now = Date.now();
         const cacheFresh = __rewardsListCache && (now - __rewardsListCacheAt) < REWARD_LIST_CACHE_MS_;
         if (cacheFresh) {
@@ -3837,15 +3844,16 @@
             }).catch(() => {});
             return;
         }
-        document.getElementById('rewards-container').innerHTML = "<p>よみこみ中...</p>";
+        if (box) box.innerHTML = "<p>よみこみ中...</p>";
         fetchRewardsList_()
         .then(d => {
             toggleBtnLoading(btn, false, origText);
             if (d && d.status === "success") renderRewardsList_(__rewardsListCache);
-            else document.getElementById('rewards-container').innerHTML = "<p>よみこみに失敗しました。もういちどためしてね。</p>";
-        }).catch(() => {
+            else if (box) box.innerHTML = "<p>よみこみに失敗しました。もういちどためしてね。</p>";
+        }).catch(function (err) {
+            console.error("loadRewards failed:", err);
             toggleBtnLoading(btn, false, origText);
-            document.getElementById('rewards-container').innerHTML = "<p>よみこみに失敗しました。もういちどためしてね。</p>";
+            if (box) box.innerHTML = "<p>よみこみに失敗しました。もういちどためしてね。</p>";
         });
     }
 
@@ -3867,20 +3875,26 @@
     }
 
     function fetchInventoryList_(userId) {
+        const apply = function (d) {
+          if (d && d.status === "success") {
+            __inventoryListCache = d.inventory || [];
+            __inventoryListCacheUserId = String(userId);
+            __inventoryListCacheAt = Date.now();
+          }
+          return d;
+        };
+        if (typeof gasApiFetchJson === "function") {
+          return gasApiFetchJson({ action: "get_inventory", userId: userId }, { retries: 2, timeoutMs: 60000, retryDelaysMs: [500, 1200] })
+            .then(apply);
+        }
         return fetch(GAS_API_URL, { method: 'POST', body: JSON.stringify({ action: "get_inventory", userId: userId }) })
           .then(r => r.json())
-          .then(d => {
-            if (d && d.status === "success") {
-              __inventoryListCache = d.inventory || [];
-              __inventoryListCacheUserId = String(userId);
-              __inventoryListCacheAt = Date.now();
-            }
-            return d;
-          });
+          .then(apply);
     }
 
     function loadInventory(btn) { 
         const origText = toggleBtnLoading(btn, true);
+        try { hideKanjiQuizSetLoadingOverlay_(); } catch (_e) {}
         switchSection('section-inventory');
         const user = JSON.parse(localStorage.getItem('app_kid_user'));
         const now = Date.now();
@@ -6911,7 +6925,11 @@
     }
     function ensureKanjiHwFrameReadyOnce() {
       if (!__kanjiQuizHwFrameReadyP) {
-        __kanjiQuizHwFrameReadyP = ensureKanjiPracticeFrameReady();
+        __kanjiQuizHwFrameReadyP = ensureKanjiPracticeFrameReady().catch(function (err) {
+          console.warn("ensureKanjiPracticeFrameReady failed:", err);
+          __kanjiQuizHwFrameReadyP = null;
+          return null;
+        });
       }
       return __kanjiQuizHwFrameReadyP;
     }
@@ -7812,12 +7830,17 @@
         }
         let settled = false;
         let pollId = null;
+        let hardTimer = null;
 
         function cleanup() {
           window.removeEventListener("message", onKpKanjiReady);
           if (pollId != null) {
             clearInterval(pollId);
             pollId = null;
+          }
+          if (hardTimer != null) {
+            clearTimeout(hardTimer);
+            hardTimer = null;
           }
         }
 
@@ -7834,6 +7857,8 @@
           finish();
         }
         window.addEventListener("message", onKpKanjiReady);
+        // load イベント取りこぼし・KANJI_DATA 空でも止まらないよう上限を設ける
+        hardTimer = setTimeout(finish, 10000);
 
         function tryPoll() {
           patchKanjiFrameForQuizPostMessage(frame);
@@ -7861,18 +7886,39 @@
               finish();
               return;
             }
-            if (n >= 60) finish();
+            if (n >= 80) finish();
           }, 80);
         }
 
-        if (frame.dataset.kpLoaded === "1" && frame.contentDocument && frame.contentDocument.readyState === "complete") {
-          setTimeout(tryPoll, 0);
-        } else {
-          frame.addEventListener("load", function onLf() {
+        function startWhenReady() {
+          try {
+            if (frame.contentDocument && frame.contentDocument.readyState === "complete") {
+              setTimeout(tryPoll, 0);
+              return;
+            }
+          } catch (_eDoc) {}
+          var loadHandled = false;
+          function onLf() {
+            if (loadHandled) return;
+            loadHandled = true;
             frame.removeEventListener("load", onLf);
             setTimeout(tryPoll, 0);
-          });
+          }
+          frame.addEventListener("load", onLf);
+          // すでに load 済みの場合の取りこぼし救済
+          setTimeout(function () {
+            if (settled || loadHandled) return;
+            try {
+              if (frame.contentDocument && frame.contentDocument.readyState === "complete") {
+                onLf();
+              }
+            } catch (_e2) {
+              tryPoll();
+            }
+          }, 200);
         }
+
+        startWhenReady();
       });
     }
     function ensureKanjiFrameForQuizEval() {
@@ -8712,6 +8758,7 @@
       if (secShell) {
         secShell.classList.remove("kanji-quiz-jukugo-active");
         secShell.classList.remove("kanji-quiz-choices-active");
+        secShell.classList.remove("kanji-quiz-typing-active");
         secShell.classList.remove("kanji-choice-feedback-active");
         secShell.classList.remove("kanji-quiz-stroke-order-active");
       }
@@ -8814,6 +8861,7 @@
         const isChoiceQ = q.type === "jukugo_yomi" || q.type === "okurigana_shift" || q.type === "stroke_count";
         secPlay.classList.toggle("kanji-quiz-jukugo-active", q.type === "jukugo_yomi");
         secPlay.classList.toggle("kanji-quiz-choices-active", isChoiceQ);
+        secPlay.classList.toggle("kanji-quiz-typing-active", q.type === "sentence_to_ruby");
       }
       const subBtnReset = document.getElementById("kanji-play-submit-btn");
       if (subBtnReset) {
@@ -9216,6 +9264,7 @@
         if (q.type === "sentence_to_ruby") {
           typingWrap.style.display = "flex";
           typingWrap.style.maxWidth = "min(980px, 98vw)";
+          typingWrap.removeAttribute("aria-hidden");
           kanjiYomiBindTypingInputOnce();
           kanjiQuizSession.sentenceYomiRecognized = "";
           const hidInp = document.getElementById("kanji-play-input");
@@ -9233,8 +9282,21 @@
             if (hidNow) hidNow.value = val;
             submitKanjiQuizScore();
           });
+          /* vertical-rl 時代の横スクロール残があると例文が視界外に残る */
+          try {
+            const wrapEl = secPlay && secPlay.querySelector(".kanji-quiz-drill-wrap");
+            if (wrapEl) {
+              requestAnimationFrame(function () {
+                try {
+                  wrapEl.scrollLeft = 0;
+                  wrapEl.scrollTop = 0;
+                } catch (eScrY) {}
+              });
+            }
+          } catch (eScrY2) {}
         } else {
           typingWrap.style.display = "none";
+          typingWrap.setAttribute("aria-hidden", "true");
         }
       }
       if (subBtn) {
