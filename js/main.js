@@ -1,5 +1,5 @@
 /**
- * codereduction 起動エントリ（マイグレーション → app.js の onload へ）。
+ * 起動エントリ（マイグレーション → app.js の onload へ）。
  */
 (function (global) {
   if (global.AppMigrate && typeof global.AppMigrate.migrateLocalOnce === 'function') {

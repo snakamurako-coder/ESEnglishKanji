@@ -1,15 +1,10 @@
-# codereduction Canonical Schema
+# Canonical Schema（軽量化版）
 
-このフォルダは軽量化版の**生成・再適用用ワークスペース**です。**コアは最新フォーマットのみ**を前提とし、旧形式の解釈は `js/adapters/` と一回限りマイグレーションに閉じます。
+アプリの**正本はリポジトリルート**です（`index.html` / `js/` / `css/` / `assets/` / `コード.js` / `migrateOnce.gs`）。
 
-## 運用（promote 後）
+この `codereduction/` フォルダは、スキーマ説明・サイズレポート・補助スクリプトのみを置きます。実行コードの二重コピーはありません。
 
-| 場所 | 役割 |
-|------|------|
-| **リポジトリルート** | 本番正本（ローカル HTTP・GAS 連携・日常の修正はここ） |
-| **`codereduction/`** | 再 promote / サイズ比較 / 抽出スクリプト用の控え。ルートと二重編集しない |
-
-ルートを直したら、必要なら `codereduction/` へ同じ変更をコピーする（または次の promote 前に揃える）。
+**コアは最新フォーマットのみ**を前提とし、旧形式の解釈はルートの `js/adapters/` と一回限りマイグレーションに閉じます。
 
 ## users 行 JSON
 
@@ -50,13 +45,23 @@
 - `window.KP_HTML` 埋め込み（→ `assets/kp-practice.html`）
 - GAS: flat 特訓進捗、users JSON からの履歴 migrate ランタイム分岐
 
-## ファイル構成
+## ルートのファイル構成
 
 - `index.html` — 薄いシェル
 - `css/app.css` — スタイル
 - `js/main.js` — 起動・マイグレーション
 - `js/adapters/*` — 旧データ正規化（一回限り + API 入口）
-- `js/app.js` — アプリ本体（旧 index.html 内 JS から legacy 除去）
+- `js/app.js` — アプリ本体
 - `js/quiz/**`, `js/*.js` — 機能別分割（参照・今後の ES module 化用）
-- `gas/コード.js` — slim GAS API
-- `gas/migrateOnce.gs` — 管理者向け一括データ移行
+- `コード.js` — slim GAS API
+- `migrateOnce.gs` — 管理者向け一括データ移行
+- `assets/kp-practice.html` — 漢字練習 iframe
+
+## このフォルダのスクリプト
+
+```powershell
+.\codereduction\scripts\serve.ps1          # ルートを HTTP でプレビュー
+node .\codereduction\scripts\report-size.mjs  # 行数レポート更新
+```
+
+GAS の push / deploy はルートの `.\deploy-and-sync.ps1` を使います。

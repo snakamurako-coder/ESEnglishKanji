@@ -1,5 +1,5 @@
 /**
- * 行数比較レポート生成
+ * ルート正本の行数レポート（軽量化前後の比較用）
  * node codereduction/scripts/report-size.mjs
  */
 import fs from 'fs';
@@ -8,7 +8,15 @@ import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '../..');
-const CR = path.resolve(__dirname, '..');
+const OUT_DIR = path.resolve(__dirname, '..');
+
+/** promote 前の monolith（履歴固定値。再計測しない） */
+const HISTORICAL_ORIGINAL = {
+  indexHtmlLines: 17043,
+  indexHtmlKb: 837,
+  gasLines: 4587,
+  gasKb: 193,
+};
 
 function countLines(filePath) {
   if (!fs.existsSync(filePath)) return 0;
@@ -31,57 +39,68 @@ function fileSizeKb(filePath) {
   return Math.round(fs.statSync(filePath).size / 1024);
 }
 
-const origIndex = path.join(ROOT, 'index.html');
-const crIndex = path.join(CR, 'index.html');
-const origGas = path.join(ROOT, 'コード.js');
-const crGas = path.join(CR, 'gas/コード.js');
+function findGasCodePath() {
+  const preferred = path.join(ROOT, 'コード.js');
+  if (fs.existsSync(preferred)) return preferred;
+  for (const name of fs.readdirSync(ROOT)) {
+    if (!name.endsWith('.js') || name === 'kanji-vg.js') continue;
+    const p = path.join(ROOT, name);
+    if (fs.statSync(p).size > 50000) return p;
+  }
+  return preferred;
+}
+
+const gasPath = findGasCodePath();
 
 const report = {
-  original: {
-    indexHtmlLines: countLines(origIndex),
-    indexHtmlKb: fileSizeKb(origIndex),
-    gasLines: countLines(origGas),
-    gasKb: fileSizeKb(origGas),
-  },
-  codereduction: {
-    indexHtmlLines: countLines(crIndex),
-    indexHtmlKb: fileSizeKb(crIndex),
-    cssLines: countLines(path.join(CR, 'css/app.css')),
-    appJsLines: countLines(path.join(CR, 'js/app.js')),
+  original: HISTORICAL_ORIGINAL,
+  root: {
+    indexHtmlLines: countLines(path.join(ROOT, 'index.html')),
+    indexHtmlKb: fileSizeKb(path.join(ROOT, 'index.html')),
+    cssLines: countLines(path.join(ROOT, 'css/app.css')),
+    appJsLines: countLines(path.join(ROOT, 'js/app.js')),
     adapterAndInfraLines:
-      countLines(path.join(CR, 'js/main.js')) +
-      countLines(path.join(CR, 'js/api.js')) +
-      countLines(path.join(CR, 'js/state.js')) +
-      dirJsLines(path.join(CR, 'js/adapters')),
-    splitModuleLines: dirJsLines(path.join(CR, 'js/quiz')) +
-      countLines(path.join(CR, 'js/home.js')) +
-      countLines(path.join(CR, 'js/auth.js')) +
-      countLines(path.join(CR, 'js/materials.js')) +
-      countLines(path.join(CR, 'js/training.js')) +
-      countLines(path.join(CR, 'js/rewards.js')) +
-      countLines(path.join(CR, 'js/external.js')) +
-      countLines(path.join(CR, 'js/stopwatch.js')) +
-      countLines(path.join(CR, 'js/kanjiLearning.js')) +
-      countLines(path.join(CR, 'js/parentAdmin.js')) +
-      countLines(path.join(CR, 'js/app-shared.js')),
-    kpPracticeKb: fileSizeKb(path.join(CR, 'assets/kp-practice.html')),
-    gasLines: countLines(crGas),
-    gasKb: fileSizeKb(crGas),
-    migrateOnceLines: countLines(path.join(CR, 'gas/migrateOnce.gs')),
+      countLines(path.join(ROOT, 'js/main.js')) +
+      countLines(path.join(ROOT, 'js/api.js')) +
+      countLines(path.join(ROOT, 'js/state.js')) +
+      dirJsLines(path.join(ROOT, 'js/adapters')),
+    splitModuleLines:
+      dirJsLines(path.join(ROOT, 'js/quiz')) +
+      countLines(path.join(ROOT, 'js/home.js')) +
+      countLines(path.join(ROOT, 'js/auth.js')) +
+      countLines(path.join(ROOT, 'js/materials.js')) +
+      countLines(path.join(ROOT, 'js/training.js')) +
+      countLines(path.join(ROOT, 'js/rewards.js')) +
+      countLines(path.join(ROOT, 'js/external.js')) +
+      countLines(path.join(ROOT, 'js/stopwatch.js')) +
+      countLines(path.join(ROOT, 'js/kanjiLearning.js')) +
+      countLines(path.join(ROOT, 'js/parentAdmin.js')) +
+      countLines(path.join(ROOT, 'js/app-shared.js')),
+    kpPracticeKb: fileSizeKb(path.join(ROOT, 'assets/kp-practice.html')),
+    gasLines: countLines(gasPath),
+    gasKb: fileSizeKb(gasPath),
+    migrateOnceLines: countLines(path.join(ROOT, 'migrateOnce.gs')),
   },
 };
 
-const crFrontTotal =
-  report.codereduction.indexHtmlLines +
-  report.codereduction.cssLines +
-  report.codereduction.appJsLines +
-  report.codereduction.adapterAndInfraLines;
+const rootFrontTotal =
+  report.root.indexHtmlLines +
+  report.root.cssLines +
+  report.root.appJsLines +
+  report.root.adapterAndInfraLines;
 
 console.log(JSON.stringify(report, null, 2));
 console.log('\n--- Summary ---');
-console.log(`Original index.html: ${report.original.indexHtmlLines} lines / ${report.original.indexHtmlKb} KB`);
-console.log(`codereduction front (shell+css+app+infra): ${crFrontTotal} lines`);
-console.log(`KP externalized: ${report.codereduction.kpPracticeKb} KB (was embedded in index.html)`);
-console.log(`Original GAS: ${report.original.gasLines} lines → slim: ${report.codereduction.gasLines} lines (+ migrateOnce ${report.codereduction.migrateOnceLines})`);
+console.log(
+  `Original index.html: ${report.original.indexHtmlLines} lines / ${report.original.indexHtmlKb} KB`
+);
+console.log(`Root front (shell+css+app+infra): ${rootFrontTotal} lines`);
+console.log(
+  `KP externalized: ${report.root.kpPracticeKb} KB (was embedded in index.html)`
+);
+console.log(
+  `Original GAS: ${report.original.gasLines} lines → slim: ${report.root.gasLines} lines (+ migrateOnce ${report.root.migrateOnceLines})`
+);
 
-fs.writeFileSync(path.join(CR, 'SIZE-REPORT.json'), JSON.stringify(report, null, 2));
+fs.writeFileSync(path.join(OUT_DIR, 'SIZE-REPORT.json'), JSON.stringify(report, null, 2));
+console.log(`Wrote ${path.join(OUT_DIR, 'SIZE-REPORT.json')}`);
