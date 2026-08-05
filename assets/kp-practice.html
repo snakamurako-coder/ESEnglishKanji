@@ -1149,7 +1149,7 @@
           return Promise.resolve();
         } catch (_) { SafeStorage.remove(cacheKey); }
       }
-      showLoading(true, "KanjiVG.txt ???...");
+      showLoading(true, "KanjiVG.txt を読み込み中...");
       window.__kpKanjiInflight = fetch((function () {
         try {
           // assets/ 配下でもルートの KanjiVG.txt を確実に取る
@@ -1161,14 +1161,14 @@
       .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.text(); })
       .then(text => {
         const data = parseKanjiVgTsv(text);
-        if (!Object.keys(data).length) throw new Error("TSV?????????");
+        if (!Object.keys(data).length) throw new Error("TSVの解析結果が空です");
         KANJI_DATA = data;
         SafeStorage.set(cacheKey, JSON.stringify(data));
         populateKanjiSelector();
         showLoading(false);
       })
       .catch(e => {
-        alert("KanjiVG.txt ??????: " + (e && e.message ? e.message : e));
+        alert("KanjiVG.txt の読み込みに失敗しました: " + (e && e.message ? e.message : e));
         showLoading(false);
       })
       .finally(() => { window.__kpKanjiInflight = null; });

@@ -5681,8 +5681,12 @@
     }
     function openKanjiPracticePro() {
       const frame = document.getElementById('kp-pro-frame');
-      if (!frame) return;
-      const KP_EMBED_VER = "7";
+      if (!frame) {
+        try { alert("高機能モードの読み込みに失敗しました。"); } catch (_e) {}
+        return;
+      }
+      const KP_EMBED_VER = "8";
+      const KP_SRC = "assets/kp-practice.html";
       if (frame.dataset.kpEmbedVer !== KP_EMBED_VER) {
         frame.dataset.kpLoaded = "";
         frame.dataset.kpEmbedVer = KP_EMBED_VER;
@@ -5693,22 +5697,61 @@
         kpResizeFrameToContent();
         return;
       }
-      if (!frame.src || frame.src.indexOf('kp-practice.html') < 0) {
-        frame.src = 'assets/kp-practice.html';
-      }
-      frame.dataset.kpLoaded = "1";
+      if (frame.dataset.kpLoading === "1") return;
+      frame.dataset.kpLoading = "1";
       delete frame.dataset.kanjiQuizPatched;
-      frame.addEventListener("load", function onKpEmbedLoad() {
-        frame.removeEventListener("load", onKpEmbedLoad);
-        syncKanjiHandScoreWeightsToFrame(frame);
-        patchKanjiFrameForQuizPostMessage(frame);
-      });
-      setTimeout(function () {
+      let settled = false;
+      function markFailed(detail) {
+        if (settled) return;
+        settled = true;
+        frame.dataset.kpLoading = "";
+        frame.dataset.kpLoaded = "";
+        try {
+          alert("高機能モードの読み込みに失敗しました。" + (detail ? "\n（" + detail + "）" : ""));
+        } catch (_eA) {}
+      }
+      function markReady() {
+        if (settled) return;
+        settled = true;
+        frame.dataset.kpLoading = "";
+        frame.dataset.kpLoaded = "1";
         syncKanjiHandScoreWeightsToFrame(frame);
         patchKanjiFrameForQuizPostMessage(frame);
         kpResizeFrameToContent();
-      }, 120);
-      setTimeout(kpResizeFrameToContent, 700);
+      }
+      function onKpEmbedLoad() {
+        frame.removeEventListener("load", onKpEmbedLoad);
+        try {
+          const doc = frame.contentDocument;
+          const href = String((frame.contentWindow && frame.contentWindow.location && frame.contentWindow.location.href) || "");
+          if (!doc || !doc.body || href.indexOf("kp-practice.html") < 0) {
+            markFailed("練習画面ファイルを開けませんでした");
+            return;
+          }
+          markReady();
+        } catch (_eLoad) {
+          // クロスオリジン等でも load まで来ていれば継続（同一オリジン想定）
+          markReady();
+        }
+      }
+      frame.addEventListener("load", onKpEmbedLoad);
+      frame.addEventListener("error", function onKpEmbedErr() {
+        frame.removeEventListener("error", onKpEmbedErr);
+        markFailed(KP_SRC + " の取得に失敗");
+      });
+      setTimeout(function () {
+        if (!settled && frame.dataset.kpLoading === "1") {
+          markFailed("読み込みがタイムアウトしました。ページを再読み込みしてください。");
+        }
+      }, 15000);
+      try {
+        frame.src = KP_SRC + "?v=" + encodeURIComponent(KP_EMBED_VER);
+      } catch (_eSrc) {
+        markFailed(String(_eSrc && _eSrc.message ? _eSrc.message : _eSrc));
+      }
+      setTimeout(function () {
+        if (frame.dataset.kpLoaded === "1") kpResizeFrameToContent();
+      }, 700);
     }
     function kpResizeFrameToContent() {
       const frame = document.getElementById('kp-pro-frame');
