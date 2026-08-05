@@ -2016,15 +2016,20 @@ function ensureUsersSheetStopwatchColumn_(adminSs) {
 
 function ensureRewardsSheetStructure_(adminSs) {
   const result = { headerFixed: false, sampleUpdated: false };
+  const props = PropertiesService.getScriptProperties();
+  const FLAG = "REWARDS_STRUCTURE_OK_V1";
   let sheet = adminSs.getSheetByName("rewards");
   if (!sheet) {
     sheet = adminSs.insertSheet("rewards");
     sheet.appendRow(["ID", "名前", "必要ポイント", "説明", "制限時間（分）"]);
     sheet.appendRow(["r_1", "YouTube視聴1時間延長券", 50, "管理者に提示して使ってね。", 60]);
     result.headerFixed = true;
+    props.setProperty(FLAG, "1");
     return result;
   }
   if (ensureSheetHeaderColumn_(sheet, 5, "制限時間（分）")) result.headerFixed = true;
+  // ホットパスでは毎回の全行スキャンを避ける（初回／ヘッダ修正時のみサンプル点検）
+  if (props.getProperty(FLAG) === "1" && !result.headerFixed) return result;
   const data = sheet.getDataRange().getValues();
   for (let i = 1; i < data.length; i++) {
     if (String(data[i][0]) === "r_1" && (!data[i][4] || Number(data[i][4]) <= 0)) {
@@ -2033,6 +2038,7 @@ function ensureRewardsSheetStructure_(adminSs) {
       break;
     }
   }
+  props.setProperty(FLAG, "1");
   return result;
 }
 
@@ -2183,7 +2189,26 @@ function parseSheetDateTime_(value) {
   return null;
 }
 
-function getRewardLimitMinutesById_(adminSs, rewardId) {
+/** rewards シートを1回読んで ID→制限時間(分) のマップを返す */
+function buildRewardLimitMinutesMap_(adminSs) {
+  const map = {};
+  const sheet = adminSs.getSheetByName("rewards");
+  if (!sheet) return map;
+  const data = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    const id = String(data[i][0] || "");
+    if (!id) continue;
+    const n = Number(data[i][4]);
+    map[id] = isNaN(n) || n <= 0 ? 0 : Math.floor(n);
+  }
+  return map;
+}
+
+function getRewardLimitMinutesById_(adminSs, rewardId, limitMapOpt) {
+  if (limitMapOpt && typeof limitMapOpt === "object") {
+    const v = limitMapOpt[String(rewardId)];
+    return v == null ? 0 : Number(v) || 0;
+  }
   const sheet = adminSs.getSheetByName("rewards");
   if (!sheet) return 0;
   const data = sheet.getDataRange().getValues();
@@ -2381,6 +2406,7 @@ function buildActiveRewardTicketForUser_(adminSs, userId) {
   const lastRow = inventorySheet.getLastRow();
   if (lastRow < 2) return null;
   const data = inventorySheet.getRange(2, 1, lastRow - 1, 7).getValues();
+  const limitMap = buildRewardLimitMinutesMap_(adminSs);
   const now = Date.now();
   let best = null;
   for (let i = 0; i < data.length; i++) {
@@ -2389,7 +2415,7 @@ function buildActiveRewardTicketForUser_(adminSs, userId) {
     if (String(row[4]) !== "使用済み") continue;
     const usedAt = parseSheetDateTime_(row[5]);
     if (!usedAt) continue;
-    const limitMinutes = getRewardLimitMinutesById_(adminSs, String(row[2] || ""));
+    const limitMinutes = getRewardLimitMinutesById_(adminSs, String(row[2] || ""), limitMap);
     if (!limitMinutes) continue;
     const endsAt = computeRewardEndsAt_(usedAt, limitMinutes);
     if (!endsAt || endsAt.getTime() <= now) continue;
@@ -3501,12 +3527,13 @@ function handleGetInventory(req) {
   const adminSs = getAdminSpreadsheet_();
   ensureInventorySheetStructure_(adminSs);
   ensureRewardsSheetStructure_(adminSs);
+  const limitMap = buildRewardLimitMinutesMap_(adminSs);
   const data = adminSs.getSheetByName("inventory").getDataRange().getValues();
   const inventory = [];
+  const uid = String(req.userId || "");
   for (let i = 1; i < data.length; i++) {
-    if (data[i][1] !== req.userId) continue;
+    if (String(data[i][1]) !== uid) continue;
     const rewardId = String(data[i][2] || "");
-    const limitMinutes = getRewardLimitMinutesById_(adminSs, rewardId);
     inventory.push({
       rowIdx: i + 1,
       date: data[i][0],
@@ -3514,7 +3541,7 @@ function handleGetInventory(req) {
       rewardName: data[i][3],
       status: data[i][4],
       usedAt: data[i][5] || "",
-      limitMinutes: limitMinutes
+      limitMinutes: getRewardLimitMinutesById_(adminSs, rewardId, limitMap)
     });
   }
   inventory.sort(function (a, b) { return b.rowIdx - a.rowIdx; });
