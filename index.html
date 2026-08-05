@@ -1370,8 +1370,8 @@
      */
     body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-hw-active #kanji-quiz-drill-handwriting,
     body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-hw-active .kanji-drill-hw-row {
-      width: min(780px, calc(100% - 150px)) !important;
-      max-width: min(780px, calc(100% - 150px)) !important;
+      width: 100% !important;
+      max-width: 100% !important;
       height: auto !important;
       min-height: 0 !important;
       max-height: calc(100dvh - 90px) !important;
@@ -1379,9 +1379,9 @@
       flex: 0 0 auto !important;
       min-width: 0;
       overflow: hidden !important;
-      order: 1;
-      margin: 0 12px 0 0 !important;
-      align-self: center !important;
+      order: unset;
+      margin: 0 !important;
+      align-self: stretch !important;
       padding: 12px 16px !important;
       gap: 0 !important;
       justify-content: center !important;
@@ -2071,10 +2071,16 @@
         justify-content: flex-start !important;
         position: relative !important;
       }
-      body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-hw-active #kanji-quiz-drill-handwriting,
-      body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-hw-active .kanji-drill-hw-row {
+      body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-hw-active .kanji-quiz-hw-stack {
         width: min(780px, calc(100% - 160px)) !important;
         max-width: min(780px, calc(100% - 160px)) !important;
+        max-height: calc(100dvh - 88px) !important;
+        align-self: center !important;
+      }
+      body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-hw-active #kanji-quiz-drill-handwriting,
+      body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-hw-active .kanji-drill-hw-row {
+        width: 100% !important;
+        max-width: 100% !important;
         height: auto !important;
         min-height: 0 !important;
         max-height: calc(100dvh - 88px) !important;
@@ -2084,6 +2090,12 @@
         padding: 12px 16px !important;
         gap: 0 !important;
         justify-content: center !important;
+        margin: 0 !important;
+      }
+      body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-stroke-order-active #kanji-quiz-drill-handwriting,
+      body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-stroke-order-active .kanji-drill-hw-row {
+        max-height: none !important;
+        overflow: visible !important;
       }
       body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-hw-active #kanji-play-prompt {
         top: 40px !important;
@@ -2660,25 +2672,68 @@
     #kanji-stroke-order-play-host {
       display: none !important;
     }
-    /* 書き順：記述欄カード下のよみ・例文（縦書き列） */
+    /* 記述カード＋（書き順時のみ）その下のよみ・例文 */
+    .kanji-quiz-hw-stack {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      flex: 0 0 auto;
+      min-width: 0;
+      max-width: 100%;
+      box-sizing: border-box;
+      order: 1;
+      writing-mode: horizontal-tb;
+      text-orientation: mixed;
+    }
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-hw-active .kanji-quiz-hw-stack {
+      display: flex !important;
+      width: min(780px, calc(100% - 150px)) !important;
+      max-width: min(780px, calc(100% - 150px)) !important;
+      margin: 0 12px 0 0 !important;
+      align-self: center !important;
+      max-height: calc(100dvh - 90px) !important;
+      overflow: visible !important;
+    }
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-wrong-visible .kanji-quiz-hw-stack {
+      /* 誤答パネル表示中も記述カード側は残す（既存の wrong-visible ルールに合わせる） */
+      display: flex !important;
+    }
+    /* 書き順：よみをカード外に出したぶん、記述カード自体の高さ上限を緩める */
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-stroke-order-active #kanji-quiz-drill-handwriting,
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-stroke-order-active .kanji-drill-hw-row {
+      width: 100% !important;
+      max-width: 100% !important;
+      margin: 0 !important;
+      max-height: none !important;
+      overflow: visible !important;
+    }
+    /* 書き順：記述欄カード下のよみ・例文（縦書き・右→左） */
     .kanji-stroke-order-readings {
       display: none;
+      /* direction:rtl で列の進行を右→左（日本語縦書きと同じ）。スクロールも右端起点 */
+      direction: rtl;
       flex-direction: row;
       flex-wrap: nowrap;
       justify-content: flex-start;
       align-items: flex-start;
-      gap: clamp(14px, 2.8vw, 28px);
+      gap: clamp(18px, 3.2vw, 32px);
       width: 100%;
       max-width: 100%;
       min-width: 0;
-      margin: 4px 0 0;
-      padding: 10px 8px 4px;
+      margin: 2px 0 0;
+      padding: 4px 4px 0;
       box-sizing: border-box;
       overflow-x: auto;
+      overflow-y: hidden;
       -webkit-overflow-scrolling: touch;
+      background: transparent;
+      border: none;
     }
     .kanji-so-reading-group {
       display: flex;
+      direction: rtl;
       flex-direction: row;
       flex-wrap: nowrap;
       align-items: flex-start;
@@ -2691,6 +2746,7 @@
     .kanji-so-reading-example {
       writing-mode: vertical-rl;
       text-orientation: upright;
+      -webkit-text-orientation: upright;
       flex: 0 0 auto;
       margin: 0;
     }
@@ -2719,7 +2775,7 @@
       color: #37474f;
       line-height: 1.55;
       letter-spacing: 0.05em;
-      max-height: min(42vh, 320px);
+      max-height: min(28vh, 220px);
     }
     body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-stroke-order-active #kanji-stroke-order-readings.is-visible {
       display: flex !important;
@@ -3760,43 +3816,46 @@
         <p class="kanji-quiz-hw-wrong-stroke-label">かきじゅん（みょうじ）</p>
         <div id="kanji-quiz-wrong-model-wrap" class="kanji-quiz-wrong-model-wrap"></div>
       </div>
-      <div id="kanji-quiz-drill-handwriting" class="kanji-drill-hw-row" style="display:none;">
-          <div class="kanji-drill-hw-canvas-panel">
-            <!-- 操作ボタン群（掌が当たらない側へ利き手設定で移動）。次へもここに含める -->
-            <div id="kanji-hw-controls-col" class="kanji-drill-hw-controls-col">
-              <div id="kanji-hw-canvas-actions" class="kanji-drill-hw-panel-btns" style="display:none;">
-                <button type="button" id="kanji-hw-submit-btn" class="kanji-drill-vbtn-small submit-btn-small kanji-hw-submit-btn" onclick="kanjiQuizRunHandwritingAnswer()">これでかいとう</button>
-                <button type="button" class="kanji-drill-vbtn-small" onclick="kanjiQuizRemoveLastStrokeDecoration()">かざりをけす</button>
-                <button type="button" class="kanji-drill-vbtn-small" onclick="kanjiQuizClearWritePad(true)">この字を書き直す</button>
-              </div>
-              <button type="button" class="kanji-drill-vbtn-small submit-btn-small" id="kanji-quiz-skip-hw-btn" onclick="kanjiQuizSkipHandwritingQuestion(this)">次へ</button>
-            </div>
-            <!--
-              grid:
-                前後文脈は記述欄列のみ（横中央＝記述欄基準）
-                ルビは記述欄セルと同じ行（縦中央＝記述欄基準）
-              書き順も同じUI。差分は記述欄 canvas 上のなぞり軌道のみ。
-            -->
-            <div class="kanji-drill-hw-write-stack">
-              <div class="kanji-drill-hw-canvas-ruby-row">
-                <div class="kanji-drill-hw-prefix-col" id="kanji-drill-hw-prefix-col" aria-hidden="false">
-                  <span class="kanji-drill-q-marker" id="kanji-drill-q-marker"></span><span id="kanji-drill-ctx-prefix" class="kanji-drill-context-inline"></span>
+      <!-- 記述カードとよみ・例文を縦積み（よみはカード外＝スクロール原因にしない） -->
+      <div class="kanji-quiz-hw-stack">
+        <div id="kanji-quiz-drill-handwriting" class="kanji-drill-hw-row" style="display:none;">
+            <div class="kanji-drill-hw-canvas-panel">
+              <!-- 操作ボタン群（掌が当たらない側へ利き手設定で移動）。次へもここに含める -->
+              <div id="kanji-hw-controls-col" class="kanji-drill-hw-controls-col">
+                <div id="kanji-hw-canvas-actions" class="kanji-drill-hw-panel-btns" style="display:none;">
+                  <button type="button" id="kanji-hw-submit-btn" class="kanji-drill-vbtn-small submit-btn-small kanji-hw-submit-btn" onclick="kanjiQuizRunHandwritingAnswer()">これでかいとう</button>
+                  <button type="button" class="kanji-drill-vbtn-small" onclick="kanjiQuizRemoveLastStrokeDecoration()">かざりをけす</button>
+                  <button type="button" class="kanji-drill-vbtn-small" onclick="kanjiQuizClearWritePad(true)">この字を書き直す</button>
                 </div>
-                <canvas id="kanji-quiz-write-canvas" width="300" height="300"></canvas>
-                <div class="kanji-drill-hw-suffix-col" id="kanji-drill-hw-suffix-col" aria-hidden="false">
-                  <span id="kanji-drill-ctx-suffix" class="kanji-drill-context-inline"></span>
+                <button type="button" class="kanji-drill-vbtn-small submit-btn-small" id="kanji-quiz-skip-hw-btn" onclick="kanjiQuizSkipHandwritingQuestion(this)">次へ</button>
+              </div>
+              <!--
+                grid:
+                  前後文脈は記述欄列のみ（横中央＝記述欄基準）
+                  ルビは記述欄セルと同じ行（縦中央＝記述欄基準）
+                書き順も同じUI。差分は記述欄 canvas 上のなぞり軌道のみ。
+              -->
+              <div class="kanji-drill-hw-write-stack">
+                <div class="kanji-drill-hw-canvas-ruby-row">
+                  <div class="kanji-drill-hw-prefix-col" id="kanji-drill-hw-prefix-col" aria-hidden="false">
+                    <span class="kanji-drill-q-marker" id="kanji-drill-q-marker"></span><span id="kanji-drill-ctx-prefix" class="kanji-drill-context-inline"></span>
+                  </div>
+                  <canvas id="kanji-quiz-write-canvas" width="300" height="300"></canvas>
+                  <div class="kanji-drill-hw-suffix-col" id="kanji-drill-hw-suffix-col" aria-hidden="false">
+                    <span id="kanji-drill-ctx-suffix" class="kanji-drill-context-inline"></span>
+                  </div>
+                  <div id="kanji-play-char-handwriting" class="kanji-drill-reading-aside kanji-drill-hw-ruby-box"></div>
                 </div>
-                <div id="kanji-play-char-handwriting" class="kanji-drill-reading-aside kanji-drill-hw-ruby-box"></div>
+              </div>
+              <!-- 互換用プレースホルダ（表示しない。誤答デモ用 iframe 移動先ではない） -->
+              <div id="kanji-stroke-order-play-host" class="kanji-stroke-order-play-host" style="display:none !important;" aria-hidden="true">
+                <div id="kanji-stroke-order-target" class="kanji-stroke-order-target"></div>
+                <p id="kanji-stroke-order-hint" class="kanji-stroke-order-hint"></p>
+                <div id="kanji-stroke-order-play-slot" class="kanji-stroke-order-play-slot"></div>
               </div>
             </div>
-            <!-- 互換用プレースホルダ（表示しない。誤答デモ用 iframe 移動先ではない） -->
-            <div id="kanji-stroke-order-play-host" class="kanji-stroke-order-play-host" style="display:none !important;" aria-hidden="true">
-              <div id="kanji-stroke-order-target" class="kanji-stroke-order-target"></div>
-              <p id="kanji-stroke-order-hint" class="kanji-stroke-order-hint"></p>
-              <div id="kanji-stroke-order-play-slot" class="kanji-stroke-order-play-slot"></div>
-            </div>
-          </div>
-          <div id="kanji-stroke-order-readings" class="kanji-stroke-order-readings" style="display:none;" aria-label="よみと例文"></div>
+        </div>
+        <div id="kanji-stroke-order-readings" class="kanji-stroke-order-readings" style="display:none;" aria-label="よみと例文"></div>
       </div>
       <div class="kanji-quiz-title-rail-wrap">
         <h1 id="kanji-play-title">漢字ドリル</h1>
@@ -12200,18 +12259,19 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         if (!r || !r.reading) return;
         const kind = r.kind === "on" ? "on" : "kun";
         const examples = Array.isArray(r.examples) ? r.examples.filter(Boolean) : [];
+        /* DOM順: 種別→スロット→よみ→例文。CSS direction:rtl で右から 訓読み|A|いぬ|例文 */
         html += '<div class="kanji-so-reading-group">';
         html +=
           '<span class="kanji-so-reading-kind">' +
           escapeHtml(strokeOrderReadingKindLabel_(kind)) +
           "</span>";
         html +=
-          '<span class="kanji-so-reading-text">' +
-          escapeHtml(strokeOrderReadingDisplayText_(r.reading, kind)) +
-          "</span>";
-        html +=
           '<span class="kanji-so-reading-slot">' +
           escapeHtml(strokeOrderReadingSlotLabel_(r.label)) +
+          "</span>";
+        html +=
+          '<span class="kanji-so-reading-text">' +
+          escapeHtml(strokeOrderReadingDisplayText_(r.reading, kind)) +
           "</span>";
         if (examples.length) {
           examples.forEach(function (ex) {
