@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
@@ -4145,11 +4145,6 @@
   <div class="footer">Kojiro Nakamura all rights reserved</div>
 
   <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
-  <script>
-  // KP_HTML embedding removed (truncated/broken). Use assets/kp-practice.html via openKanjiPracticePro.
-  window.KP_HTML = null;
-</script>\n<script>\n  // Data loading override for unified repository flow (KanjiVG.txt).\n  (function() {\n    function parseUnicodeToChar(rawUnicode) {\n      const raw = String(rawUnicode || '').trim();\n      if (!raw) return '';\n      const hexMatch = raw.match(/^(?:U\\+|0x)?([0-9A-Fa-f]{4,6})$/);\n      if (hexMatch) {\n        const cp = parseInt(hexMatch[1], 16);\n        if (!isNaN(cp) && cp > 0) return String.fromCodePoint(cp);\n      }\n      const sci = Number(raw);\n      if (!isNaN(sci)) {\n        const cp = Math.round(sci);\n        if (cp > 0 && cp <= 0x10FFFF) return String.fromCodePoint(cp);\n      }\n      return '';\n    }\n    function parseKanjiVgTsv(text) {\n      const map = {};\n      const lines = String(text || '').split(/\\r?\\n/);\n      lines.forEach(line => {\n        const row = line.trim();\n        if (!row) return;\n        const cols = row.split('\\t');\n        if (cols.length < 3) return;\n        let kanji = String(cols[0] || '').trim();\n        const unicodeCol = String(cols[1] || '').trim();\n        const strokesCol = String(cols[2] || '').trim();\n        if (!kanji || kanji.length !== 1) {\n          const parsed = parseUnicodeToChar(unicodeCol);\n          if (parsed) kanji = parsed;\n        }\n        if (!kanji || !strokesCol) return;\n        const paths = strokesCol.split('|').map(p => String(p || '').trim()).filter(p => p && (p.startsWith('M') || p.startsWith('m')));\n        if (paths.length > 0) map[kanji] = paths;\n      });\n      return map;\n    }\n    window.syncData = function() {\n      try { SafeStorage.remove('kanjiData_KanjiVG_txt'); } catch (_) {}\n      window.loadKanjiData();\n    };\n    window.loadKanjiData = function() {\n      if (window.__kpKanjiInflight) return window.__kpKanjiInflight;\n      const cacheKey = 'kanjiData_KanjiVG_txt';\n      const cached = SafeStorage.get(cacheKey);\n      if (cached) {\n        try {\n          KANJI_DATA = JSON.parse(cached);\n          populateKanjiSelector();\n          showLoading(false);\n          return Promise.resolve();\n        } catch (_) { SafeStorage.remove(cacheKey); }\n      }\n      showLoading(true, \"KanjiVG.txt ???...\");\n      window.__kpKanjiInflight = fetch('./KanjiVG.txt')\n      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.text(); })\n      .then(text => {\n        const data = parseKanjiVgTsv(text);\n        if (!Object.keys(data).length) throw new Error(\"TSV?????????\");\n        KANJI_DATA = data;\n        SafeStorage.set(cacheKey, JSON.stringify(data));\n        populateKanjiSelector();\n        showLoading(false);\n      })\n      .catch(e => {\n        alert(\"KanjiVG.txt ??????: \" + (e && e.message ? e.message : e));\n        showLoading(false);\n      })\n      .finally(() => { window.__kpKanjiInflight = null; });\n      return window.__kpKanjiInflight;\n    };\n    \n    (function(){window.onload=function(){updateProfileSelectUI();showLoading(true,\"初期化中...\");window.loadKanjiData();};})();\n  })();\n</script>\n</body>\n</html>"};
-  </script>
   <script>
     // ▼ GASのURLを貼り付けてください（※前回と同じURLならそのままで大丈夫） ▼
     const GAS_API_URL = "https://script.google.com/macros/s/AKfycbyfD4P7uj4MhlTkBe0RlazHG40eHerBMkj6EmJpe3dcMraNKg-rekdJ0rcyZ4aOUYfIqA/exec";
@@ -9828,8 +9823,7 @@
         frame.dataset.kpLoading = "";
         frame.dataset.kpLoaded = "";
         try {
-          alert("高機能モードの読み込みに失敗しました。" + (detail ? "
-（" + detail + "）" : ""));
+          alert("高機能モードの読み込みに失敗しました。" + (detail ? "\n（" + detail + "）" : ""));
         } catch (_eA) {}
       }
       function markReady() {
