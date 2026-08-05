@@ -4383,7 +4383,11 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         return Promise.resolve(kanjiHistoryCache["__kanjiChallenge"]);
       }
       if (kanjiChallengeCachePromise) return kanjiChallengeCachePromise;
-      kanjiChallengeCachePromise = fetchKanjiHistoryBucket("__kanjiChallenge").finally(function () {
+      const fetchP = fetchKanjiHistoryBucket("__kanjiChallenge");
+      const timeoutP = new Promise(function (resolve) {
+        setTimeout(function () { resolve({}); }, 8000);
+      });
+      kanjiChallengeCachePromise = Promise.race([fetchP, timeoutP]).finally(function () {
         kanjiChallengeCachePromise = null;
       });
       return kanjiChallengeCachePromise;
@@ -4395,11 +4399,10 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       if (cached) return Promise.resolve(cached);
       const user = JSON.parse(localStorage.getItem("app_kid_user") || "null");
       if (!user || !user.id) return Promise.resolve({});
-      return fetch(GAS_API_URL, {
-        method: "POST",
-        body: JSON.stringify({ action: "get_kanji_history_bucket", userId: user.id, bucket: b })
-      })
-        .then(function (r) { return r.json(); })
+      return gasApiFetchJson(
+        { action: "get_kanji_history_bucket", userId: user.id, bucket: b },
+        { retries: 1, timeoutMs: 20000, parseRetries: 1, retryDelaysMs: [400] }
+      )
         .then(function (d) {
           if (d && d.status === "success" && d.historyBucket) {
             setKanjiHistoryCacheBucket(b, d.historyBucket);
@@ -10720,10 +10723,19 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
     function fetchKanjiQuizQuestionsPayload_(modeId, unitName, setId, opts) {
       const o = opts || {};
       return gasApiFetchJson(buildKanjiQuizQuestionsFetchBody_(modeId, unitName, setId), {
-        retries: typeof o.retries === "number" ? o.retries : 3,
-        timeoutMs: typeof o.timeoutMs === "number" ? o.timeoutMs : 90000,
+        retries: typeof o.retries === "number" ? o.retries : 2,
+        timeoutMs: typeof o.timeoutMs === "number" ? o.timeoutMs : 45000,
+        parseRetries: typeof o.parseRetries === "number" ? o.parseRetries : 1,
         xhrFallback: o.xhrFallback !== false,
-        retryDelaysMs: o.retryDelaysMs || [800, 1800, 3200]
+        retryDelaysMs: o.retryDelaysMs || [600, 1400]
+      });
+    }
+    function fetchKanjiQuizQuestionsForSetStart_(modeId, unitName, setId) {
+      return fetchKanjiQuizQuestionsPayload_(modeId, unitName, setId, {
+        retries: 1,
+        timeoutMs: 45000,
+        parseRetries: 1,
+        retryDelaysMs: [500, 1200]
       });
     }
     function pumpKanjiQuizQuestionsPrefetch_() {
@@ -10893,7 +10905,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
               resumeKanjiQuizQuestionsPrefetch_();
               return;
             }
-            fetchKanjiQuizQuestionsPayload_(modeId, unitName, s.setId)
+            fetchKanjiQuizQuestionsForSetStart_(modeId, unitName, s.setId)
               .then(function (q) {
                 if (q && q.status === "success") {
                   rememberKanjiQuizQuestionsCache_(qKey, q);
@@ -11626,10 +11638,19 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       el.setAttribute("aria-hidden", "false");
       el.style.display = "flex";
       el.style.pointerEvents = "auto";
+      try { clearTimeout(window.__kanjiQuizSetLoadingWatchdog); } catch (_wd) {}
+      window.__kanjiQuizSetLoadingWatchdog = setTimeout(function () {
+        var ov = document.getElementById("kanji-quiz-set-loading-overlay");
+        if (!ov || !ov.classList.contains("is-visible")) return;
+        hideKanjiQuizSetLoadingOverlay_();
+        alert("読み込みがタイムアウトしました。\n通信を確認して、もう一度「セット」を押してください。");
+      }, 70000);
     }
     function hideKanjiQuizSetLoadingOverlay_() {
       var el = document.getElementById("kanji-quiz-set-loading-overlay");
       if (!el) return;
+      try { clearTimeout(window.__kanjiQuizSetLoadingWatchdog); } catch (_wd2) {}
+      window.__kanjiQuizSetLoadingWatchdog = null;
       el.classList.remove("is-visible");
       el.setAttribute("aria-hidden", "true");
       el.style.display = "none";
