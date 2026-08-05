@@ -70,7 +70,9 @@ function getDefaultAppSettingsRows_() {
     ["trajectory", 40],
     ["startEnd", 15],
     ["structure", 20],
-    ["size", 25]
+    ["size", 25],
+    ["strokeCount", 10],
+    ["strokeOrder", 20]
   ];
 }
 
