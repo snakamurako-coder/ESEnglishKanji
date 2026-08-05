@@ -1,6 +1,5 @@
 param(
   [string]$Description = "auto deploy",
-  [string]$IndexPath = "index.html",
   [switch]$SkipPush,
   [switch]$SkipDeploy
 )
@@ -22,14 +21,22 @@ function Build-NewUrl([string]$OldUrl, [string]$DeploymentId) {
   return "https://script.google.com/macros/s/$DeploymentId/exec"
 }
 
-if (-not (Test-Path -LiteralPath $IndexPath)) {
-  throw "index.html not found: $IndexPath"
+function Update-GasUrlInFile([string]$Path, [string]$NewUrl) {
+  if (-not (Test-Path -LiteralPath $Path)) { return $false }
+  $raw = Get-Content -LiteralPath $Path -Raw -Encoding UTF8
+  $urlRegex = 'https://script\.google\.com/macros/s/AKfy[a-zA-Z0-9_-]+/exec'
+  if (-not [regex]::IsMatch($raw, $urlRegex)) { return $false }
+  $updated = [regex]::Replace($raw, $urlRegex, $NewUrl)
+  if ($updated -eq $raw) { return $false }
+  [System.IO.File]::WriteAllText((Resolve-Path -LiteralPath $Path), $updated, [System.Text.UTF8Encoding]::new($false))
+  Write-Step "Updated GAS URL in $Path"
+  return $true
 }
 
 if (-not $SkipPush) {
   Write-Step "Running clasp push"
-  & clasp push
-  if ($LASTEXITCODE -ne 0) { throw "clasp push failed." }
+  & clasp push --force
+  if ($LASTEXITCODE -ne 0) { throw "clasp push failed. Owner account login may be required: clasp login" }
 }
 
 $deploymentId = $null
@@ -54,29 +61,26 @@ if (-not $deploymentId) {
     throw "Failed to get clasp deployments."
   }
   $ids = [regex]::Matches($listOutput, "AKfy[a-zA-Z0-9_-]+")
-  if ($ids.Count -eq 0) {
-    throw "Could not find deployment ID."
-  }
+  if ($ids.Count -eq 0) { throw "Could not find deployment ID." }
   $deploymentId = $ids[$ids.Count - 1].Value
 }
 
-$raw = Get-Content -LiteralPath $IndexPath -Raw
-$urlRegex = 'const GAS_API_URL = "(https://script\.google\.com[^"]+/exec[^"]*)";'
-$urlMatch = [regex]::Match($raw, $urlRegex)
-if (-not $urlMatch.Success) {
-  throw "GAS_API_URL not found in index.html."
+$newUrl = "https://script.google.com/macros/s/$deploymentId/exec"
+$targets = @(
+  "js\app.js",
+  "js\api.js",
+  "assets\kp-practice.html",
+  "index.html"
+)
+$changed = $false
+foreach ($t in $targets) {
+  if (Update-GasUrlInFile $t $newUrl) { $changed = $true }
 }
 
-$oldUrl = $urlMatch.Groups[1].Value
-$newUrl = Build-NewUrl $oldUrl $deploymentId
-if ($oldUrl -eq $newUrl) {
-  Write-Step "GAS_API_URL already up to date (no changes)"
-  exit 0
+if (-not $changed) {
+  Write-Step "GAS_API_URL already up to date or no matching URL found"
+} else {
+  Write-Step "new: $newUrl"
 }
 
-$updated = [regex]::Replace($raw, $urlRegex, "const GAS_API_URL = `"$newUrl`";")
-[System.IO.File]::WriteAllText((Resolve-Path $IndexPath), $updated, [System.Text.UTF8Encoding]::new($false))
-
-Write-Step "Updated GAS_API_URL in index.html"
-Write-Step "old: $oldUrl"
-Write-Step "new: $newUrl"
+Write-Step "Next: In Apps Script editor, run runMigrateOnce() once (or: clasp run runMigrateOnce)"

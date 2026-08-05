@@ -930,7 +930,6 @@ function doPost(e) {
     else if (action === "get_parent_notify_emails") return handleGetParentNotifyEmails(requestData);
     else if (action === "save_parent_notify_emails") return handleSaveParentNotifyEmails(requestData);
     else if (action === "get_active_reward_ticket") return handleGetActiveRewardTicket(requestData);
-    else if (action === "run_migrate_once") return handleRunMigrateOnce(requestData);
     
     else return sendResponse({ status: "error", message: "無効なactionです" });
   } catch (error) {
@@ -999,18 +998,66 @@ function recognizeSentence(allStrokes) {
 // ★ 特訓ルート（メニュー1～12）
 // ==========================================
 function getTrainingMenuSheet_(adminSs, menuId) {
-  const id = String(menuId || '1');
-  return adminSs.getSheetByName('特訓メニュー' + id);
+  const name = "特訓メニュー" + menuId;
+  let sheet = adminSs.getSheetByName(name);
+  if (!sheet && menuId === 1) sheet = adminSs.getSheetByName("特訓メニュー");
+  return sheet;
 }
 
 /** 旧形式（今日のキー直下に stepIndex: true）を { "1": { stepIndex: true } } に寄せる */
-
+function migrateTrainingProgressIfNeeded_(trainingProgressJson) {
+  if (!trainingProgressJson) return;
+  const todayStr = new Date().toISOString().split('T')[0];
+  const t = trainingProgressJson[todayStr];
+  if (!t || typeof t !== "object") return;
+  var hasNestedMenu = false;
+  for (var k in t) {
+    if (["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"].indexOf(String(k)) >= 0) {
+      if (t[k] && typeof t[k] === "object" && !Array.isArray(t[k])) {
+        hasNestedMenu = true;
+        break;
+      }
+    }
+  }
+  if (hasNestedMenu) return;
+  var hasFlatTrue = false;
+  for (var k2 in t) {
+    if (t[k2] === true) {
+      hasFlatTrue = true;
+      break;
+    }
+  }
+  if (!hasFlatTrue) return;
+  var nested = {};
+  for (var k3 in t) {
+    if (t[k3] === true) nested[k3] = true;
+  }
+  trainingProgressJson[todayStr] = { "1": nested };
+}
 
 function normalizeProgressForMenu_(todayBlock, menuId) {
-  if (!todayBlock || typeof todayBlock !== 'object') return {};
-  const mid = String(menuId || '1');
-  const block = todayBlock[mid];
-  return block && typeof block === 'object' ? block : {};
+  const mid = String(menuId);
+  if (!todayBlock || typeof todayBlock !== "object") return {};
+  if (todayBlock[mid] && typeof todayBlock[mid] === "object" && !Array.isArray(todayBlock[mid])) {
+    return todayBlock[mid];
+  }
+  if (mid === "1") {
+    var hasLegacy = false;
+    for (var k in todayBlock) {
+      if (todayBlock[k] === true) {
+        hasLegacy = true;
+        break;
+      }
+    }
+    if (hasLegacy) {
+      var out = {};
+      for (var k2 in todayBlock) {
+        if (todayBlock[k2] === true) out[k2] = true;
+      }
+      return out;
+    }
+  }
+  return {};
 }
 
 function handleGetTrainingRoute(req) {
@@ -1675,7 +1722,13 @@ function mergeSessionResultsIntoUnitHistory_(unitHistory, resultsList) {
   return map;
 }
 
-
+function loadEnglishUnitHistoryWithMigration_(adminSs, userId, unitId, legacyJsonUnit) {
+  let map = loadEnglishUnitHistory_(adminSs, userId, unitId);
+  if ((!map || Object.keys(map).length === 0) && legacyJsonUnit && typeof legacyJsonUnit === "object") {
+    map = legacyJsonUnit;
+  }
+  return map || {};
+}
 
 function stripEnglishUnitKeysFromHistoryJson_(historyJson) {
   const root = historyJson || {};
@@ -1691,7 +1744,28 @@ function usesEnglishUnitHistorySheet_(req, unitId) {
   return !!uid && !uid.startsWith("__");
 }
 
-
+function migrateEnglishUnitHistoryFromUserJson_(adminSs, usersSheet, userId, unitId) {
+  const data = usersSheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] !== userId) continue;
+    const hist = safeParseUserJsonCell_(data[i][5], {});
+    const legacy = hist[unitId];
+    if (!legacy || typeof legacy !== "object") return loadEnglishUnitHistory_(adminSs, userId, unitId);
+    const merged = loadEnglishUnitHistoryWithMigration_(adminSs, userId, unitId, legacy);
+    saveEnglishUnitHistory_(adminSs, userId, unitId, merged, new Date().toISOString());
+    delete hist[unitId];
+    const userData = {
+      historyJson: hist,
+      lastStudyJson: safeParseUserJsonCell_(data[i][4], {}),
+      dailyPointsJson: safeParseUserJsonCell_(data[i][6], {}),
+      trainingProgressJson: safeParseUserJsonCell_(data[i][7], {})
+    };
+    normalizeUserJsonBeforeSave_(userData);
+    usersSheet.getRange(i + 1, 6).setValue(JSON.stringify(userData.historyJson));
+    return merged;
+  }
+  return loadEnglishUnitHistory_(adminSs, userId, unitId);
+}
 
 function handleGetEnglishUnitHistory(req) {
   const userId = String(req.userId || "");
@@ -1701,6 +1775,9 @@ function handleGetEnglishUnitHistory(req) {
   const adminSs = SpreadsheetApp.openById(props.getProperty("ADMIN_SS_ID"));
   const usersSheet = adminSs.getSheetByName("users");
   let map = loadEnglishUnitHistory_(adminSs, userId, unitId);
+  if (!map || Object.keys(map).length === 0) {
+    map = migrateEnglishUnitHistoryFromUserJson_(adminSs, usersSheet, userId, unitId);
+  }
   return sendResponse({ status: "success", unitId: unitId, historyUnit: map || {} });
 }
 
@@ -1773,10 +1850,16 @@ function saveKanjiHistoryBucket_(adminSs, userId, bucket, dataObj, nowIso) {
   return data;
 }
 
-function buildKanjiHistoryView_(adminSs, userId) {
-  const buckets = ['__kanjiChallenge', '__kanjiWeak', '__kanjiNigatePass'];
+function buildKanjiHistoryView_(adminSs, userId, legacyHistoryJson) {
   const view = {};
-  buckets.forEach(b => { view[b] = loadKanjiHistoryBucket_(adminSs, userId, b) || {}; });
+  const legacy = legacyHistoryJson || {};
+  KANJI_HISTORY_BUCKETS_.forEach(function (bucket) {
+    let data = loadKanjiHistoryBucket_(adminSs, userId, bucket);
+    if ((!data || Object.keys(data).length === 0) && legacy[bucket] && typeof legacy[bucket] === "object") {
+      data = legacy[bucket];
+    }
+    view[bucket] = data || {};
+  });
   return view;
 }
 
@@ -1801,7 +1884,27 @@ function stripKanjiAndEnglishFromHistoryJson_(historyJson) {
   return historyJson;
 }
 
-
+function migrateKanjiHistoryFromUserJson_(adminSs, usersSheet, userId, bucket) {
+  const data = usersSheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] !== userId) continue;
+    const hist = safeParseUserJsonCell_(data[i][5], {});
+    const legacy = hist[bucket];
+    if (!legacy || typeof legacy !== "object") return loadKanjiHistoryBucket_(adminSs, userId, bucket);
+    saveKanjiHistoryBucket_(adminSs, userId, bucket, legacy, new Date().toISOString());
+    delete hist[bucket];
+    const userData = {
+      historyJson: hist,
+      lastStudyJson: safeParseUserJsonCell_(data[i][4], {}),
+      dailyPointsJson: safeParseUserJsonCell_(data[i][6], {}),
+      trainingProgressJson: safeParseUserJsonCell_(data[i][7], {})
+    };
+    normalizeUserJsonBeforeSave_(userData);
+    usersSheet.getRange(i + 1, 6).setValue(JSON.stringify(userData.historyJson));
+    return legacy;
+  }
+  return loadKanjiHistoryBucket_(adminSs, userId, bucket);
+}
 
 function handleGetKanjiHistoryBucket(req) {
   const userId = String(req.userId || "");
@@ -1814,6 +1917,9 @@ function handleGetKanjiHistoryBucket(req) {
   const adminSs = SpreadsheetApp.openById(props.getProperty("ADMIN_SS_ID"));
   const usersSheet = adminSs.getSheetByName("users");
   let map = loadKanjiHistoryBucket_(adminSs, userId, bucket);
+  if (!map || Object.keys(map).length === 0) {
+    map = migrateKanjiHistoryFromUserJson_(adminSs, usersSheet, userId, bucket);
+  }
   return sendResponse({ status: "success", bucket: bucket, historyBucket: map || {} });
 }
 
@@ -2472,7 +2578,7 @@ function handleSaveLearningSession(req) {
   const sheetPointPercent = parseUnitSheetPointPercent_(req.unitSheetName);
 
   if (useEnglishHistorySheet) {
-    unitHistory = loadEnglishUnitHistory_(adminSs, req.userId, unitId);
+    unitHistory = loadEnglishUnitHistoryWithMigration_(adminSs, req.userId, unitId, userData.historyJson[unitId]);
     if (userData.historyJson[unitId]) delete userData.historyJson[unitId];
   } else if (!isKanjiScoreBatch) {
     if (!userData.historyJson[unitId]) userData.historyJson[unitId] = {};
@@ -2523,7 +2629,7 @@ function handleSaveLearningSession(req) {
   }
 
   if (isKanjiScoreBatch) {
-    kanjiView = buildKanjiHistoryView_(adminSs, req.userId);
+    kanjiView = buildKanjiHistoryView_(adminSs, req.userId, userData.historyJson);
     const settings = getAppSettingsMap_(adminSs);
     itemEarnedList = [];
     let batchTotal = 0;
@@ -2536,7 +2642,7 @@ function handleSaveLearningSession(req) {
     });
     sessionRawPoints = batchTotal;
   } else if (isKanjiScoreSession) {
-    kanjiView = buildKanjiHistoryView_(adminSs, req.userId);
+    kanjiView = buildKanjiHistoryView_(adminSs, req.userId, userData.historyJson);
     const settings = getAppSettingsMap_(adminSs);
     const oneEarned = applyOneKanjiScoreItem_({
       kanjiChar: req.kanjiChar,
@@ -2589,6 +2695,7 @@ function handleSaveLearningSession(req) {
 
   // ★ 特訓ルートのステップをクリアした場合は、今日の進捗にチェックを入れる（メニューID別）
   if (req.trainingStepIndex) {
+    migrateTrainingProgressIfNeeded_(userData.trainingProgressJson);
     let mid = parseInt(req.trainingMenuId, 10);
     if (isNaN(mid) || mid < 1 || mid > 12) mid = 1;
     const midStr = String(mid);
@@ -2773,7 +2880,7 @@ function handleAppendKanjiWeakSignals(req) {
   }
   if (targetRowIdx === -1) return sendResponse({ status: "error", message: "ユーザーが見つかりません" });
   const nowIso = new Date().toISOString();
-  const kanjiView = buildKanjiHistoryView_(adminSs, userId);
+  const kanjiView = buildKanjiHistoryView_(adminSs, userId, userData.historyJson);
   if (!kanjiView.__kanjiWeak) kanjiView.__kanjiWeak = {};
   const list = Array.isArray(req.signals) ? req.signals : [req];
   let merged = 0;
@@ -2860,7 +2967,7 @@ function handleRecordKanjiNigatePass(req) {
   if (targetRowIdx === -1) return sendResponse({ status: "error", message: "ユーザーが見つかりません" });
   const nowIso = new Date().toISOString();
   const passRequired = parseInt(req.passRequired, 10) || KANJI_NIGATE_PASS_REQUIRED_;
-  const kanjiView = buildKanjiHistoryView_(adminSs, userId);
+  const kanjiView = buildKanjiHistoryView_(adminSs, userId, userData.historyJson);
   if (!kanjiView.__kanjiNigatePass) kanjiView.__kanjiNigatePass = {};
   const result = recordKanjiNigatePass_(
     kanjiView.__kanjiNigatePass,
@@ -2988,7 +3095,7 @@ function handleGetKanjiWeakReviewPlan(req) {
     }
   }
   if (!historyJson) return sendResponse({ status: "error", message: "ユーザーが見つかりません" });
-  const kanjiView = buildKanjiHistoryView_(adminSs, userId);
+  const kanjiView = buildKanjiHistoryView_(adminSs, userId, historyJson);
   const weakRoot = kanjiView.__kanjiWeak || {};
   const setIds = Array.isArray(req.setIds) ? req.setIds.map(function (x) { return String(x); }).filter(Boolean) : [];
   const trainMode = normalizeNigateTrainMode_(req.nigateAxis || req.trainMode || "ruby_to_kanji");
