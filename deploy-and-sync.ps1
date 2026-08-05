@@ -74,7 +74,7 @@ if ($oldUrl -eq $newUrl) {
   exit 0
 }
 
-$updated = [regex]::Replace($raw, $urlRegex, "const GAS_API_URL = `"$newUrl`";", 1)
+$updated = [regex]::Replace($raw, $urlRegex, "const GAS_API_URL = `"$newUrl`";")
 [System.IO.File]::WriteAllText((Resolve-Path $IndexPath), $updated, [System.Text.UTF8Encoding]::new($false))
 
 Write-Step "Updated GAS_API_URL in index.html"
