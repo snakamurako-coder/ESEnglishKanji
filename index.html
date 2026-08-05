@@ -4067,10 +4067,30 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       return JSON.stringify(bodyObj == null ? {} : bodyObj);
     }
     function gasApiIsRetryableError(msg) {
-      return /Load failed|Failed to fetch|NetworkError|network|fetch|aborted|timeout|timed out|XHR|AbortError|Cancelled|CORS|temporarily unavailable|ECONNRESET|socket|non-JSON|HTTP 5\d\d|HTTP 429/i.test(String(msg || ""));
+      return /Load failed|Failed to fetch|NetworkError|network|fetch|aborted|timeout|timed out|XHR|AbortError|Cancelled|CORS|temporarily unavailable|ECONNRESET|socket|non-JSON|HTML|doGet|HTTP 5\d\d|HTTP 429/i.test(String(msg || ""));
     }
-    function gasApiFetchOnce(bodyStr, timeoutMs, useXhr) {
-      if (useXhr && typeof XMLHttpRequest !== "undefined") {
+    function gasApiResponseLooksInvalid_(raw) {
+      const s = String(raw || "").replace(/^\uFEFF/, "").trim();
+      if (!s) return true;
+      if (/<!DOCTYPE|<html/i.test(s)) return true;
+      if (/^OK:\s*GAS endpoint is running/i.test(s)) return true;
+      return false;
+    }
+    function gasApiBuildNonJsonError_(res) {
+      const raw = String((res && res.text) || "").replace(/^\uFEFF/, "").trim();
+      if (/<!DOCTYPE|<html/i.test(raw)) {
+        return new Error("サーバーが HTML を返しました（Webアプリの公開設定を確認してください）");
+      }
+      if (/^OK:\s*GAS endpoint is running/i.test(raw)) {
+        return new Error("サーバー応答が不正です（通信の再試行に失敗しました。ページを再読み込みしてください）");
+      }
+      const err = new Error("GAS non-JSON response HTTP " + String((res && res.status) || 0));
+      err.httpStatus = res && res.status;
+      err.rawText = raw.slice(0, 500);
+      return err;
+    }
+    function gasApiFetchOnce(bodyStr, timeoutMs, useFetch) {
+      if (!useFetch && typeof XMLHttpRequest !== "undefined") {
         return new Promise(function (resolve, reject) {
           const xhr = new XMLHttpRequest();
           xhr.open("POST", GAS_API_URL, true);
@@ -4115,9 +4135,10 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       const timeoutMs = typeof o.timeoutMs === "number" ? o.timeoutMs : 90000;
       const bodyStr = typeof bodyObj === "string" ? bodyObj : gasApiBuildBody(bodyObj);
       const delays = Array.isArray(o.retryDelaysMs) ? o.retryDelaysMs : [600, 1400, 2800];
+      const canXhr = typeof XMLHttpRequest !== "undefined";
       function attempt(left, attemptIndex) {
-        const useXhr = o.xhrFallback === true && left === 0;
-        return gasApiFetchOnce(bodyStr, timeoutMs, useXhr).catch(function (e) {
+        const useFetch = !canXhr || (o.xhrFirst === false && attemptIndex === 0) || (attemptIndex > 0 && attemptIndex % 2 === 1);
+        return gasApiFetchOnce(bodyStr, timeoutMs, useFetch).catch(function (e) {
           const msg = String((e && (e.message || e)) || "");
           if (left <= 0 || !gasApiIsRetryableError(msg)) throw e;
           const delay = delays[Math.min(attemptIndex, delays.length - 1)] || 1000;
@@ -4132,11 +4153,8 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
     }
     function gasApiParseJsonResponse(res) {
       const raw = String((res && res.text) || "").replace(/^\uFEFF/, "").trim();
-      if (!raw) return null;
+      if (!raw || gasApiResponseLooksInvalid_(raw)) return null;
       try { return JSON.parse(raw); } catch (_) {}
-      if (/<!DOCTYPE|<html/i.test(raw)) {
-        return { status: "error", message: "サーバーが HTML を返しました（Webアプリの公開設定を確認してください）" };
-      }
       return null;
     }
     function savePendingFinishQuizPayload(payload) {
@@ -4275,9 +4293,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         return gasApiFetchText(bodyObj, textOpts).then(function (res) {
           const d = gasApiParseJsonResponse(res);
           if (d) return d;
-          const err = new Error("GAS non-JSON response HTTP " + String((res && res.status) || 0));
-          err.httpStatus = res && res.status;
-          err.rawText = String((res && res.text) || "").slice(0, 500);
+          const err = gasApiBuildNonJsonError_(res);
           if (left <= 0) throw err;
           const delay = delays[Math.min(attemptIndex, delays.length - 1)] || 1000;
           return new Promise(function (resolve) { setTimeout(resolve, delay); }).then(function () {
@@ -4434,6 +4450,16 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       const uid = getUserIdForPref();
       localStorage.setItem(`${uid}_${key}`, val);
     }
+    const GAS_API_OPTS_HOME_REFRESH = { retries: 1, timeoutMs: 45000, parseRetries: 1, retryDelaysMs: [400, 900] };
+
+    function applyAppSettingsRefresh_(d) {
+      if (!d || d.status !== "success" || !d.settings) return false;
+      appSettings = d.settings;
+      try { localStorage.setItem("app_cached_settings", JSON.stringify(d)); } catch (_e) {}
+      try { persistKanjiHandScoreWeightsFromSettings(d.settings); } catch (_e2) {}
+      return true;
+    }
+
     function clearAppCacheAndReload(btn) {
       if (!confirm("最新の学習データと設定を読み込み直します。\nよろしいですか？（画面が再読み込みされます）")) return;
       const orig = btn ? toggleBtnLoading(btn, true) : null;
@@ -4443,28 +4469,25 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
         if (k.startsWith("app_cached_")) localStorage.removeItem(k);
       });
       materialsData = [];
-      Promise.allSettled([
-        gasApiFetchJson({ action: "get_app_settings" }, { retries: 3, timeoutMs: 120000, xhrFallback: true }),
-        gasApiFetchJson({ action: "get_materials_list" }, { retries: 3, timeoutMs: 120000, xhrFallback: true }),
-        fetchKanjiHandScoreWeightsFromServer()
-      ]).then(function (results) {
-        const settingsRes = results[0].status === "fulfilled" ? results[0].value : null;
-        if (settingsRes && settingsRes.status === "success") {
-          appSettings = settingsRes.settings;
-          localStorage.setItem("app_cached_settings", JSON.stringify(settingsRes));
-        }
-        const mats = results[1].status === "fulfilled" ? results[1].value : null;
-        if (mats && mats.status === "success") persistMaterialsPayload(mats);
-        if (!mats || mats.status !== "success") {
+      // 設定は待たず best-effort（get_app_settings は GAS 側で遅く・不安定になりやすい）
+      gasApiFetchJson({ action: "get_app_settings" }, GAS_API_OPTS_HOME_REFRESH)
+        .then(function (d) { applyAppSettingsRefresh_(d); })
+        .catch(function () {});
+      gasApiFetchJson({ action: "get_materials_list" }, GAS_API_OPTS_HOME_REFRESH)
+        .then(function (mats) {
+          if (!mats || mats.status !== "success") {
+            if (btn) toggleBtnLoading(btn, false, orig);
+            if (statusEl) statusEl.textContent = "教材一覧の取得に失敗しました。通信を確認のうえ、もう一度お試しください。";
+            return;
+          }
+          persistMaterialsPayload(mats);
+          if (statusEl) statusEl.textContent = "最新データを反映しています…";
+          location.reload();
+        })
+        .catch(function () {
           if (btn) toggleBtnLoading(btn, false, orig);
-          if (statusEl) statusEl.textContent = "教材一覧の取得に失敗しました。通信を確認のうえ、もう一度お試しください。";
-          return;
-        }
-        location.reload();
-      }).catch(function () {
-        if (btn) toggleBtnLoading(btn, false, orig);
-        if (statusEl) statusEl.textContent = "取得に失敗しました。通信を確認のうえ、もう一度お試しください。";
-      });
+          if (statusEl) statusEl.textContent = "取得に失敗しました。通信を確認のうえ、もう一度お試しください。";
+        });
     }
     let appSettings = {}; let maxDeduction = 0; let autoNextTimer = null; let materialsData = []; let externalMenus = [];
     let kanjiQuizSession = null; let lastKanjiQuizContext = null;
@@ -6551,7 +6574,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
     }
 
     function fetchMaterialsListFromServer() {
-      return gasApiFetchJson({ action: "get_materials_list" }, { retries: 3, timeoutMs: 120000, xhrFallback: true });
+      return gasApiFetchJson({ action: "get_materials_list" }, GAS_API_OPTS_HOME_REFRESH);
     }
 
     /** サーバのフィンガープリント（または一覧の正規化署名）が変わったときだけ英語・漢字の教材一覧を差し替える。 */
@@ -6595,7 +6618,7 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
       if (statusEl) statusEl.textContent = "";
       Promise.allSettled([
         fetchMaterialsListFromServer(),
-        fetchKanjiHandScoreWeightsFromServer()
+        fetchKanjiHandScoreWeightsFromServer(GAS_API_OPTS_HOME_REFRESH)
       ])
         .then(function (results) {
           const mats = results[0].status === "fulfilled" ? results[0].value : null;
@@ -11016,8 +11039,9 @@ window.KP_HTML = {"value":"<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UT
     function getKanjiHandScoreWeights() {
       return loadKanjiHandScoreWeightsFromLocalCache();
     }
-    function fetchKanjiHandScoreWeightsFromServer() {
-      return gasApiFetchJson({ action: "get_app_settings" }, { retries: 3, timeoutMs: 120000, xhrFallback: true })
+    function fetchKanjiHandScoreWeightsFromServer(opts) {
+      const apiOpts = opts || GAS_API_OPTS_HOME_REFRESH;
+      return gasApiFetchJson({ action: "get_app_settings" }, apiOpts)
         .then(function (d) {
           if (!d || d.status !== "success" || !d.settings) {
             return { status: "error", message: (d && d.message) || "手書き配点の取得に失敗しました", updated: false };
