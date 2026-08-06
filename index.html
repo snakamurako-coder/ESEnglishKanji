@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
@@ -267,6 +267,7 @@
       <div class="kanji-quiz-play-question-block">
         <div class="kanji-quiz-drill-reading" id="kanji-play-char"></div>
         <div id="kanji-play-prompt"></div>
+        <button type="button" class="kanji-drill-vbtn-small submit-btn-small kanji-play-submit-inline" id="kanji-play-submit-btn" style="display:none;">こたえを決定</button>
         <div id="kanji-play-detail"></div>
         <div id="kanji-choice-verdict" class="kanji-choice-verdict" style="display:none;" aria-live="polite">
           <span id="kanji-choice-verdict-mark" class="kanji-choice-verdict-mark"></span>
@@ -275,19 +276,13 @@
         <button type="button" id="kanji-choice-next-btn" class="kanji-choice-next-btn" style="display:none;">次へ</button>
         <div id="kanji-play-choices" class="kanji-yomi-choices-rail" style="display:none;"></div>
       </div>
-      <div id="kanji-play-typing-wrap" class="kanji-quiz-ui-horizontal kanji-yomi-typing-wrap" style="margin-top:12px;display:none;flex-direction:column;align-items:center;width:100%;max-width:980px;margin-left:auto;margin-right:auto;box-sizing:border-box;">
-        <div class="kanji-yomi-layout-row">
-          <div class="kanji-yomi-kbd-col">
-            <div id="kanji-yomi-keyboard-container"></div>
-          </div>
-          <div class="kanji-yomi-question-col">
-            <div class="kanji-yomi-vertical-stack">
-              <div id="kanji-yomi-sentence-box"></div>
-              <div id="kanji-yomi-type-root">
-                <textarea id="kanji-play-yomi-input" class="kanji-yomi-type-input kanji-yomi-type-input-vertical" inputmode="none" lang="ja" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="ローマ字→かな" rows="1"></textarea>
-              </div>
-            </div>
-          </div>
+      <div id="kanji-play-typing-wrap" class="kanji-yomi-typing-wrap" style="display:none;" aria-hidden="true">
+        <div id="kanji-yomi-sentence-box"></div>
+        <div id="kanji-yomi-type-root">
+          <textarea id="kanji-play-yomi-input" class="kanji-yomi-type-input kanji-yomi-type-input-vertical" inputmode="none" lang="ja" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="ローマ字→かな" rows="1"></textarea>
+        </div>
+        <div class="kanji-yomi-kbd-col">
+          <div id="kanji-yomi-keyboard-container"></div>
         </div>
         <input type="hidden" id="kanji-play-input" value="">
       </div>
@@ -303,7 +298,6 @@
         </div>
         <button type="button" id="kanji-quiz-layout-refresh-btn" class="kanji-drill-vbtn-small" onclick="kanjiQuizRefreshHandwritingLayout()" title="表示がずれたとき、レイアウトを取り直します">🔄 画面をなおす</button>
         <button type="button" id="kanji-quiz-cancel-btn" class="kanji-drill-vbtn-small" style="background:#f44336;color:#fff;border-color:#d32f2f;">ちゅうだん</button>
-        <button type="button" class="kanji-drill-vbtn-small submit-btn-small" id="kanji-play-submit-btn" style="display:none;">こたえを決定</button>
         <button type="button" class="kanji-drill-vbtn-small" style="background:#5c6bc0;color:#fff;border-color:#3949ab;" onclick="kanjiQuizPlayGoHome()">🏠 ホームにもどる</button>
       </div>
     </div>
