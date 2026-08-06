@@ -7870,6 +7870,41 @@
     }
     let kanjiQuizHandSubmitBusy = false;
     let kanjiQuizHandSubmitAnimTimer = null;
+    function kanjiQuizHwAnswerSubmitted_() {
+      return !!(kanjiQuizSession && kanjiQuizSession.hwAnswerSubmitted);
+    }
+    function setKanjiQuizHwCardControlsLocked(locked) {
+      const isLocked = !!locked;
+      const sec = document.getElementById("section-kanji-quiz-play");
+      if (sec) sec.classList.toggle("kanji-quiz-hw-card-locked", isLocked);
+      const submitted = kanjiQuizHwAnswerSubmitted_();
+      const actions = document.getElementById("kanji-hw-canvas-actions");
+      if (actions) {
+        Array.from(actions.querySelectorAll("button")).forEach(function (btn) {
+          if (btn.id === "kanji-hw-submit-btn") {
+            btn.disabled = isLocked || submitted;
+          } else {
+            btn.disabled = isLocked;
+          }
+        });
+      }
+      const penCtrls = document.getElementById("kanji-drill-pen-controls");
+      if (penCtrls) {
+        Array.from(penCtrls.querySelectorAll("button")).forEach(function (btn) {
+          btn.disabled = isLocked;
+        });
+      }
+      const refreshBtn = document.getElementById("kanji-quiz-layout-refresh-btn");
+      if (refreshBtn) refreshBtn.disabled = isLocked;
+    }
+    function resetKanjiQuizHandAnswerState_() {
+      if (kanjiQuizSession) kanjiQuizSession.hwAnswerSubmitted = false;
+      setKanjiQuizHwCardControlsLocked(false);
+    }
+    function markKanjiQuizHandAnswerSubmitted_() {
+      if (kanjiQuizSession) kanjiQuizSession.hwAnswerSubmitted = true;
+      setKanjiQuizHandSubmitBusy(false);
+    }
     function setKanjiQuizHandSubmitBusy(isBusy) {
       const qBusy =
         kanjiQuizSession &&
@@ -7878,13 +7913,14 @@
       const isStrokeBusy = qBusy && qBusy.type === "stroke_order_trace";
       const btn = document.getElementById("kanji-hw-submit-btn");
       const idleLabel = isStrokeBusy ? "これで採点" : "これでかいとう";
+      const submitted = kanjiQuizHwAnswerSubmitted_();
       kanjiQuizHandSubmitBusy = !!isBusy;
       if (kanjiQuizHandSubmitAnimTimer) {
         clearInterval(kanjiQuizHandSubmitAnimTimer);
         kanjiQuizHandSubmitAnimTimer = null;
       }
       if (!btn) return;
-      btn.disabled = !!isBusy;
+      btn.disabled = !!isBusy || submitted;
       btn.classList.toggle("is-loading", !!isBusy);
       btn.setAttribute("aria-busy", isBusy ? "true" : "false");
       if (isBusy) {
@@ -7899,7 +7935,7 @@
       }
     }
     function kanjiQuizRunHandwritingAnswer() {
-      if (kanjiQuizHandSubmitBusy) return;
+      if (kanjiQuizHandSubmitBusy || kanjiQuizHwAnswerSubmitted_()) return;
       if (!kanjiQuizParentStrokes.length) {
         alert("かんじを かいてください。");
         return;
@@ -7963,7 +7999,6 @@
       });
     }
     function kanjiQuizOnHandwritingScored(sc) {
-      setKanjiQuizHandSubmitBusy(false);
       if (!kanjiQuizSession) return;
       const secHand = document.getElementById("section-kanji-quiz-play");
       if (!secHand || !secHand.classList.contains("active")) return;
@@ -7983,9 +8018,12 @@
           updateStrokeOrderHint_("practice", sc);
         }
         /* 書き順も「書いて答える」と同じ誤答パネル＋書き順デモ */
+        markKanjiQuizHandAnswerSubmitted_();
         kanjiQuizShowHandwritingWrongFeedback(sc);
+        setKanjiQuizHwCardControlsLocked(true);
         return;
       }
+      markKanjiQuizHandAnswerSubmitted_();
       const scNum = Number(sc);
       if (!isNaN(scNum)) {
         const pm = kanjiQuizSession.rubyHandMinScore;
@@ -8010,6 +8048,7 @@
       }
       kanjiQuizSession.rubyHandSlot = slot + 1;
       kanjiQuizSession.lastHandScore = null;
+      resetKanjiQuizHandAnswerState_();
       const nextCh = targets[slot + 1];
       if (!selectKanjiCharInQuizFrame(nextCh)) return;
       const sum = document.getElementById("kanji-play-summary");
@@ -8617,6 +8656,9 @@
       const panel = document.getElementById("kanji-quiz-hw-wrong-panel");
       const sec = document.getElementById("section-kanji-quiz-play");
       if (sec) sec.classList.remove("kanji-quiz-wrong-visible");
+      if (!kanjiQuizHwAnswerSubmitted_()) {
+        setKanjiQuizHwCardControlsLocked(false);
+      }
       if (panel) panel.style.display = "none";
       try {
         if (kanjiQuizSession) delete kanjiQuizSession.wrongModelKanjiChar;
@@ -8750,6 +8792,7 @@
       panel.style.display = "flex";
       const sec = document.getElementById("section-kanji-quiz-play");
       if (sec) sec.classList.add("kanji-quiz-wrong-visible");
+      setKanjiQuizHwCardControlsLocked(true);
       if (ch) kanjiQuizMountWrongModelFrameForChar(ch);
       /* 左右並びのため scrollIntoView はしない（片方だけ見えるのを防ぐ） */
       try {
@@ -9180,6 +9223,7 @@
       }
     }
     function resetKanjiQuizDrillPlayShell() {
+      resetKanjiQuizHandAnswerState_();
       setKanjiQuizHandSubmitBusy(false);
       setKanjiQuizPlayHwFooterActive(false);
       const secShell = document.getElementById("section-kanji-quiz-play");
@@ -9413,6 +9457,7 @@
         const skipHwBtn = document.getElementById("kanji-quiz-skip-hw-btn");
         if (skipHwBtn) skipHwBtn.textContent = isStrokeOrderQ ? "次へ（ふせいかい）" : "次へ";
         updateStrokeOrderDemoButton_();
+        resetKanjiQuizHandAnswerState_();
         setKanjiQuizHandSubmitBusy(false);
         kanjiQuizEnsureScoreListener();
         const idxAtRender = kanjiQuizSession.index;
