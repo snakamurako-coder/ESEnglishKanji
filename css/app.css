@@ -848,6 +848,31 @@ body { font-family: 'Hiragino Maru Gothic ProN', sans-serif; background-color: #
       max-height: min(80vh, 680px);
       margin: 0 !important;
       gap: 12px !important;
+      color: #1a1a1a;
+    }
+    /* 薄い肌色背景でも見えるよう、グローバル白見出しを上書き */
+    body.kanji-study-mode #section-materials.active h1,
+    body.kanji-study-mode #section-materials.active h2,
+    body.kanji-study-mode #section-materials.active h3,
+    body.kanji-study-mode #section-materials.active p,
+    body.kanji-study-mode #section-kanji-learning.active h1,
+    body.kanji-study-mode #section-kanji-learning.active h2,
+    body.kanji-study-mode #section-kanji-learning.active h3,
+    body.kanji-study-mode #section-kanji-learning.active p,
+    body.kanji-study-mode #section-kanji-quiz-sets.active h1,
+    body.kanji-study-mode #section-kanji-quiz-sets.active h2,
+    body.kanji-study-mode #section-kanji-quiz-sets.active h3,
+    body.kanji-study-mode #section-kanji-quiz-sets.active p {
+      color: #1a1a1a;
+    }
+    body.kanji-study-mode #section-materials.active #materials-container h2 {
+      color: #0d3b66;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+    }
+    body.kanji-study-mode #section-materials.active #materials-container h3 {
+      color: #333;
+      font-weight: 700;
     }
     body.kanji-study-mode #section-materials.active .menu-btn,
     body.kanji-study-mode #section-materials.active .cancel-btn {
@@ -3051,6 +3076,15 @@ body { font-family: 'Hiragino Maru Gothic ProN', sans-serif; background-color: #
       border-color: #4CAF50;
       color: #2e7d32;
     }
+    /* 漢字モード遷移「次へ」：薄い青背景＋紺文字 */
+    #kanji-quiz-skip-hw-btn.kanji-drill-vbtn-small.submit-btn-small {
+      background: #e3f2fd;
+      border-color: #1565c0;
+      color: #0d47a1;
+    }
+    #kanji-quiz-skip-hw-btn.kanji-drill-vbtn-small.submit-btn-small:active {
+      background: #bbdefb;
+    }
     .kanji-drill-hw-row {
       display: flex;
       flex-direction: column;
@@ -4011,7 +4045,7 @@ body { font-family: 'Hiragino Maru Gothic ProN', sans-serif; background-color: #
       writing-mode: vertical-rl !important;
       text-orientation: upright !important;
     }
-    /* フッターから移設した縦カード「次へ」（出題列の続き） */
+    /* フッターから移設した縦カード「次へ」（出題列の続き）—薄い青＋紺 */
     .kanji-choice-next-btn {
       display: none;
       writing-mode: vertical-rl !important;
@@ -4027,16 +4061,19 @@ body { font-family: 'Hiragino Maru Gothic ProN', sans-serif; background-color: #
       font-weight: 800 !important;
       letter-spacing: 0.12em;
       line-height: 1.35 !important;
-      color: #fff !important;
-      background: #43a047 !important;
-      border: 3px solid #2e7d32 !important;
+      color: #0d47a1 !important;
+      background: #e3f2fd !important;
+      border: 3px solid #1565c0 !important;
       border-radius: 12px !important;
-      box-shadow: 0 3px 0 rgba(46, 125, 50, 0.35);
+      box-shadow: 0 3px 0 rgba(21, 101, 192, 0.28);
       cursor: pointer;
       flex: 0 0 auto !important;
       box-sizing: border-box !important;
       touch-action: manipulation;
       align-self: center;
+    }
+    .kanji-choice-next-btn:active {
+      background: #bbdefb !important;
     }
     .kanji-choice-next-btn.is-visible {
       display: inline-flex !important;
