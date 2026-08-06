@@ -9305,8 +9305,7 @@
       }
       if (typingWrap) {
         if (q.type === "sentence_to_ruby") {
-          typingWrap.style.display = "flex";
-          typingWrap.style.maxWidth = "min(980px, 98vw)";
+          typingWrap.style.display = "";
           typingWrap.removeAttribute("aria-hidden");
           kanjiYomiBindTypingInputOnce();
           kanjiQuizSession.sentenceYomiRecognized = "";
@@ -9343,8 +9342,12 @@
         }
       }
       if (subBtn) {
-        // 熟語読みは選択肢タッチで即回答するため、回答前は非表示（回答後に「次の問題へ」を出す）
-        subBtn.style.display = q.type === "sentence_to_ruby" ? "inline-block" : "none";
+        // よみタイピングは出題列内の「こたえを決定」を CSS で表示
+        if (q.type === "sentence_to_ruby") {
+          subBtn.style.display = "";
+        } else {
+          subBtn.style.display = "none";
+        }
       }
       updateStrokeOrderDemoButton_();
     }
