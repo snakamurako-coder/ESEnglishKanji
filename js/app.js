@@ -8360,12 +8360,14 @@
     function strokeOrderReadingDisplayText_(reading, kind) {
       return kanjiYomiHiraganaToAnswerScript(String(reading || ""), kind === "on" ? "on" : "kun");
     }
-    /** 例文先頭の「。」等（箇条書き風に見えるゴミ）を除く */
+    /** 例文の先頭・末尾の「。」等を除き、先頭に箇条書き「●」を付ける */
     function normalizeStrokeOrderExampleText_(ex) {
-      return String(ex || "")
+      const body = String(ex || "")
         .replace(/^[\s　]*[。．\.・•●◦‧]+/, "")
-        .replace(/^[\s　]+/, "")
+        .replace(/[。．\.・•●◦‧]+[\s　]*$/, "")
+        .replace(/^[\s　]+|[\s　]+$/g, "")
         .trim();
+      return body ? "●" + body : "";
     }
     function clearStrokeOrderReadings_() {
       const el = document.getElementById("kanji-stroke-order-readings");

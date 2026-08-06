@@ -3245,6 +3245,9 @@ body { font-family: 'Hiragino Maru Gothic ProN', sans-serif; background-color: #
       writing-mode: vertical-rl;
       text-orientation: upright;
       -webkit-text-orientation: upright;
+      /* flex 親の rtl を継承すると縦書きが下→上になり、文末「。」が先頭に見える */
+      direction: ltr;
+      unicode-bidi: isolate;
       flex: 0 0 auto;
       margin: 0;
     }
