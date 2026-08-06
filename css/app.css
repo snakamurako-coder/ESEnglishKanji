@@ -1234,17 +1234,21 @@ body { font-family: 'Hiragino Maru Gothic ProN', sans-serif; background-color: #
       text-orientation: mixed !important;
     }
     body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-typing-active .kanji-yomi-kbd-col {
-      /* キーボードが残り幅を食い尽くして入力欄を圧迫しないよう上限を設ける */
+      /* 左の残りスペースをキーボード領域に。中で正方形キーを縦横比維持してフィット */
       flex: 1 1 auto !important;
-      min-width: min(240px, 30vw) !important;
-      max-width: min(520px, 48vw) !important;
+      min-width: min(200px, 28vw) !important;
+      max-width: none !important;
+      width: auto !important;
+      min-height: 0 !important;
       align-self: stretch !important;
       display: flex !important;
       flex-direction: column !important;
       justify-content: center !important;
+      align-items: center !important;
       margin: 0 !important;
       writing-mode: horizontal-tb !important;
       text-orientation: mixed !important;
+      container-type: size;
     }
     body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-typing-active #kanji-yomi-keyboard-container,
     body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-typing-active #kanji-yomi-keyboard-container * {
@@ -1296,19 +1300,58 @@ body { font-family: 'Hiragino Maru Gothic ProN', sans-serif; background-color: #
       display: none !important;
     }
     body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-typing-active #kanji-yomi-keyboard-container {
-      flex: 0 1 auto !important;
+      flex: 1 1 auto !important;
       width: 100% !important;
       max-width: 100% !important;
+      min-height: 0 !important;
       display: flex !important;
       flex-direction: column !important;
       align-items: center !important;
       justify-content: center !important;
-      margin: auto 0 !important;
+      margin: 0 !important;
+      overflow: hidden !important;
     }
     body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-typing-active #kanji-yomi-keyboard-container .keyboard-scale-wrap {
       width: 100%;
       max-width: 100%;
       box-sizing: border-box;
+      margin: 0 auto !important;
+    }
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-typing-active #kanji-yomi-keyboard-container .keyboard {
+      min-width: 0 !important;
+      width: 100% !important;
+      max-width: 100% !important;
+    }
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-typing-active #kanji-yomi-keyboard-container .key-row {
+      width: 100%;
+      justify-content: center;
+      align-items: stretch;
+    }
+    /* 英字キーは正方形。幅に合わせて高さが決まり、全体は JS で領域にフィット */
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-typing-active #kanji-yomi-keyboard-container .key:not(.key-wide):not(.key-action) {
+      aspect-ratio: 1 / 1 !important;
+      flex: 1 1 0 !important;
+      width: 0 !important;
+      min-width: 0 !important;
+      height: auto !important;
+      padding: 0 !important;
+      display: inline-flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      font-size: clamp(11px, 2.6cqw, 26px) !important;
+      line-height: 1 !important;
+      box-sizing: border-box !important;
+    }
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-typing-active #kanji-yomi-keyboard-container .key-wide,
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-typing-active #kanji-yomi-keyboard-container .key-action {
+      aspect-ratio: auto !important;
+      height: auto !important;
+      align-self: stretch !important;
+      padding: 0 4px !important;
+      display: inline-flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      box-sizing: border-box !important;
     }
     body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-typing-active .kanji-quiz-play-footer-bar #kanji-play-submit-btn {
       display: none !important;
@@ -1649,8 +1692,8 @@ body { font-family: 'Hiragino Maru Gothic ProN', sans-serif; background-color: #
     body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-hw-active #kanji-play-choices {
       display: none !important;
     }
-    /* 指示文：タイトルレール左・画面右上へ固定 */
-    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-hw-active #kanji-play-prompt {
+    /* 指示文：カード外にあるときだけ右上固定（手書きはカード内へ移設） */
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-hw-active #kanji-play-prompt:not([data-kanji-so-in-card="1"]) {
       position: absolute !important;
       top: 52px !important;
       right: 92px !important;
@@ -1672,6 +1715,39 @@ body { font-family: 'Hiragino Maru Gothic ProN', sans-serif; background-color: #
       font-weight: 600;
       flex: none !important;
       pointer-events: none;
+    }
+    /* 手書き共通（書き順・書いて答える）：出題指示を記述カード内の一番右端へ */
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-hw-active .kanji-drill-hw-canvas-panel > #kanji-play-prompt {
+      position: static !important;
+      top: auto !important;
+      right: auto !important;
+      left: auto !important;
+      bottom: auto !important;
+      writing-mode: vertical-rl !important;
+      text-orientation: upright !important;
+      -webkit-text-orientation: upright !important;
+      display: block !important;
+      order: 99 !important;
+      flex: 0 0 auto !important;
+      align-self: center !important;
+      margin: 0 0 0 10px !important;
+      padding: 2px 1px !important;
+      width: auto !important;
+      max-width: 2.7em !important;
+      min-width: 1.2em !important;
+      min-height: 0 !important;
+      height: auto !important;
+      max-height: var(--kanji-hw-canvas-size, min(300px, 42vmin)) !important;
+      overflow: visible !important;
+      z-index: auto;
+      font-size: clamp(12px, 1.65vh, 15px) !important;
+      line-height: 1.32 !important;
+      letter-spacing: 0.02em !important;
+      color: #4e342e;
+      font-weight: 600;
+      pointer-events: none;
+      box-sizing: border-box;
+      white-space: normal !important;
     }
     body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-hw-active .kanji-quiz-play-question-block {
       display: contents;
@@ -1997,7 +2073,7 @@ body { font-family: 'Hiragino Maru Gothic ProN', sans-serif; background-color: #
     body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-wrong-visible #kanji-play-choices {
       display: none !important;
     }
-    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-hw-active.kanji-quiz-wrong-visible #kanji-play-prompt {
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-hw-active.kanji-quiz-wrong-visible #kanji-play-prompt:not([data-kanji-so-in-card="1"]) {
       position: absolute !important;
       top: 40px !important;
       right: 72px !important;
@@ -2005,6 +2081,9 @@ body { font-family: 'Hiragino Maru Gothic ProN', sans-serif; background-color: #
       writing-mode: vertical-rl !important;
       text-orientation: upright !important;
       z-index: 36;
+    }
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-hw-active.kanji-quiz-wrong-visible #kanji-play-prompt[data-kanji-so-in-card="1"] {
+      display: none !important;
     }
     /* 左：問題＆記述カード（幅は内容に合わせ、右の練習カード分を確保） */
     body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-wrong-visible .kanji-quiz-hw-stack,
@@ -2336,8 +2415,8 @@ body { font-family: 'Hiragino Maru Gothic ProN', sans-serif; background-color: #
       }
       body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-typing-active .kanji-yomi-kbd-col {
         flex: 1 1 auto !important;
-        min-width: min(260px, 32vw) !important;
-        max-width: min(560px, 50vw) !important;
+        min-width: min(220px, 28vw) !important;
+        max-width: none !important;
       }
       body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-choices-active #kanji-play-choices {
         writing-mode: horizontal-tb !important;
@@ -2410,6 +2489,12 @@ body { font-family: 'Hiragino Maru Gothic ProN', sans-serif; background-color: #
         justify-content: flex-start !important;
         position: relative !important;
       }
+      /* 書き順：タイトルレール（仕切り線）直前まで右詰め */
+      body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-stroke-order-active .kanji-quiz-drill-wrap {
+        padding-right: clamp(68px, 6.2vw, 82px) !important;
+        justify-content: flex-end !important;
+        align-items: flex-start !important;
+      }
       body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-hw-active .kanji-quiz-hw-stack {
         width: min(780px, calc(100% - 160px)) !important;
         max-width: min(780px, calc(100% - 160px)) !important;
@@ -2418,8 +2503,10 @@ body { font-family: 'Hiragino Maru Gothic ProN', sans-serif; background-color: #
       }
       body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-stroke-order-active .kanji-quiz-hw-stack {
         width: fit-content !important;
-        max-width: calc(100% - 160px) !important;
-        align-items: center !important;
+        max-width: 100% !important;
+        align-items: flex-end !important;
+        align-self: flex-end !important;
+        margin: 0 4px 0 auto !important;
       }
       body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-hw-active #kanji-quiz-drill-handwriting,
       body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-hw-active .kanji-drill-hw-row {
@@ -2439,16 +2526,19 @@ body { font-family: 'Hiragino Maru Gothic ProN', sans-serif; background-color: #
       body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-stroke-order-active #kanji-quiz-drill-handwriting,
       body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-stroke-order-active .kanji-drill-hw-row {
         max-height: min(58dvh, calc(100dvh - 210px)) !important;
-        overflow: hidden !important;
+        overflow: visible !important;
+        align-self: flex-end !important;
+        padding-right: 8px !important;
       }
       body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-stroke-order-active #kanji-stroke-order-readings.is-visible {
         padding: 10px 14px 12px !important;
         width: max-content !important;
         max-width: none !important;
         overflow: visible !important;
-        align-self: center !important;
+        align-self: flex-end !important;
+        margin: 0 !important;
       }
-      body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-hw-active #kanji-play-prompt {
+      body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-hw-active #kanji-play-prompt:not([data-kanji-so-in-card="1"]) {
         top: 40px !important;
         right: 96px !important;
       }
@@ -2630,7 +2720,7 @@ body { font-family: 'Hiragino Maru Gothic ProN', sans-serif; background-color: #
         gap: 10px 12px !important;
         position: relative !important;
       }
-      body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-hw-active #kanji-play-prompt {
+      body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-hw-active #kanji-play-prompt:not([data-kanji-so-in-card="1"]) {
         position: absolute !important;
         top: 40px !important;
         right: 96px !important;
@@ -3077,17 +3167,27 @@ body { font-family: 'Hiragino Maru Gothic ProN', sans-serif; background-color: #
     /*
      * 書き順：記述カードは「書くUIだけ」。内部スクロール禁止。
      * よみ・例文は下の別カード（#kanji-stroke-order-readings）へ。
+     * 出題文はカード内。スタック全体を右（タイトルレール手前）へ寄せる。
      */
     body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-stroke-order-active #kanji-quiz-drill-handwriting,
     body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-stroke-order-active .kanji-drill-hw-row {
-      width: min(780px, calc(100vw - 180px)) !important;
+      width: min(780px, calc(100vw - 120px)) !important;
       max-width: 100% !important;
       margin: 0 !important;
       /* 下カード分の余白を残し、記述カード内はスクロールさせない */
       max-height: min(62dvh, calc(100dvh - 220px)) !important;
-      overflow: hidden !important;
+      overflow: visible !important;
       flex: 0 0 auto !important;
-      align-self: center !important;
+      align-self: flex-end !important;
+      padding-right: 8px !important;
+    }
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-stroke-order-active .kanji-quiz-hw-stack {
+      width: fit-content !important;
+      /* wrap の右パディングがタイトルレール分を確保済みなので、追加余白は最小限 */
+      max-width: 100% !important;
+      align-items: flex-end !important;
+      align-self: flex-end !important;
+      margin: 0 4px 0 auto !important;
     }
     /* 書き順：記述カード下の「よみ・例文」別カード（縦書き・右→左）
        横幅は内容に合わせて自動調整。カード内の横スクロールはしない。 */
@@ -3102,11 +3202,11 @@ body { font-family: 'Hiragino Maru Gothic ProN', sans-serif; background-color: #
       width: max-content;
       max-width: none;
       min-width: 0;
-      margin: 0 auto;
+      margin: 0;
       padding: 12px 16px 14px;
       box-sizing: border-box;
       overflow: visible;
-      align-self: center;
+      align-self: flex-end;
       /* 記述カードと同系統の「別カード」見た目 */
       background: #fffef9;
       border: 2px solid #37474f;
@@ -3165,13 +3265,8 @@ body { font-family: 'Hiragino Maru Gothic ProN', sans-serif; background-color: #
       width: max-content !important;
       max-width: none !important;
       overflow: visible !important;
-      align-self: center !important;
-    }
-    /* よみカードが記述カードより広いとき、スタック幅も内容に追従 */
-    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-stroke-order-active .kanji-quiz-hw-stack {
-      width: fit-content !important;
-      max-width: calc(100% - 150px) !important;
-      align-items: center !important;
+      align-self: flex-end !important;
+      margin: 0 !important;
     }
     body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-wrong-visible #kanji-stroke-order-readings {
       display: none !important;
@@ -3427,7 +3522,11 @@ body { font-family: 'Hiragino Maru Gothic ProN', sans-serif; background-color: #
     #kanji-quiz-drill-handwriting .kanji-drill-hw-canvas-panel .kanji-drill-hw-write-stack {
       order: 2;
     }
-    /* 左利き：操作ボタン群を記述ブロックの右へ */
+    /* 書き順の出題文は利き手に関係なく常にカード内の右端 */
+    #kanji-quiz-drill-handwriting .kanji-drill-hw-canvas-panel > #kanji-play-prompt {
+      order: 99;
+    }
+    /* 左利き：操作ボタン群を記述ブロックの右へ（出題文よりは左） */
     body.kanji-hw-dominant-left #kanji-quiz-drill-handwriting .kanji-drill-hw-canvas-panel #kanji-hw-controls-col {
       order: 2;
     }
@@ -3875,9 +3974,6 @@ body { font-family: 'Hiragino Maru Gothic ProN', sans-serif; background-color: #
         min-width: 108px !important;
         font-size: clamp(26px, 4vw, 36px) !important;
         line-height: 1.75 !important;
-      }
-      body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-typing-active .kanji-yomi-kbd-col {
-        max-width: min(480px, 46vw) !important;
       }
     }
     /**
