@@ -750,26 +750,50 @@
   // ==========================================
   // 9b. 採点用ヘルパ（リサンプル・正規化・DTW・交差・サイズ）
   // ==========================================
-  // 採点をやや易しくする都合: 重み（軌道の比重↓・サイズ↓をやや緩和寄り）と下記スケールを併用
+  // 採点配点: 管理ブック指定の6項目はすべて絶対点（合計100）
   function getKpHandScoreWeights(){
     var w=window.__kpHandScoreWeights;
-    var defShape={trajectory:0.40,startEnd:0.15,structure:0.20,size:0.25};
-    var countPts=10, orderPts=20;
-    if(w&&typeof w==='object'){
-      if(typeof w.strokeCountPts==='number') countPts=w.strokeCountPts;
-      else if(typeof w.strokeCount==='number') countPts=w.strokeCount<=1?w.strokeCount*100:w.strokeCount;
-      if(typeof w.strokeOrderPts==='number') orderPts=w.strokeOrderPts;
-      else if(typeof w.strokeOrder==='number') orderPts=w.strokeOrder<=1?w.strokeOrder*100:w.strokeOrder;
-      countPts=Math.max(0,Math.min(100,countPts));
-      orderPts=Math.max(0,Math.min(100-countPts,orderPts));
-      var t=typeof w.trajectory==='number'?w.trajectory:defShape.trajectory;
-      var se=typeof w.startEnd==='number'?w.startEnd:defShape.startEnd;
-      var st=typeof w.structure==='number'?w.structure:defShape.structure;
-      var sz=typeof w.size==='number'?w.size:defShape.size;
-      var s=t+se+st+sz;
-      if(s>0.01) return {strokeCountPts:countPts,strokeOrderPts:orderPts,shapeBudget:100-countPts-orderPts,trajectory:t/s,startEnd:se/s,structure:st/s,size:sz/s};
+    var def={strokeCountPts:10,strokeOrderPts:20,trajectoryPts:28,startEndPts:10,structurePts:14,sizePts:18};
+    function absPts(v, fb){
+      if(typeof v!=='number'||isNaN(v)||v<0) return fb;
+      if(v>0&&v<=1) return v*100;
+      return Math.max(0,Math.min(100,v));
     }
-    return {strokeCountPts:countPts,strokeOrderPts:orderPts,shapeBudget:100-countPts-orderPts,trajectory:0.40,startEnd:0.15,structure:0.20,size:0.25};
+    if(w&&typeof w==='object'){
+      /* 新形式: *Pts 絶対点 */
+      if(typeof w.trajectoryPts==='number'||typeof w.startEndPts==='number'||typeof w.structurePts==='number'||typeof w.sizePts==='number'){
+        return {
+          strokeCountPts:absPts(w.strokeCountPts,def.strokeCountPts),
+          strokeOrderPts:absPts(w.strokeOrderPts,def.strokeOrderPts),
+          trajectoryPts:absPts(w.trajectoryPts,def.trajectoryPts),
+          startEndPts:absPts(w.startEndPts,def.startEndPts),
+          structurePts:absPts(w.structurePts,def.structurePts),
+          sizePts:absPts(w.sizePts,def.sizePts),
+          totalMax:100
+        };
+      }
+      /* 旧形式: ゲート絶対点 + 形は shapeBudget 内比率 */
+      var countPts=absPts(typeof w.strokeCountPts==='number'?w.strokeCountPts:(typeof w.strokeCount==='number'?w.strokeCount:def.strokeCountPts),def.strokeCountPts);
+      var orderPts=absPts(typeof w.strokeOrderPts==='number'?w.strokeOrderPts:(typeof w.strokeOrder==='number'?w.strokeOrder:def.strokeOrderPts),def.strokeOrderPts);
+      orderPts=Math.min(100-countPts,orderPts);
+      var budget=typeof w.shapeBudget==='number'?Math.max(0,w.shapeBudget):Math.max(0,100-countPts-orderPts);
+      var t=typeof w.trajectory==='number'?w.trajectory:0.4;
+      var se=typeof w.startEnd==='number'?w.startEnd:0.15;
+      var st=typeof w.structure==='number'?w.structure:0.2;
+      var sz=typeof w.size==='number'?w.size:0.25;
+      var s=t+se+st+sz;
+      if(s<=0.01){t=0.4;se=0.15;st=0.2;sz=0.25;s=1;}
+      return {
+        strokeCountPts:countPts,
+        strokeOrderPts:orderPts,
+        trajectoryPts:budget*(t/s),
+        startEndPts:budget*(se/s),
+        structurePts:budget*(st/s),
+        sizePts:budget*(sz/s),
+        totalMax:100
+      };
+    }
+    return Object.assign({totalMax:100},def);
   }
 
   function resamplePolyline(sArray, n) {
@@ -988,9 +1012,13 @@
   function evaluateKanji(isTrace) {
     const sEl = document.getElementById('score'), mEl = document.getElementById('msg');
     const W = getKpHandScoreWeights();
-    const countPtsMax = typeof W.strokeCountPts === 'number' ? W.strokeCountPts : 10;
-    const orderPtsMax = typeof W.strokeOrderPts === 'number' ? W.strokeOrderPts : 20;
-    const shapeBudget = typeof W.shapeBudget === 'number' ? W.shapeBudget : Math.max(0, 100 - countPtsMax - orderPtsMax);
+    const countPtsMax = Math.round(typeof W.strokeCountPts === 'number' ? W.strokeCountPts : 10);
+    const orderPtsMax = Math.round(typeof W.strokeOrderPts === 'number' ? W.strokeOrderPts : 20);
+    const trajMax = Math.round(typeof W.trajectoryPts === 'number' ? W.trajectoryPts : 28);
+    const seMax = Math.round(typeof W.startEndPts === 'number' ? W.startEndPts : 10);
+    const strMax = Math.round(typeof W.structurePts === 'number' ? W.structurePts : 14);
+    const sizeMax = Math.round(typeof W.sizePts === 'number' ? W.sizePts : 18);
+    const totalMax = typeof W.totalMax === 'number' ? W.totalMax : 100;
 
     const userResampled = userStrokes.map(s => resamplePolyline(s.points, NUM_SAMPLES));
     const uNraw = normalizeStrokesToUnitSquare(userResampled);
@@ -1032,13 +1060,14 @@
       strS = Math.round(30 + 50 * ratio);
     }
 
-    const shapeScore = Math.round(
-      W.trajectory * trajS + W.startEnd * seS + W.structure * strS + W.size * sizeS
-    );
     const countAward = countOk ? countPtsMax : 0;
     const orderAward = orderOk ? orderPtsMax : 0;
-    let score = Math.round(countAward + orderAward + shapeBudget * (Math.max(0, Math.min(100, shapeScore)) / 100));
-    score = Math.max(0, Math.min(100, score));
+    const trajPts = Math.round(trajMax * (Math.max(0, Math.min(100, trajS)) / 100));
+    const sePts = Math.round(seMax * (Math.max(0, Math.min(100, seS)) / 100));
+    const strPts = Math.round(strMax * (Math.max(0, Math.min(100, strS)) / 100));
+    const sizePts = Math.round(sizeMax * (Math.max(0, Math.min(100, sizeS)) / 100));
+    let score = Math.round(countAward + orderAward + trajPts + sePts + strPts + sizePts);
+    score = Math.max(0, Math.min(totalMax, score));
 
     const isStrict = document.getElementById('cb-strict-mode').checked;
     let typeErrors = 0;
@@ -1062,7 +1091,7 @@
 
     sEl.innerText = score + " 点";
     mEl.style.color = '#555';
-    const subLine = `内訳: 画数${countAward}/${countPtsMax} 書き順${orderAward}/${orderPtsMax} 軌道${trajS} 始終${seS} 構造${strS} 大きさ${sizeS}（${sizeLabel}）`;
+    const subLine = `内訳: 画数${countAward}/${countPtsMax} 書き順${orderAward}/${orderPtsMax} 軌道${trajPts}/${trajMax} 始終${sePts}/${seMax} 構造${strPts}/${strMax} 大きさ${sizePts}/${sizeMax}（${sizeLabel}）`;
     if (!countOk) {
       mEl.style.color = '#e53935';
       mEl.innerText = `画数が違います（正解：${referenceStrokes.length}画 / あなたの画数：${userStrokes.length}画）。\n` + subLine;
@@ -1079,17 +1108,9 @@
     }
     /* 親UI用の6項目内訳（何点中何点 + 得点率） */
     try {
-      var trajMax = Math.round(shapeBudget * W.trajectory);
-      var seMax = Math.round(shapeBudget * W.startEnd);
-      var strMax = Math.round(shapeBudget * W.structure);
-      var sizeMax = Math.max(0, shapeBudget - trajMax - seMax - strMax);
-      var trajPts = Math.round(trajMax * (Math.max(0, Math.min(100, trajS)) / 100));
-      var sePts = Math.round(seMax * (Math.max(0, Math.min(100, seS)) / 100));
-      var strPts = Math.round(strMax * (Math.max(0, Math.min(100, strS)) / 100));
-      var sizePts = Math.round(sizeMax * (Math.max(0, Math.min(100, sizeS)) / 100));
       var breakdown = {
         total: score,
-        totalMax: 100,
+        totalMax: totalMax,
         sizeLabel: sizeLabel,
         countOk: !!countOk,
         orderOk: !!orderOk,
