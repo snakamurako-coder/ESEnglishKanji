@@ -7575,6 +7575,8 @@
           if (!kanjiQuizSession || !document.getElementById("section-kanji-quiz-play") || !document.getElementById("section-kanji-quiz-play").classList.contains("active")) return;
           const q = kanjiQuizSession.questions[kanjiQuizSession.index];
           if (!q || !isKanjiQuizHandwritingQuestionType_(q.type)) return;
+          if (kanjiQuizHwAnswerSubmitted_()) return;
+          if (typeof kanjiQuizSession.hwPassPendingAdvance === "function") return;
           return true;
         }
         function beginStrokeAt(clientX, clientY) {
@@ -8179,6 +8181,10 @@
       ) {
         return;
       }
+      /* 書いて答える：合格待機中の再採点は無視 */
+      if (q.type === "ruby_to_kanji" && typeof kanjiQuizSession.hwPassPendingAdvance === "function") {
+        return;
+      }
       if (sc == null || sc < KANJI_QUIZ_HAND_PASS) {
         queueKanjiHandwritingWeakSignalForQuestion(q, sc);
         if (q.type === "stroke_order_trace") {
@@ -8205,7 +8211,18 @@
         submitKanjiQuizScore();
         return;
       }
+      /* 書いて答える：採点ステータスを見せてから「次へ」または4秒で進行 */
       kanjiQuizHideWrongFeedback();
+      setKanjiQuizHwCardControlsLocked(true);
+      showKanjiHwPassNextControls_(function () {
+        advanceKanjiHwRubyAfterPass_();
+      });
+    }
+    /** 書いて答える：合格後のスロット進行／問題確定 */
+    function advanceKanjiHwRubyAfterPass_() {
+      if (!kanjiQuizSession) return;
+      const q = kanjiQuizSession.questions[kanjiQuizSession.index];
+      if (!q || q.type !== "ruby_to_kanji") return;
       const targets = kanjiQuizSession.rubyHandTargets || [];
       const slot = kanjiQuizSession.rubyHandSlot || 0;
       if (slot + 1 >= targets.length) {
@@ -8224,11 +8241,46 @@
       kanjiQuizClearWritePad(true);
       kanjiQuizSetupWriteCanvas();
       kanjiQuizScheduleWriteCanvasReflow();
+      const skipHwBtn = document.getElementById("kanji-quiz-skip-hw-btn");
+      if (skipHwBtn) skipHwBtn.textContent = "次へ";
+    }
+    let kanjiHwPassAutoNextTimer_ = null;
+    function clearKanjiHwPassAutoNext_() {
+      if (kanjiHwPassAutoNextTimer_ != null) {
+        clearTimeout(kanjiHwPassAutoNextTimer_);
+        kanjiHwPassAutoNextTimer_ = null;
+      }
+    }
+    /** 書いて答える合格時：ステータス表示のまま「次へ」or 4秒で進む */
+    function showKanjiHwPassNextControls_(advanceFn) {
+      if (!kanjiQuizSession) return;
+      clearKanjiHwPassAutoNext_();
+      var advanced = false;
+      function goNext() {
+        if (advanced) return;
+        advanced = true;
+        clearKanjiHwPassAutoNext_();
+        if (kanjiQuizSession) kanjiQuizSession.hwPassPendingAdvance = null;
+        if (typeof advanceFn === "function") advanceFn();
+      }
+      kanjiQuizSession.hwPassPendingAdvance = goNext;
+      const skipBtn = document.getElementById("kanji-quiz-skip-hw-btn");
+      if (skipBtn) {
+        skipBtn.textContent = "次へ";
+        skipBtn.disabled = false;
+        stopKanjiActionBusy(skipBtn);
+      }
+      kanjiHwPassAutoNextTimer_ = setTimeout(goNext, 4000);
     }
     function kanjiQuizSkipHandwritingQuestion(btn) {
       if (!kanjiQuizSession) return;
       const secHand = document.getElementById("section-kanji-quiz-play");
       if (!secHand || !secHand.classList.contains("active")) return;
+      /* 合格待機中の「次へ」はスキップ（不正解確定）ではなく進行 */
+      if (typeof kanjiQuizSession.hwPassPendingAdvance === "function") {
+        kanjiQuizSession.hwPassPendingAdvance();
+        return;
+      }
       const q = kanjiQuizSession.questions[kanjiQuizSession.index];
       if (!q || !isKanjiQuizHandwritingQuestionType_(q.type)) return;
 
@@ -9711,6 +9763,9 @@
       setKanjiQuizHandSubmitBusy(false);
       setKanjiQuizPlayHwFooterActive(false);
       try {
+        clearKanjiHwPassAutoNext_();
+      } catch (_ePassT) {}
+      try {
         clearKanjiHwScoreStatus_();
       } catch (_eSt2) {}
       const secShell = document.getElementById("section-kanji-quiz-play");
@@ -9816,10 +9871,12 @@
       }
       clearKanjiJukugoAutoNext_();
       clearKanjiStrokeOrderAutoNext_();
+      clearKanjiHwPassAutoNext_();
       kanjiQuizSession.selectedChoice = null;
       kanjiQuizSession.jukugoAnswerLocked = false;
       kanjiQuizSession.jukugoPendingAdvance = null;
       kanjiQuizSession.strokeOrderPendingAdvance = null;
+      kanjiQuizSession.hwPassPendingAdvance = null;
       kanjiQuizSession.strokeOrderFailedOnce = false;
       updateStrokeOrderDemoButton_();
       resetKanjiQuizDrillPlayShell();
@@ -10671,10 +10728,12 @@
       try {
         clearKanjiJukugoAutoNext_();
         clearKanjiStrokeOrderAutoNext_();
+        clearKanjiHwPassAutoNext_();
       } catch (_eT) {}
       if (kanjiQuizSession) {
         kanjiQuizSession.jukugoPendingAdvance = null;
         kanjiQuizSession.strokeOrderPendingAdvance = null;
+        kanjiQuizSession.hwPassPendingAdvance = null;
       }
       var goNigate = !!(lastKanjiQuizContext && lastKanjiQuizContext.nigateTraining);
       if (!kanjiQuizSession) {
