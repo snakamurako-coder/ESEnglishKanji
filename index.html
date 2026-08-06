@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>学習アプリ</title>
-  <link rel="stylesheet" href="css/app.css?v=b7f75bd6">
+  <link rel="stylesheet" href="css/app.css?v=b7f75bd8">
 </head>
 <body>
 <div id="global-header">👤 <span id="header-user-info"></span></div>
@@ -258,6 +258,8 @@
               </div>
             </div>
         </div>
+        <!-- 書いて答える：採点ステータス（6角形レーダー＋内訳） -->
+        <div id="kanji-hw-score-status" class="kanji-hw-score-status" style="display:none;" hidden aria-live="polite" aria-label="採点ステータス"></div>
         <div id="kanji-stroke-order-readings" class="kanji-stroke-order-readings" style="display:none;" aria-label="よみと例文"></div>
       </div>
       <div class="kanji-quiz-title-rail-wrap">
@@ -517,6 +519,6 @@
   <script src="js/state.js"></script>
   <script src="js/api.js"></script>
   <script src="js/main.js"></script>
-  <script src="js/app.js?v=b7f75bd6"></script>
+  <script src="js/app.js?v=b7f75bd8"></script>
 </body>
 </html>

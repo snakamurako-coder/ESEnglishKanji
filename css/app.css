@@ -91,6 +91,64 @@ body { font-family: 'Hiragino Maru Gothic ProN', sans-serif; background-color: #
     #section-quiz.pen-mode-active label { touch-action: manipulation; }
     #section-quiz.pen-mode-active input[readonly],
     #section-quiz.pen-mode-active textarea[readonly] { -webkit-user-select: none; user-select: none; caret-color: transparent; }
+    /*
+     * 漢字「書いて答える」「書き順」＋間違い練習：
+     * 掌・スタイラスが枠近辺の表示文字に触れても選択・コールアウトしないよう抑制。
+     * （英語クイズ pen-mode-active と同趣旨）
+     */
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-hw-active,
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-hw-active *,
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-stroke-order-active,
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-stroke-order-active * {
+      -webkit-user-select: none !important;
+      -moz-user-select: none !important;
+      -ms-user-select: none !important;
+      user-select: none !important;
+      -webkit-touch-callout: none !important;
+      -webkit-tap-highlight-color: transparent;
+    }
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-hw-active #kanji-quiz-write-canvas,
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-stroke-order-active #kanji-quiz-write-canvas {
+      -webkit-user-drag: none;
+      touch-action: none;
+    }
+    /* 枠まわりの表示専用テキスト・お手本はタッチを受け取らない（掌の誤選択防止） */
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-hw-active .kanji-drill-hw-prefix-col,
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-hw-active .kanji-drill-hw-suffix-col,
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-hw-active .kanji-drill-context-inline,
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-hw-active .kanji-drill-q-marker,
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-hw-active #kanji-play-char-handwriting,
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-hw-active #kanji-play-prompt,
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-hw-active #kanji-play-progress,
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-hw-active .kanji-quiz-title-rail-wrap,
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-hw-active #kanji-stroke-order-hint,
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-stroke-order-active .kanji-drill-hw-prefix-col,
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-stroke-order-active .kanji-drill-hw-suffix-col,
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-stroke-order-active .kanji-drill-context-inline,
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-stroke-order-active .kanji-drill-q-marker,
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-stroke-order-active #kanji-play-char-handwriting,
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-stroke-order-active #kanji-play-prompt,
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-stroke-order-active #kanji-play-progress,
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-stroke-order-active .kanji-quiz-title-rail-wrap,
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-stroke-order-active #kanji-stroke-order-readings,
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-stroke-order-active #kanji-stroke-order-hint,
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-hw-active #kanji-hw-score-status,
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-stroke-order-active #kanji-hw-score-status,
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-wrong-visible #kanji-quiz-hw-wrong-panel .kanji-quiz-hw-wrong-heading,
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-wrong-visible #kanji-quiz-hw-wrong-panel .kanji-quiz-hw-wrong-label-plain,
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-wrong-visible #kanji-quiz-hw-wrong-panel .kanji-quiz-hw-wrong-stroke-label,
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-wrong-visible #kanji-quiz-wrong-red-chars,
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-wrong-visible #kanji-quiz-wrong-red-chars * {
+      pointer-events: none !important;
+    }
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-wrong-visible .kanji-quiz-wrong-model-wrap iframe {
+      pointer-events: none !important;
+    }
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-hw-active button,
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-stroke-order-active button {
+      touch-action: manipulation;
+      pointer-events: auto !important;
+    }
     .pen-canvas {
       background: #fff;
       border: 1px solid #555;
@@ -3178,6 +3236,215 @@ body { font-family: 'Hiragino Maru Gothic ProN', sans-serif; background-color: #
       flex: 0 0 auto !important;
       align-self: flex-start !important;
       margin: 0 !important;
+    }
+    /* 書いて答える：採点ステータス（6角形レーダー＋栄養表示風内訳） */
+    .kanji-hw-score-status {
+      display: none;
+      writing-mode: horizontal-tb !important;
+      text-orientation: mixed !important;
+      direction: ltr;
+      box-sizing: border-box;
+      width: 100%;
+      max-width: min(560px, 100%);
+      margin: 0 auto;
+      padding: 0;
+      flex: 0 0 auto;
+      align-self: center;
+      pointer-events: none;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    .kanji-hw-score-status.is-visible {
+      display: block !important;
+    }
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-hw-active .kanji-hw-score-status.is-visible,
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-stroke-order-active .kanji-hw-score-status.is-visible {
+      display: block !important;
+    }
+    .kanji-hw-score-status-inner {
+      background: linear-gradient(165deg, #fffdf8 0%, #f3f6f4 55%, #eef3f0 100%);
+      border: 2px solid #546e7a;
+      border-radius: 12px;
+      padding: 10px 12px 12px;
+      box-shadow: 0 2px 10px rgba(55, 71, 79, 0.12);
+    }
+    .kanji-hw-score-status.is-great .kanji-hw-score-status-inner {
+      border-color: #2e7d32;
+      background: linear-gradient(165deg, #f7fff8 0%, #e8f5e9 100%);
+    }
+    .kanji-hw-score-status.is-pass .kanji-hw-score-status-inner {
+      border-color: #ef6c00;
+      background: linear-gradient(165deg, #fffaf5 0%, #fff3e0 100%);
+    }
+    .kanji-hw-score-status.is-fail .kanji-hw-score-status-inner {
+      border-color: #c62828;
+      background: linear-gradient(165deg, #fff8f8 0%, #ffebee 100%);
+    }
+    .kanji-hw-score-status-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 8px;
+      padding-bottom: 6px;
+      border-bottom: 1px dashed #90a4ae;
+    }
+    .kanji-hw-score-status-title {
+      font-size: clamp(13px, 2.2vw, 15px);
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      color: #37474f;
+    }
+    .kanji-hw-score-total {
+      font-weight: 800;
+      color: #263238;
+      white-space: nowrap;
+    }
+    .kanji-hw-score-total-val {
+      font-size: clamp(26px, 5vw, 36px);
+      font-variant-numeric: tabular-nums;
+      line-height: 1;
+    }
+    .kanji-hw-score-status.is-great .kanji-hw-score-total-val { color: #1b5e20; }
+    .kanji-hw-score-status.is-pass .kanji-hw-score-total-val { color: #e65100; }
+    .kanji-hw-score-status.is-fail .kanji-hw-score-total-val { color: #b71c1c; }
+    .kanji-hw-score-total-max {
+      font-size: clamp(12px, 2vw, 14px);
+      font-weight: 700;
+      color: #607d8b;
+    }
+    .kanji-hw-score-status-body {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: center;
+      gap: 8px 14px;
+    }
+    .kanji-hw-score-radar-wrap {
+      flex: 0 0 auto;
+      width: min(220px, 46vw);
+    }
+    .kanji-hw-score-radar {
+      display: block;
+      width: 100%;
+      height: auto;
+      overflow: visible;
+    }
+    .kanji-hw-score-hex-grid {
+      fill: none;
+      stroke: #b0bec5;
+      stroke-width: 1;
+      opacity: 0.85;
+    }
+    .kanji-hw-score-hex-spoke {
+      stroke: #cfd8dc;
+      stroke-width: 1;
+    }
+    .kanji-hw-score-hex-fill {
+      fill: rgba(25, 118, 210, 0.28);
+      stroke: none;
+    }
+    .kanji-hw-score-status.is-great .kanji-hw-score-hex-fill { fill: rgba(46, 125, 50, 0.32); }
+    .kanji-hw-score-status.is-pass .kanji-hw-score-hex-fill { fill: rgba(239, 108, 0, 0.30); }
+    .kanji-hw-score-status.is-fail .kanji-hw-score-hex-fill { fill: rgba(198, 40, 40, 0.28); }
+    .kanji-hw-score-hex-outline {
+      fill: none;
+      stroke: #1565c0;
+      stroke-width: 2.2;
+      stroke-linejoin: round;
+    }
+    .kanji-hw-score-status.is-great .kanji-hw-score-hex-outline { stroke: #2e7d32; }
+    .kanji-hw-score-status.is-pass .kanji-hw-score-hex-outline { stroke: #ef6c00; }
+    .kanji-hw-score-status.is-fail .kanji-hw-score-hex-outline { stroke: #c62828; }
+    .kanji-hw-score-hex-label {
+      font-size: 11px;
+      font-weight: 800;
+      fill: #455a64;
+    }
+    .kanji-hw-score-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      flex: 1 1 200px;
+      min-width: min(220px, 100%);
+      max-width: 280px;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+    .kanji-hw-score-row {
+      display: grid;
+      grid-template-columns: 4.5em 1fr 3.2em 2.4em;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      font-weight: 700;
+      color: #37474f;
+    }
+    .kanji-hw-score-row-label {
+      letter-spacing: 0.02em;
+      white-space: nowrap;
+    }
+    .kanji-hw-score-row-bar {
+      display: block;
+      height: 8px;
+      border-radius: 999px;
+      background: #dde3e7;
+      overflow: hidden;
+    }
+    .kanji-hw-score-row-fill {
+      display: block;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, #42a5f5, #1565c0);
+      min-width: 0;
+    }
+    .kanji-hw-score-status.is-great .kanji-hw-score-row-fill {
+      background: linear-gradient(90deg, #66bb6a, #2e7d32);
+    }
+    .kanji-hw-score-status.is-pass .kanji-hw-score-row-fill {
+      background: linear-gradient(90deg, #ffb74d, #ef6c00);
+    }
+    .kanji-hw-score-status.is-fail .kanji-hw-score-row-fill {
+      background: linear-gradient(90deg, #ef9a9a, #c62828);
+    }
+    .kanji-hw-score-row-pts {
+      font-variant-numeric: tabular-nums;
+      text-align: right;
+      white-space: nowrap;
+    }
+    .kanji-hw-score-row-max {
+      color: #78909c;
+      font-weight: 600;
+    }
+    .kanji-hw-score-row-pct {
+      font-variant-numeric: tabular-nums;
+      text-align: right;
+      color: #546e7a;
+      font-size: 11px;
+    }
+    .kanji-hw-score-note {
+      margin: 8px 0 0;
+      font-size: 12px;
+      font-weight: 700;
+      color: #607d8b;
+      text-align: center;
+    }
+    .kanji-hw-score-total-line {
+      margin: 8px 0 0;
+      padding-top: 6px;
+      border-top: 1px solid #cfd8dc;
+      text-align: center;
+      font-size: clamp(14px, 2.4vw, 16px);
+      font-weight: 700;
+      color: #263238;
+    }
+    .kanji-hw-score-total-line strong {
+      font-size: 1.25em;
+      font-variant-numeric: tabular-nums;
+    }
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-wrong-visible .kanji-hw-score-status {
+      max-width: 100%;
     }
     /*
      * 書き順：記述カードは「書くUIだけ」。内部スクロール禁止。
