@@ -1234,9 +1234,10 @@ body { font-family: 'Hiragino Maru Gothic ProN', sans-serif; background-color: #
       text-orientation: mixed !important;
     }
     body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-typing-active .kanji-yomi-kbd-col {
+      /* キーボードが残り幅を食い尽くして入力欄を圧迫しないよう上限を設ける */
       flex: 1 1 auto !important;
-      min-width: min(280px, 38vw) !important;
-      max-width: none !important;
+      min-width: min(240px, 30vw) !important;
+      max-width: min(520px, 48vw) !important;
       align-self: stretch !important;
       display: flex !important;
       flex-direction: column !important;
@@ -1272,12 +1273,21 @@ body { font-family: 'Hiragino Maru Gothic ProN', sans-serif; background-color: #
       box-sizing: border-box !important;
     }
     body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-typing-active #kanji-play-yomi-input.kanji-yomi-type-input-vertical {
+      /* 縦書きなので width＝列の太さ。iPad で 52〜72px だと文字が潰れて読めない */
       min-height: clamp(220px, 48vh, 420px) !important;
       max-height: calc(100dvh - 110px) !important;
-      width: clamp(52px, 7vw, 72px) !important;
+      width: clamp(96px, 14vw, 148px) !important;
+      min-width: 96px !important;
+      font-size: clamp(24px, 3.4vw, 34px) !important;
+      line-height: 1.7 !important;
+      letter-spacing: 0.1em !important;
+      padding: 16px 14px !important;
       display: block !important;
       caret-color: transparent;
       cursor: default;
+      background: #fffef5 !important;
+      border: 3px solid #f9a825 !important;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1) !important;
     }
     body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-typing-active #kanji-play-input {
       display: none !important;
@@ -2313,15 +2323,21 @@ body { font-family: 'Hiragino Maru Gothic ProN', sans-serif; background-color: #
       body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-typing-active #kanji-yomi-typing-rail {
         padding: 16px clamp(72px, 7vw, 96px) 12px 16px !important;
       }
-      body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-typing-active #kanji-yomi-sentence-box .kanji-yomi-sentence-block,
-      body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-typing-active #kanji-play-yomi-input.kanji-yomi-type-input-vertical {
+      body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-typing-active #kanji-yomi-sentence-box .kanji-yomi-sentence-block {
         min-height: clamp(220px, 48vh, 420px) !important;
         max-height: calc(100dvh - 110px) !important;
       }
+      body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-typing-active #kanji-play-yomi-input.kanji-yomi-type-input-vertical {
+        min-height: clamp(240px, 52vh, 480px) !important;
+        max-height: calc(100dvh - 110px) !important;
+        width: clamp(112px, 13vw, 160px) !important;
+        min-width: 112px !important;
+        font-size: clamp(26px, 3vw, 36px) !important;
+      }
       body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-typing-active .kanji-yomi-kbd-col {
         flex: 1 1 auto !important;
-        min-width: min(280px, 38vw) !important;
-        max-width: none !important;
+        min-width: min(260px, 32vw) !important;
+        max-width: min(560px, 50vw) !important;
       }
       body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-choices-active #kanji-play-choices {
         writing-mode: horizontal-tb !important;
@@ -3852,6 +3868,16 @@ body { font-family: 'Hiragino Maru Gothic ProN', sans-serif; background-color: #
       #kanji-play-yomi-input.kanji-yomi-type-input-vertical {
         line-height: 1.6;
         letter-spacing: 0.06em;
+      }
+      /* iPad など：よみ入力欄をキーボードより優先して太く見せる */
+      body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-typing-active #kanji-play-yomi-input.kanji-yomi-type-input-vertical {
+        width: clamp(108px, 16vw, 168px) !important;
+        min-width: 108px !important;
+        font-size: clamp(26px, 4vw, 36px) !important;
+        line-height: 1.75 !important;
+      }
+      body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-typing-active .kanji-yomi-kbd-col {
+        max-width: min(480px, 46vw) !important;
       }
     }
     /**
