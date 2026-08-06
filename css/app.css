@@ -1277,15 +1277,15 @@ body { font-family: 'Hiragino Maru Gothic ProN', sans-serif; background-color: #
       box-sizing: border-box !important;
     }
     body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-typing-active #kanji-play-yomi-input.kanji-yomi-type-input-vertical {
-      /* 縦書きなので width＝列の太さ。iPad で 52〜72px だと文字が潰れて読めない */
+      /* 縦書きの列幅。広げすぎたため半分程度に戻す */
       min-height: clamp(220px, 48vh, 420px) !important;
       max-height: calc(100dvh - 110px) !important;
-      width: clamp(96px, 14vw, 148px) !important;
-      min-width: 96px !important;
-      font-size: clamp(24px, 3.4vw, 34px) !important;
-      line-height: 1.7 !important;
-      letter-spacing: 0.1em !important;
-      padding: 16px 14px !important;
+      width: clamp(52px, 7vw, 76px) !important;
+      min-width: 52px !important;
+      font-size: clamp(22px, 3.2vw, 30px) !important;
+      line-height: 1.65 !important;
+      letter-spacing: 0.08em !important;
+      padding: 14px 8px !important;
       display: block !important;
       caret-color: transparent;
       cursor: default;
@@ -2142,12 +2142,12 @@ body { font-family: 'Hiragino Maru Gothic ProN', sans-serif; background-color: #
     body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-stroke-order-active.kanji-quiz-wrong-visible #kanji-quiz-hw-wrong-panel {
       order: 2 !important;
       flex: 0 0 auto !important;
-      width: min(420px, 38vw) !important;
-      max-width: min(420px, 38vw) !important;
-      min-width: min(280px, 32vw) !important;
+      width: min(440px, 40vw) !important;
+      max-width: min(440px, 40vw) !important;
+      min-width: min(300px, 34vw) !important;
       min-height: 0 !important;
       height: auto !important;
-      max-height: calc(100dvh - 120px) !important;
+      max-height: calc(100dvh - 72px) !important;
       margin: 0 0 0 auto !important;
       align-self: flex-start !important;
       overflow: hidden !important;
@@ -2158,20 +2158,30 @@ body { font-family: 'Hiragino Maru Gothic ProN', sans-serif; background-color: #
       direction: ltr !important;
       z-index: 5;
       box-sizing: border-box !important;
+      padding: 8px 12px 10px !important;
     }
     body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-wrong-visible .kanji-quiz-wrong-model-wrap {
+      /* サイドバイサイドでもお手本・書き順UIが見切れない高さにする */
       flex: 1 1 auto !important;
-      min-height: 0 !important;
-      height: auto !important;
-      max-height: none !important;
+      min-height: min(480px, calc(100dvh - 220px)) !important;
+      height: min(560px, calc(100dvh - 180px)) !important;
+      max-height: calc(100dvh - 160px) !important;
       width: 100% !important;
       max-width: 100% !important;
+    }
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-wrong-visible .kanji-quiz-hw-wrong-heading {
+      margin: 0 0 4px !important;
+      font-size: clamp(14px, 2.2vh, 18px) !important;
+    }
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-wrong-visible .kanji-quiz-hw-wrong-label-plain {
+      margin: 0 0 2px !important;
+      font-size: 12px !important;
     }
     body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-wrong-visible .kanji-quiz-wrong-red-chars {
       margin: 2px 0 6px !important;
     }
     body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-wrong-visible .kanji-quiz-wrong-char-main {
-      font-size: clamp(36px, 8vw, 64px) !important;
+      font-size: clamp(32px, 6.5vw, 52px) !important;
     }
     body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-drill-section .kanji-quiz-play-footer-inner {
       display: flex;
@@ -2409,9 +2419,9 @@ body { font-family: 'Hiragino Maru Gothic ProN', sans-serif; background-color: #
       body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-typing-active #kanji-play-yomi-input.kanji-yomi-type-input-vertical {
         min-height: clamp(240px, 52vh, 480px) !important;
         max-height: calc(100dvh - 110px) !important;
-        width: clamp(112px, 13vw, 160px) !important;
-        min-width: 112px !important;
-        font-size: clamp(26px, 3vw, 36px) !important;
+        width: clamp(56px, 6.5vw, 80px) !important;
+        min-width: 56px !important;
+        font-size: clamp(22px, 2.8vw, 30px) !important;
       }
       body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-typing-active .kanji-yomi-kbd-col {
         flex: 1 1 auto !important;
@@ -2616,15 +2626,20 @@ body { font-family: 'Hiragino Maru Gothic ProN', sans-serif; background-color: #
       body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-wrong-visible #kanji-quiz-hw-wrong-panel,
       body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-hw-active.kanji-quiz-wrong-visible #kanji-quiz-hw-wrong-panel,
       body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-stroke-order-active.kanji-quiz-wrong-visible #kanji-quiz-hw-wrong-panel {
-        width: min(420px, 38vw) !important;
-        max-width: min(420px, 38vw) !important;
-        min-width: min(280px, 32vw) !important;
-        max-height: calc(100dvh - 120px) !important;
+        width: min(440px, 40vw) !important;
+        max-width: min(440px, 40vw) !important;
+        min-width: min(300px, 34vw) !important;
+        max-height: calc(100dvh - 72px) !important;
         margin: 0 0 0 auto !important;
         align-self: flex-start !important;
         overflow: hidden !important;
         order: 2 !important;
         flex: 0 0 auto !important;
+      }
+      body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-wrong-visible .kanji-quiz-wrong-model-wrap {
+        min-height: min(500px, calc(100dvh - 200px)) !important;
+        height: min(580px, calc(100dvh - 160px)) !important;
+        max-height: calc(100dvh - 140px) !important;
       }
       body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-wrong-visible #kanji-quiz-drill-handwriting,
       body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-hw-active.kanji-quiz-wrong-visible #kanji-quiz-drill-handwriting,
@@ -3198,7 +3213,7 @@ body { font-family: 'Hiragino Maru Gothic ProN', sans-serif; background-color: #
       flex-wrap: nowrap;
       justify-content: flex-start;
       align-items: flex-start;
-      gap: clamp(16px, 2.8vw, 28px);
+      gap: clamp(10px, 1.6vw, 16px);
       width: max-content;
       max-width: none;
       min-width: 0;
@@ -3220,7 +3235,7 @@ body { font-family: 'Hiragino Maru Gothic ProN', sans-serif; background-color: #
       flex-direction: row;
       flex-wrap: nowrap;
       align-items: flex-start;
-      gap: clamp(8px, 1.6vw, 14px);
+      gap: clamp(4px, 0.9vw, 8px);
       flex: 0 0 auto;
     }
     .kanji-so-reading-kind,
@@ -3287,12 +3302,13 @@ body { font-family: 'Hiragino Maru Gothic ProN', sans-serif; background-color: #
       overflow: hidden;
     }
     body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-wrong-visible .kanji-quiz-drill-wrap #kanji-quiz-hw-wrong-panel {
-      width: min(420px, 38vw) !important;
-      max-width: min(420px, 38vw) !important;
-      min-width: min(280px, 32vw) !important;
+      width: min(440px, 40vw) !important;
+      max-width: min(440px, 40vw) !important;
+      min-width: min(300px, 34vw) !important;
       margin: 0 0 0 auto !important;
       flex: 0 0 auto !important;
       align-self: flex-start !important;
+      max-height: calc(100dvh - 72px) !important;
     }
     body.kanji-study-mode .kanji-quiz-drill-wrap #kanji-quiz-skip-hw-btn {
       position: static;
@@ -3968,12 +3984,12 @@ body { font-family: 'Hiragino Maru Gothic ProN', sans-serif; background-color: #
         line-height: 1.6;
         letter-spacing: 0.06em;
       }
-      /* iPad など：よみ入力欄をキーボードより優先して太く見せる */
+      /* iPad など：入力欄は縦書き1列分の幅で十分 */
       body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-typing-active #kanji-play-yomi-input.kanji-yomi-type-input-vertical {
-        width: clamp(108px, 16vw, 168px) !important;
-        min-width: 108px !important;
-        font-size: clamp(26px, 4vw, 36px) !important;
-        line-height: 1.75 !important;
+        width: clamp(56px, 8vw, 84px) !important;
+        min-width: 56px !important;
+        font-size: clamp(22px, 3.6vw, 30px) !important;
+        line-height: 1.65 !important;
       }
     }
     /**

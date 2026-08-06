@@ -5771,8 +5771,12 @@
         return Math.min(Math.max(bodyH, htmlH, 280), 360);
       }
       if (kpFrameInWrongModelWrap_(frame)) {
-        const cap = Math.min(window.innerHeight * 0.82, 820);
-        return Math.min(Math.max(bodyH, htmlH, 320), cap) + 8;
+        const wrap = frame.parentElement;
+        const wrapH = wrap ? wrap.clientHeight || 0 : 0;
+        /* お手本覗き窓：ラップ高さ優先（小さすぎると書き順UIが見切れる） */
+        if (wrapH >= 360) return wrapH;
+        const cap = Math.min(window.innerHeight * 0.78, 640);
+        return Math.min(Math.max(bodyH, htmlH, 480), cap);
       }
       return Math.max(bodyH, htmlH, 620) + 8;
     }
@@ -8356,6 +8360,13 @@
     function strokeOrderReadingDisplayText_(reading, kind) {
       return kanjiYomiHiraganaToAnswerScript(String(reading || ""), kind === "on" ? "on" : "kun");
     }
+    /** 例文先頭の「。」等（箇条書き風に見えるゴミ）を除く */
+    function normalizeStrokeOrderExampleText_(ex) {
+      return String(ex || "")
+        .replace(/^[\s　]*[。．\.・•●◦‧]+/, "")
+        .replace(/^[\s　]+/, "")
+        .trim();
+    }
     function clearStrokeOrderReadings_() {
       const el = document.getElementById("kanji-stroke-order-readings");
       if (!el) return;
@@ -8396,8 +8407,10 @@
           "</span>";
         if (examples.length) {
           examples.forEach(function (ex) {
+            const exText = normalizeStrokeOrderExampleText_(ex);
+            if (!exText) return;
             html +=
-              '<span class="kanji-so-reading-example">' + escapeHtml(String(ex)) + "</span>";
+              '<span class="kanji-so-reading-example">' + escapeHtml(exText) + "</span>";
           });
         }
         html += "</div>";
@@ -8704,12 +8717,20 @@
         applyKpQuizWrongPanelCompactMode(frame, true);
         frame.style.width = "100%";
         frame.style.maxWidth = "100%";
-        frame.style.minHeight = "320px";
-        frame.style.height = "360px";
+        /* 初期高さを確保（後でラップ高さに合わせてリサイズ） */
+        var wrapH0 = modelWrap.clientHeight || 0;
+        var initH = wrapH0 >= 360 ? wrapH0 : Math.min(560, Math.max(480, Math.floor(window.innerHeight * 0.62)));
+        frame.style.minHeight = initH + "px";
+        frame.style.height = initH + "px";
         /* 高さ確定→ピン留め→表示（途中のスライドを見せない） */
         setTimeout(function () {
           try {
             delete frame.dataset.kpWrongViewPinned;
+            var wrapH = modelWrap.clientHeight || 0;
+            if (wrapH >= 360) {
+              frame.style.minHeight = wrapH + "px";
+              frame.style.height = wrapH + "px";
+            }
             kpResizeFrameToContent();
             if (kpPinWrongPanelViewToModeButtons_(frame)) {
               frame.dataset.kpWrongViewPinned = "1";
