@@ -1077,7 +1077,34 @@
       else if (score > 65) mEl.innerText = `良い感じです。${sizeLabel}。お手本の形に近づけましょう。\n` + subLine;
       else mEl.innerText = `もう一歩。${sizeLabel}。ゆっくりなぞると形が安定しやすいです。\n` + subLine;
     }
+    /* 親UI用の6項目内訳（何点中何点 + 得点率） */
     try {
+      var trajMax = Math.round(shapeBudget * W.trajectory);
+      var seMax = Math.round(shapeBudget * W.startEnd);
+      var strMax = Math.round(shapeBudget * W.structure);
+      var sizeMax = Math.max(0, shapeBudget - trajMax - seMax - strMax);
+      var trajPts = Math.round(trajMax * (Math.max(0, Math.min(100, trajS)) / 100));
+      var sePts = Math.round(seMax * (Math.max(0, Math.min(100, seS)) / 100));
+      var strPts = Math.round(strMax * (Math.max(0, Math.min(100, strS)) / 100));
+      var sizePts = Math.round(sizeMax * (Math.max(0, Math.min(100, sizeS)) / 100));
+      var breakdown = {
+        total: score,
+        totalMax: 100,
+        sizeLabel: sizeLabel,
+        countOk: !!countOk,
+        orderOk: !!orderOk,
+        userStrokeCount: userStrokes.length,
+        referenceStrokeCount: referenceStrokes.length,
+        items: [
+          { key: "strokeCount", label: "画数", score: countAward, max: countPtsMax, rate: countPtsMax > 0 ? countAward / countPtsMax : 0 },
+          { key: "strokeOrder", label: "画順", score: orderAward, max: orderPtsMax, rate: orderPtsMax > 0 ? orderAward / orderPtsMax : 0 },
+          { key: "trajectory", label: "軌道", score: trajPts, max: trajMax, rate: Math.max(0, Math.min(1, trajS / 100)) },
+          { key: "startEnd", label: "始点終点", score: sePts, max: seMax, rate: Math.max(0, Math.min(1, seS / 100)) },
+          { key: "structure", label: "構造", score: strPts, max: strMax, rate: Math.max(0, Math.min(1, strS / 100)) },
+          { key: "size", label: "大きさ", score: sizePts, max: sizeMax, rate: Math.max(0, Math.min(1, sizeS / 100)) }
+        ]
+      };
+      window.__kpLastHandBreakdown = breakdown;
       var _bk = (!isStrict) || (typeErrors === 0);
       var _kx = document.getElementById('target-kanji');
       var _kcc = _kx && _kx.value ? String(_kx.value) : "";
@@ -1089,7 +1116,8 @@
         hasStrokeOrderIssue: !orderOk,
         strokeCountMismatch: !countOk,
         brushEndingAllOk: _bk,
-        kanjiChar: _kcc
+        kanjiChar: _kcc,
+        breakdown: breakdown
       }, "*");
     } catch (_z) {}
   }
