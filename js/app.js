@@ -5543,6 +5543,10 @@
     function isKanjiQuizHandwritingQuestionType_(type) {
       return type === "ruby_to_kanji" || type === "stroke_order_trace";
     }
+    /** 判定パネル＋4秒自動「次へ」対象（手書き・書き順を除く） */
+    function isKanjiQuizVerdictRailType_(type) {
+      return !isKanjiQuizHandwritingQuestionType_(type);
+    }
     function isJukugoYomiQuizCorrect_(q, userRaw) {
       if (!q || userRaw == null || userRaw === "") return false;
       const choice = String(userRaw);
@@ -5752,6 +5756,262 @@
       setTimeout(function () {
         if (frame.dataset.kpLoaded === "1") kpResizeFrameToContent();
       }, 700);
+    }
+    function kpFrameInWrongModelWrap_(frame) {
+      return frame && frame.parentElement && frame.parentElement.id === "kanji-quiz-wrong-model-wrap";
+    }
+    function kpFrameInStrokeOrderPlaySlot_(frame) {
+      return frame && frame.parentElement && frame.parentElement.id === "kanji-stroke-order-play-slot";
+    }
+    function kpComputeFrameHeight_(frame, bodyH, htmlH) {
+      if (kpFrameInStrokeOrderPlaySlot_(frame)) {
+        const slot = frame.parentElement;
+        const slotH = slot ? slot.clientHeight || 0 : 0;
+        if (slotH > 0) return slotH;
+        return Math.min(Math.max(bodyH, htmlH, 280), 360);
+      }
+      if (kpFrameInWrongModelWrap_(frame)) {
+        const cap = Math.min(window.innerHeight * 0.82, 820);
+        return Math.min(Math.max(bodyH, htmlH, 320), cap) + 8;
+      }
+      return Math.max(bodyH, htmlH, 620) + 8;
+    }
+    function kpPinStrokePlayCanvasOnly_(frame) {
+      try {
+        if (!frame) return false;
+        const doc = frame.contentDocument;
+        if (!doc || !doc.body || !doc.documentElement) return false;
+        const canvas = doc.getElementById("canvas");
+        if (!canvas) return false;
+        doc.documentElement.style.setProperty("margin", "0", "important");
+        doc.documentElement.style.setProperty("padding", "0", "important");
+        doc.documentElement.style.setProperty("overflow", "hidden", "important");
+        doc.documentElement.style.setProperty("width", "100%", "important");
+        doc.documentElement.style.setProperty("height", "100%", "important");
+        doc.body.style.setProperty("margin", "0", "important");
+        doc.body.style.setProperty("margin-top", "0", "important");
+        doc.body.style.setProperty("padding", "0", "important");
+        doc.body.style.setProperty("overflow", "hidden", "important");
+        doc.body.style.setProperty("width", "100%", "important");
+        doc.body.style.setProperty("height", "100%", "important");
+        doc.body.style.setProperty("transform", "none", "important");
+        doc.body.style.setProperty("display", "block", "important");
+        doc.body.style.setProperty("position", "relative", "important");
+        doc.body.style.setProperty("background", "#fff", "important");
+        doc.documentElement.scrollTop = 0;
+        doc.body.scrollTop = 0;
+        Array.prototype.forEach.call(doc.body.children, function (el) {
+          if (el === canvas) return;
+          el.setAttribute("data-kp-stroke-hidden", "1");
+          el.style.setProperty("display", "none", "important");
+          el.style.setProperty("visibility", "hidden", "important");
+          el.style.setProperty("pointer-events", "none", "important");
+          el.style.setProperty("height", "0", "important");
+          el.style.setProperty("max-height", "0", "important");
+          el.style.setProperty("margin", "0", "important");
+          el.style.setProperty("padding", "0", "important");
+          el.style.setProperty("overflow", "hidden", "important");
+          el.style.setProperty("position", "absolute", "important");
+          el.style.setProperty("left", "-9999px", "important");
+        });
+        canvas.style.setProperty("display", "block", "important");
+        canvas.style.setProperty("visibility", "visible", "important");
+        canvas.style.setProperty("pointer-events", "auto", "important");
+        canvas.style.setProperty("position", "absolute", "important");
+        canvas.style.setProperty("left", "0", "important");
+        canvas.style.setProperty("top", "0", "important");
+        canvas.style.setProperty("right", "0", "important");
+        canvas.style.setProperty("bottom", "0", "important");
+        canvas.style.setProperty("width", "100%", "important");
+        canvas.style.setProperty("height", "100%", "important");
+        canvas.style.setProperty("max-width", "100%", "important");
+        canvas.style.setProperty("max-height", "100%", "important");
+        canvas.style.setProperty("margin", "0", "important");
+        canvas.style.setProperty("padding", "0", "important");
+        canvas.style.setProperty("border", "none", "important");
+        canvas.style.setProperty("border-radius", "0", "important");
+        canvas.style.setProperty("box-shadow", "none", "important");
+        canvas.style.setProperty("box-sizing", "border-box", "important");
+        return true;
+      } catch (_e) {
+        return false;
+      }
+    }
+    function kpUnpinStrokePlayCanvasOnly_(frame) {
+      try {
+        if (!frame) return;
+        const doc = frame.contentDocument;
+        if (!doc || !doc.body) return;
+        Array.prototype.forEach.call(doc.body.querySelectorAll("[data-kp-stroke-hidden]"), function (el) {
+          el.removeAttribute("data-kp-stroke-hidden");
+          [
+            "display", "visibility", "pointer-events", "height", "max-height",
+            "margin", "padding", "overflow", "position", "left", "top", "right", "bottom"
+          ].forEach(function (p) {
+            try { el.style.removeProperty(p); } catch (_eP) {}
+          });
+        });
+        const canvas = doc.getElementById("canvas");
+        if (canvas) {
+          [
+            "display", "visibility", "pointer-events", "position", "left", "top", "right", "bottom",
+            "width", "height", "max-width", "max-height", "margin", "padding", "border",
+            "border-radius", "box-shadow", "box-sizing"
+          ].forEach(function (p) {
+            try { canvas.style.removeProperty(p); } catch (_eC) {}
+          });
+        }
+        doc.body.style.marginTop = "";
+        doc.body.style.transform = "";
+      } catch (_e) {}
+    }
+    function applyKpStrokeOrderPlayCompactMode_(frame, isOn) {
+      try {
+        if (!frame) return;
+        const doc = frame.contentDocument;
+        if (!doc || !doc.body || !doc.documentElement) return;
+        const css =
+          "html,body{" +
+          "margin:0!important;padding:0!important;border:0!important;" +
+          "overflow:hidden!important;background:#fff!important;" +
+          "width:100%!important;height:100%!important;max-width:100%!important;max-height:100%!important;" +
+          "}" +
+          "body[data-kp-stroke-play='1']{" +
+          "display:block!important;position:relative!important;" +
+          "}" +
+          "body[data-kp-stroke-play='1'] #canvas{" +
+          "display:block!important;position:absolute!important;" +
+          "left:0!important;top:0!important;right:0!important;bottom:0!important;" +
+          "width:100%!important;height:100%!important;" +
+          "border:none!important;border-radius:0!important;box-shadow:none!important;" +
+          "box-sizing:border-box!important;margin:0!important;padding:0!important;" +
+          "}";
+        let style = doc.getElementById("kp-stroke-order-play-compact-style");
+        if (!style) {
+          style = doc.createElement("style");
+          style.id = "kp-stroke-order-play-compact-style";
+          doc.documentElement.appendChild(style);
+        }
+        style.textContent = css;
+        if (isOn) {
+          doc.body.setAttribute("data-kp-stroke-play", "1");
+          frame.setAttribute("scrolling", "no");
+          frame.style.border = "none";
+          kpPinStrokePlayCanvasOnly_(frame);
+        } else {
+          doc.body.removeAttribute("data-kp-stroke-play");
+          try {
+            style.textContent = "";
+          } catch (_eClr) {}
+          kpUnpinStrokePlayCanvasOnly_(frame);
+        }
+      } catch (_e) {}
+    }
+    function kpPinWrongPanelViewToModeButtons_(frame) {
+      try {
+        if (!frame) return false;
+        const doc = frame.contentDocument;
+        if (!doc || !doc.body) return false;
+        const btn =
+          doc.querySelector('button[onclick*="switchMode(\'demo\')"]') ||
+          doc.querySelector('button[onclick*="switchMode"]') ||
+          null;
+        if (!btn) return false;
+        const wrap = frame.parentElement;
+        const pad = 7;
+        doc.documentElement.style.scrollBehavior = "auto";
+        doc.body.style.scrollBehavior = "auto";
+        doc.body.style.transition = "none";
+        doc.body.style.marginTop = "0px";
+        doc.documentElement.scrollTop = 0;
+        doc.body.scrollTop = 0;
+        if (wrap && wrap.id === "kanji-quiz-wrong-model-wrap") {
+          wrap.style.scrollBehavior = "auto";
+          wrap.scrollTop = 0;
+        }
+        void doc.body.offsetHeight;
+        const y = btn.getBoundingClientRect().top - doc.body.getBoundingClientRect().top;
+        const shift = Math.max(0, Math.round(y - pad));
+        doc.body.style.marginTop = "-" + shift + "px";
+        doc.documentElement.scrollTop = 0;
+        doc.body.scrollTop = 0;
+        if (wrap && wrap.id === "kanji-quiz-wrong-model-wrap") wrap.scrollTop = 0;
+        return true;
+      } catch (_e) {
+        return false;
+      }
+    }
+    function kpRevealWrongModelWrap_(frame) {
+      try {
+        const wrap = frame && frame.parentElement;
+        if (wrap && wrap.id === "kanji-quiz-wrong-model-wrap") {
+          wrap.classList.remove("is-kp-view-pending");
+        }
+      } catch (_e) {}
+    }
+    function applyKpQuizWrongPanelCompactMode(frame, isOn) {
+      try {
+        if (!frame) return;
+        const doc = frame.contentDocument;
+        if (!doc || !doc.body || !doc.documentElement) return;
+        if (doc.documentElement.dataset.kpWrongCompactTagged !== "1") {
+          try {
+            const syncBtn = doc.querySelector('button[onclick*="syncData"]');
+            if (syncBtn && syncBtn.closest(".controls")) {
+              syncBtn.closest(".controls").setAttribute("data-kp-section", "tools");
+            }
+            const strictCb = doc.getElementById("cb-strict-mode");
+            if (strictCb && strictCb.closest(".controls")) {
+              strictCb.closest(".controls").setAttribute("data-kp-section", "strict");
+            }
+          } catch (_eTag) {}
+          doc.documentElement.dataset.kpWrongCompactTagged = "1";
+        }
+        const compactCss =
+          "html,body{scroll-behavior:auto!important;}" +
+          "body[data-kp-quiz-wrong='1']{padding:12px 10px 12px!important;transition:none!important;}" +
+          "body[data-kp-quiz-wrong='1'] h2{font-size:15px!important;font-weight:700!important;margin:0 0 8px!important;padding:4px 8px!important;color:#1a73e8!important;background:#f0f6ff!important;border-bottom:1px solid #d4e3ff!important;border-radius:6px!important;width:auto!important;text-align:center!important;box-sizing:border-box!important;}" +
+          "body[data-kp-quiz-wrong='1'] #kanji-selector-area{display:none!important;}" +
+          "body[data-kp-quiz-wrong='1'] [data-kp-section='tools']{display:none!important;}" +
+          "body[data-kp-quiz-wrong='1'] [data-kp-section='strict']{display:none!important;}" +
+          "body[data-kp-quiz-wrong='1'] #mode-msg{margin:4px 0 6px!important;font-size:12px!important;line-height:1.35!important;}" +
+          "body[data-kp-quiz-wrong='1'] #result-box{margin-top:8px!important;padding:8px 12px!important;}" +
+          "body[data-kp-quiz-wrong='1'] #result-box .score{font-size:32px!important;line-height:1.1!important;}" +
+          "body[data-kp-quiz-wrong='1'] #result-box .msg{font-size:12px!important;margin-top:6px!important;line-height:1.4!important;}";
+        let style = doc.getElementById("kp-wrong-panel-compact-style");
+        if (!style) {
+          style = doc.createElement("style");
+          style.id = "kp-wrong-panel-compact-style";
+          doc.documentElement.appendChild(style);
+        }
+        style.textContent = compactCss;
+        const wrap = frame.parentElement;
+        if (isOn) {
+          doc.body.setAttribute("data-kp-quiz-wrong", "1");
+          if (wrap && wrap.id === "kanji-quiz-wrong-model-wrap") {
+            wrap.classList.add("is-kp-view-pending");
+          }
+          delete frame.dataset.kpWrongViewPinned;
+          void doc.body.offsetHeight;
+          if (kpPinWrongPanelViewToModeButtons_(frame)) {
+            frame.dataset.kpWrongViewPinned = "1";
+            kpRevealWrongModelWrap_(frame);
+          }
+        } else {
+          doc.body.removeAttribute("data-kp-quiz-wrong");
+          try {
+            doc.body.style.marginTop = "";
+            doc.body.style.transition = "";
+            doc.documentElement.scrollTop = 0;
+            doc.body.scrollTop = 0;
+            if (wrap && wrap.id === "kanji-quiz-wrong-model-wrap") {
+              wrap.scrollTop = 0;
+              wrap.classList.remove("is-kp-view-pending");
+            }
+          } catch (_eReset) {}
+          delete frame.dataset.kpWrongViewPinned;
+        }
+      } catch (_e) {}
     }
     function kpResizeFrameToContent() {
       const frame = document.getElementById('kp-pro-frame');
@@ -8507,6 +8767,33 @@
       }
     }
     /** れいぶん→よみ：原文を縦書きで表示し、対象かんじを赤字で強調（伏字ではなく漢字をそのまま）。 */
+    function kanjiYomiMountTypingRailLayout_() {
+      var rail = document.getElementById("kanji-yomi-typing-rail");
+      var prompt = document.getElementById("kanji-play-prompt");
+      var submit = document.getElementById("kanji-play-submit-btn");
+      var typeRoot = document.getElementById("kanji-yomi-type-root");
+      if (!rail || !prompt || !submit || !typeRoot) return;
+      prompt.dataset.kanjiTypingInRail = "1";
+      submit.dataset.kanjiTypingInRail = "1";
+      rail.insertBefore(submit, typeRoot);
+      rail.insertBefore(prompt, typeRoot);
+    }
+    function kanjiYomiUnmountTypingRailLayout_() {
+      var qBlock = document.querySelector(".kanji-quiz-play-question-block");
+      var prompt = document.getElementById("kanji-play-prompt");
+      var submit = document.getElementById("kanji-play-submit-btn");
+      var charEl = document.getElementById("kanji-play-char");
+      if (!qBlock || !prompt || !submit) return;
+      if (prompt.dataset.kanjiTypingInRail === "1") {
+        delete prompt.dataset.kanjiTypingInRail;
+        var promptRef = charEl && charEl.parentElement === qBlock ? charEl.nextSibling : qBlock.firstChild;
+        qBlock.insertBefore(prompt, promptRef);
+      }
+      if (submit.dataset.kanjiTypingInRail === "1") {
+        delete submit.dataset.kanjiTypingInRail;
+        qBlock.insertBefore(submit, prompt.nextSibling);
+      }
+    }
     function kanjiYomiFormatSentenceBlockHtml(q) {
       if (!q) return "";
       let s = String(q.fullExample || "");
@@ -8613,23 +8900,31 @@
       const el = document.getElementById("kanji-play-yomi-input");
       if (!el || el.dataset.kanjiYomiBound === "1") return;
       el.dataset.kanjiYomiBound = "1";
-      /**
-       * readonly は仕様上スクリプトによる value 代入を禁止しないが、誤解や環境差を避けるため使わない。
-       * 画面キーボード経由の入力だけを想定し、直接入力・ペースト・IME はブロックする。
-       */
+      /** 英語タイピング同様：readonly で IME・予測変換を出さず、物理キーは document 側でソフトキー相当として処理 */
+      el.readOnly = true;
+      el.setAttribute("readonly", "readonly");
+      el.setAttribute("inputmode", "none");
+      el.setAttribute("autocomplete", "off");
+      el.setAttribute("autocorrect", "off");
+      el.setAttribute("spellcheck", "false");
+      el.setAttribute("aria-readonly", "true");
       function blockDirectEdit(ev) {
         ev.preventDefault();
       }
       el.addEventListener("keydown", function (ev) {
         if (ev.key === "Tab" || ev.key === "Escape") return;
-        blockDirectEdit(ev);
+        ev.preventDefault();
       });
+      el.addEventListener("keypress", blockDirectEdit);
       el.addEventListener("paste", blockDirectEdit);
       el.addEventListener("drop", blockDirectEdit);
       el.addEventListener("cut", blockDirectEdit);
       el.addEventListener("beforeinput", function (ev) {
         if (ev.isTrusted) ev.preventDefault();
       });
+      el.addEventListener("compositionstart", blockDirectEdit);
+      el.addEventListener("compositionupdate", blockDirectEdit);
+      el.addEventListener("compositionend", blockDirectEdit);
       el.addEventListener("input", function () {
         const v = el.value;
         try {
@@ -8638,6 +8933,56 @@
         const hid = document.getElementById("kanji-play-input");
         if (hid) hid.value = v;
       });
+    }
+    function focusKanjiYomiTypingInput_() {
+      const inp = document.getElementById("kanji-play-yomi-input");
+      if (!inp) return;
+      try {
+        inp.focus({ preventScroll: true });
+      } catch (_e) {
+        inp.focus();
+      }
+    }
+    function isKanjiYomiTypingKeyboardActive_() {
+      const sec = document.getElementById("section-kanji-quiz-play");
+      if (!sec || !sec.classList.contains("active")) return false;
+      if (!sec.classList.contains("kanji-quiz-typing-active")) return false;
+      const act = window.__kanjiYomiKbdActions;
+      return !!(act && typeof act.applyChar === "function");
+    }
+    function handleKanjiYomiPhysicalKeydown_(e) {
+      if (!isKanjiYomiTypingKeyboardActive_()) return false;
+      if (__kanjiQuizSubmitInFlight) return true;
+      if (e.isComposing || e.key === "Process") {
+        e.preventDefault();
+        return true;
+      }
+      const act = window.__kanjiYomiKbdActions;
+      const key = e.key;
+      if (key === "Enter") {
+        e.preventDefault();
+        act.enter();
+        return true;
+      }
+      if (key === "Backspace") {
+        e.preventDefault();
+        act.backspace();
+        return true;
+      }
+      if (key === "-" || key === "Minus") {
+        e.preventDefault();
+        act.applyChar("-");
+        return true;
+      }
+      if (key.length === 1 && /^[a-zA-Z]$/.test(key)) {
+        e.preventDefault();
+        act.applyChar(key.toLowerCase());
+        return true;
+      }
+      if (key === "Dead" || (key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey)) {
+        e.preventDefault();
+      }
+      return true;
     }
     function kanjiQuizIsAllHiraganaScript_(str) {
       const s = normalizeKanjiQuizInput(str);
@@ -8672,6 +9017,46 @@
       if (k === "kun") return kanjiQuizIsAllHiraganaScript_(userAnswerNorm) ? 1 : 0.5;
       if (k === "on") return kanjiQuizIsAllKatakanaScript_(userAnswerNorm) ? 1 : 0.5;
       return 1;
+    }
+    function getSentenceYomiScriptMismatchHint_(readingKind) {
+      const k = String(readingKind || "");
+      if (k === "on") return "おしい！音読みなのでカタカナで答えましょう。";
+      if (k === "kun") return "おしい！訓読みなのでひらがなで答えましょう。";
+      return "";
+    }
+    /**
+     * れいぶん→よみ：◎＝想定どおり完全一致、△＝読みは合うがかな⇔カナのみ不一致、×＝それ以外。
+     * 別読み（例：明日＝あす／あした）は exactTargets に複数ある場合のみ ◎ 対象。表記反転だけでは別読み一致にしない。
+     */
+    function evaluateSentenceToRubyAnswer_(q, userRaw) {
+      const userNorm = normalizeKanjiQuizInput(userRaw);
+      if (!userNorm) {
+        return { isCorrect: false, isPartial: false, scriptBonusMult: 0 };
+      }
+      const exactTargets = [];
+      const primary = normalizeKanjiQuizInput(q && q.correctAnswer);
+      if (primary) exactTargets.push(primary);
+      if (q && Array.isArray(q.correctReadings)) {
+        q.correctReadings.forEach(function (r) {
+          const n = normalizeKanjiQuizInput(r);
+          if (n && exactTargets.indexOf(n) < 0) exactTargets.push(n);
+        });
+      }
+      if (!exactTargets.length) {
+        return { isCorrect: false, isPartial: false, scriptBonusMult: 0 };
+      }
+      for (let i = 0; i < exactTargets.length; i++) {
+        if (userNorm === exactTargets[i]) {
+          return { isCorrect: true, isPartial: false, scriptBonusMult: 1 };
+        }
+      }
+      const userSwapped = normalizeKanjiQuizInput(kanjiYomiSwapHiraKataString_(userNorm));
+      for (let j = 0; j < exactTargets.length; j++) {
+        if (userSwapped === exactTargets[j]) {
+          return { isCorrect: true, isPartial: true, scriptBonusMult: 0.5 };
+        }
+      }
+      return { isCorrect: false, isPartial: false, scriptBonusMult: 0 };
     }
     function kanjiQuizTypeBadgeText(type) {
       if (type === "okurigana_shift") return "問題タイプ: おくりがな（選択）";
@@ -8826,7 +9211,11 @@
         choicesBox.classList.remove("jukugo-yomi-choices");
       }
       const typingWrap = document.getElementById("kanji-play-typing-wrap");
-      if (typingWrap) typingWrap.style.display = "none";
+      if (typingWrap) {
+        typingWrap.style.display = "none";
+        typingWrap.setAttribute("aria-hidden", "true");
+      }
+      kanjiYomiUnmountTypingRailLayout_();
       const inp = document.getElementById("kanji-play-input");
       if (inp) inp.value = "";
       const yomiInp = document.getElementById("kanji-play-yomi-input");
@@ -8839,6 +9228,7 @@
       } catch (eY2) {}
       try {
         window.__kanjiYomiRomajiTail = "";
+        window.__kanjiYomiKbdActions = null;
       } catch (eRm) {}
       const subBtn = document.getElementById("kanji-play-submit-btn");
       if (subBtn) subBtn.style.display = "none";
@@ -8976,9 +9366,11 @@
           promptEl.innerText = "うすい線をなぞって書いて、60点以上をめざそう。";
         } else if (q.type === "ruby_to_kanji") {
           promptEl.innerText = q.prompt || "";
-        } else if (q.type === "okurigana_shift") promptEl.innerText = "正しい送り仮名を選びましょう。";
+        }         else if (q.type === "okurigana_shift") promptEl.innerText = "正しい送り仮名を選びましょう。";
         else if (q.type === "jukugo_yomi") promptEl.innerText = q.prompt || "例文の下線の熟語の読み方を選びましょう。";
-        else promptEl.innerText = q.prompt || "";
+        else if (q.type === "sentence_to_ruby") {
+          promptEl.innerText = q.prompt || "赤字のかんじの よみを 入力しましょう。";
+        } else promptEl.innerText = q.prompt || "";
       }
       const detail = document.getElementById('kanji-play-detail');
       const choicesBox = document.getElementById('kanji-play-choices');
@@ -9305,8 +9697,9 @@
       }
       if (typingWrap) {
         if (q.type === "sentence_to_ruby") {
-          typingWrap.style.display = "";
+          typingWrap.style.display = "flex";
           typingWrap.removeAttribute("aria-hidden");
+          kanjiYomiMountTypingRailLayout_();
           kanjiYomiBindTypingInputOnce();
           kanjiQuizSession.sentenceYomiRecognized = "";
           const hidInp = document.getElementById("kanji-play-input");
@@ -9324,6 +9717,7 @@
             if (hidNow) hidNow.value = val;
             submitKanjiQuizScore();
           });
+          focusKanjiYomiTypingInput_();
           /* vertical-rl 時代の横スクロール残があると例文が視界外に残る */
           try {
             const wrapEl = secPlay && secPlay.querySelector(".kanji-quiz-drill-wrap");
@@ -9339,6 +9733,7 @@
         } else {
           typingWrap.style.display = "none";
           typingWrap.setAttribute("aria-hidden", "true");
+          kanjiYomiUnmountTypingRailLayout_();
         }
       }
       if (subBtn) {
@@ -9506,6 +9901,9 @@
     function showKanjiQuizResult(totalEarned, logs, isTrainingMode, newTotalPoints, batchMeta) {
       restoreKanjiPracticeFrameIfMoved();
       document.body.classList.add('kanji-study-mode');
+      try {
+        resetResultScreenActionButtons();
+      } catch (_eResetRes) {}
       switchSection('section-result');
       const rc = document.getElementById('result-content');
       const retryBtn = document.getElementById('result-retry-btn');
@@ -9515,19 +9913,38 @@
       const otherBookBtn = document.getElementById('result-kanji-other-book-btn');
       if (!rc || !retryBtn || !settingsBtn || !homeBtn) return;
       function buildKanjiResultRowsHtml_(logRows) {
-        return (Array.isArray(logRows) ? logRows : []).map(function (v) {
-          const mark = v.isCorrect ? "○" : "×";
+        return (Array.isArray(logRows) ? logRows : []).map(function (v, idx) {
+          const mark = v.isCorrect ? "◎" : "×";
+          const rowClass = v.isCorrect ? "is-ok" : "is-ng";
           const label = v.jukugoWord
             ? (escapeHtml(v.kanji || "") + "／" + escapeHtml(v.jukugoWord))
             : escapeHtml(v.kanji || "");
-          return "「" + label + "」 " + mark + " " + Number(v.score || 0) + "点 → +" + Number(v.earned || 0).toFixed(2) + "Pt";
-        }).join("<br>");
+          const qNo = idx + 1;
+          return (
+            '<div class="kanji-result-log-row ' + rowClass + '">' +
+            '<span class="kanji-result-log-mark">' + mark + "</span>" +
+            '<span class="kanji-result-log-label">' + qNo + ". 「" + label + "」</span>" +
+            '<span class="kanji-result-log-meta">' +
+            Number(v.score || 0) +
+            "点 → +" +
+            Number(v.earned || 0).toFixed(2) +
+            "Pt</span></div>"
+          );
+        }).join("");
       }
       function renderKanjiResultBody_(earned, logRows, totalPts, saveNoteHtml) {
         const rows = buildKanjiResultRowsHtml_(logRows);
-        const totalLine = (typeof totalPts === "number" && !isNaN(totalPts))
-          ? '<p style="margin-top:8px;">合計ポイント: ' + Number(totalPts).toFixed(2) + "</p>"
-          : "";
+        const logArr = Array.isArray(logRows) ? logRows : [];
+        const okCount = logArr.filter(function (r) {
+          return r && r.isCorrect;
+        }).length;
+        const totalCount = logArr.length;
+        const totalLine =
+          typeof totalPts === "number" && !isNaN(totalPts)
+            ? '<p style="margin-top:12px;text-align:center;font-weight:700;">合計ポイント: ' +
+              Number(totalPts).toFixed(2) +
+              "</p>"
+            : "";
         var nigateBlock = "";
         var ctxR = lastKanjiQuizContext;
         if (ctxR && ctxR.nigateFeedbackSnapshot && ctxR.nigateTraining) {
@@ -9539,7 +9956,7 @@
             ? "とめ・はね・はらいは、すべて問題なしと判定された手書きがありました（厳密モード時のみ有効です）。"
             : "とめ・はね・はらいに注意が出た手書きがあります（厳密モード時）。";
           nigateBlock =
-            '<div style="margin-top:14px;padding:10px;background:#f3e5f5;border-radius:8px;text-align:left;font-size:14px;line-height:1.5;color:#4a148c;"><strong>ニガテ特訓のまとめ</strong><br>' +
+            '<div style="margin-top:14px;padding:12px;background:#f3e5f5;border-radius:8px;text-align:left;font-size:14px;line-height:1.5;color:#4a148c;"><strong>ニガテ特訓のまとめ</strong><br>' +
             escapeHtml(p1) +
             "<br>" +
             escapeHtml(p2) +
@@ -9548,12 +9965,17 @@
         rc.innerHTML =
           '<h2 class="kanji-result-title">✨ 漢字セット完了！ ✨</h2>' +
           '<div class="kanji-result-scorebox">' +
+          '<p class="kanji-result-summary-line">正解 ' +
+          okCount +
+          " / " +
+          totalCount +
+          " もん</p>" +
           '<p class="kanji-result-pts">かくとくポイント: <span class="kanji-result-pts-val">+' +
           Number(earned || 0).toFixed(2) +
           "</span></p>" +
           '<hr class="kanji-result-hr">' +
           '<div class="kanji-result-logs">' +
-          (rows || "結果なし") +
+          (rows || '<p style="margin:0;color:#666;">結果なし</p>') +
           "</div>" +
           totalLine +
           (saveNoteHtml || "") +
@@ -9564,7 +9986,7 @@
         totalEarned,
         logs,
         newTotalPoints,
-        '<p id="kanji-result-save-note" style="margin-top:8px;color:#607d8b;font-size:13px;">結果を保存しています…</p>'
+        '<p id="kanji-result-save-note" class="kanji-result-save-note">結果を保存しています…</p>'
       );
       const pendingMeta = batchMeta && typeof batchMeta === "object" ? batchMeta : null;
       if (pendingMeta && Array.isArray(pendingMeta.pendingScoreItems) && pendingMeta.pendingScoreItems.length) {
@@ -9582,7 +10004,7 @@
               Number(d.earnedPoints || 0),
               nextLogs,
               Number(d.newTotal),
-              '<p style="margin-top:8px;color:#2e7d32;font-size:13px;">結果を保存しました。</p>'
+              '<p class="kanji-result-save-note" style="color:#2e7d32;">結果を保存しました。</p>'
             );
             if (isTrainingMode) {
               const trainMenuId =
@@ -9838,7 +10260,61 @@
       if (q.type === "okurigana_shift") {
         return String(q.correctAnswer || "");
       }
+      if (q.type === "sentence_to_ruby") {
+        return String(q.correctAnswer || "");
+      }
+      if (q.type === "stroke_count") {
+        const n = String(q.correctAnswer || "");
+        return n ? n + "画" : "";
+      }
+      if (q.type === "ruby_to_kanji") {
+        return String(q.correctAnswer || q.kanji || "");
+      }
+      if (q.type === "stroke_order_trace") {
+        return String(q.kanji || q.correctAnswer || "");
+      }
       return "";
+    }
+    function mountKanjiQuizVerdictNodes_(q, verdict, nextBtn) {
+      if (!verdict) return;
+      var placed = false;
+      if (q && q.type === "sentence_to_ruby") {
+        var rail = document.getElementById("kanji-yomi-typing-rail");
+        var submit = document.getElementById("kanji-play-submit-btn");
+        if (rail) {
+          if (submit && submit.parentElement === rail && submit.nextSibling) {
+            rail.insertBefore(verdict, submit.nextSibling);
+          } else {
+            rail.insertBefore(verdict, rail.firstChild);
+          }
+          if (nextBtn) {
+            if (verdict.nextSibling) rail.insertBefore(nextBtn, verdict.nextSibling);
+            else rail.appendChild(nextBtn);
+          }
+          placed = true;
+        }
+      } else if (q && (q.type === "ruby_to_kanji" || q.type === "stroke_order_trace")) {
+        var hwStack = document.querySelector(".kanji-drill-hw-write-stack");
+        if (hwStack) {
+          hwStack.appendChild(verdict);
+          if (nextBtn) hwStack.appendChild(nextBtn);
+          placed = true;
+        }
+      } else {
+        var stemHost = null;
+        if (q && q.type === "jukugo_yomi") {
+          stemHost = document.querySelector("#kanji-play-detail .jukugo-yomi-stem");
+        } else if (q && (q.type === "okurigana_shift" || q.type === "stroke_count")) {
+          stemHost = document.getElementById("kanji-play-char");
+          if (stemHost) stemHost.classList.add("kanji-choice-stem-host");
+        }
+        if (stemHost) {
+          stemHost.appendChild(verdict);
+          if (nextBtn) stemHost.appendChild(nextBtn);
+          placed = true;
+        }
+      }
+      if (!placed) restoreChoiceQuizFeedbackNodes_();
     }
     function restoreChoiceQuizFeedbackNodes_() {
       const verdict = document.getElementById("kanji-choice-verdict");
@@ -9861,7 +10337,7 @@
       const nextBtn = document.getElementById("kanji-choice-next-btn");
       const sec = document.getElementById("section-kanji-quiz-play");
       if (verdict) {
-        verdict.classList.remove("is-visible", "is-correct", "is-wrong");
+        verdict.classList.remove("is-visible", "is-correct", "is-wrong", "is-partial");
         verdict.style.display = "none";
       }
       if (mark) {
@@ -9876,7 +10352,8 @@
       }
       if (sec) sec.classList.remove("kanji-choice-feedback-active");
     }
-    function showChoiceQuizVerdict_(q, isCorrect) {
+    function showChoiceQuizVerdict_(q, isCorrect, opts) {
+      opts = opts && typeof opts === "object" ? opts : {};
       const verdict = document.getElementById("kanji-choice-verdict");
       const mark = document.getElementById("kanji-choice-verdict-mark");
       const answer = document.getElementById("kanji-choice-verdict-answer");
@@ -9885,40 +10362,48 @@
       // 中身が外側へ持ち出されていた場合は verdict 内へ戻す
       if (mark.parentNode !== verdict) verdict.appendChild(mark);
       if (answer.parentNode !== verdict) verdict.appendChild(answer);
-      mark.textContent = isCorrect ? "◎" : "×";
-      mark.style.color = isCorrect ? "#e53935" : "#1565c0";
-      answer.textContent = formatChoiceQuizCorrectReadingLabel_(q);
-      verdict.classList.toggle("is-correct", !!isCorrect);
-      verdict.classList.toggle("is-wrong", !isCorrect);
+      var isPartial = !!opts.partial;
+      var answerText = formatChoiceQuizCorrectReadingLabel_(q);
+      var correctLabel = answerText ? "正解：" + answerText : "正解：—";
+      if (isPartial) {
+        mark.textContent = "△";
+        mark.style.color = "#ff9800";
+        var partialHint = String(opts.partialHint || "").trim();
+        answer.textContent = partialHint ? partialHint + " " + correctLabel : correctLabel;
+        verdict.classList.remove("is-correct", "is-wrong");
+        verdict.classList.add("is-partial");
+      } else {
+        mark.textContent = isCorrect ? "◎" : "×";
+        mark.style.color = isCorrect ? "#e53935" : "#1565c0";
+        answer.textContent = correctLabel;
+        verdict.classList.remove("is-partial");
+        verdict.classList.toggle("is-correct", !!isCorrect);
+        verdict.classList.toggle("is-wrong", !isCorrect);
+      }
       verdict.classList.add("is-visible");
       verdict.style.display = "flex";
-      // 出題＋ターゲット漢字と同じ縦列へ：出題 → ◎/× → 正解読み → 次へ
-      var stemHost = null;
-      if (q && q.type === "jukugo_yomi") {
-        stemHost = document.querySelector("#kanji-play-detail .jukugo-yomi-stem");
-      } else if (q && q.type === "okurigana_shift") {
-        stemHost = document.getElementById("kanji-play-char");
-        if (stemHost) stemHost.classList.add("kanji-choice-stem-host");
-      }
-      if (stemHost) {
-        stemHost.appendChild(verdict);
-        if (nextBtn) stemHost.appendChild(nextBtn);
-      } else {
-        restoreChoiceQuizFeedbackNodes_();
-      }
+      mountKanjiQuizVerdictNodes_(q, verdict, nextBtn);
+      var sec = document.getElementById("section-kanji-quiz-play");
+      if (sec) sec.classList.add("kanji-choice-feedback-active");
     }
-    function showJukugoYomiNextControls_(advanceFn) {
+    function showKanjiQuizVerdictNextControls_(advanceFn, autoDelayMs) {
       const subBtn = document.getElementById("kanji-play-submit-btn");
       const nextBtn = document.getElementById("kanji-choice-next-btn");
       const sec = document.getElementById("section-kanji-quiz-play");
       if (!kanjiQuizSession) return;
       clearKanjiJukugoAutoNext_();
+      clearKanjiStrokeOrderAutoNext_();
       var advanced = false;
+      var delayMs = typeof autoDelayMs === "number" && autoDelayMs > 0 ? autoDelayMs : 4000;
       function goNext() {
         if (advanced) return;
         advanced = true;
         clearKanjiJukugoAutoNext_();
-        if (kanjiQuizSession) kanjiQuizSession.jukugoPendingAdvance = null;
+        clearKanjiStrokeOrderAutoNext_();
+        if (kanjiQuizSession) {
+          kanjiQuizSession.jukugoPendingAdvance = null;
+          kanjiQuizSession.strokeOrderPendingAdvance = null;
+        }
         if (subBtn) {
           subBtn.style.display = "none";
           subBtn.textContent = "こたえを決定";
@@ -9929,9 +10414,11 @@
           nextBtn.onclick = null;
         }
         if (sec) sec.classList.remove("kanji-choice-feedback-active");
+        hideChoiceQuizVerdict_();
         advanceFn();
       }
       kanjiQuizSession.jukugoPendingAdvance = goNext;
+      kanjiQuizSession.strokeOrderPendingAdvance = goNext;
       if (sec) sec.classList.add("kanji-choice-feedback-active");
       if (subBtn) {
         subBtn.style.display = "none";
@@ -9947,7 +10434,10 @@
           goNext();
         };
       }
-      kanjiJukugoAutoNextTimer_ = setTimeout(goNext, 4000);
+      kanjiJukugoAutoNextTimer_ = setTimeout(goNext, delayMs);
+    }
+    function showJukugoYomiNextControls_(advanceFn) {
+      showKanjiQuizVerdictNextControls_(advanceFn, 4000);
     }
     function estimateKanjiQuizProvisionalEarned_(scoreForServer, qType, earnedOverrideVal) {
       if (earnedOverrideVal != null && !isNaN(Number(earnedOverrideVal))) {
@@ -10037,6 +10527,7 @@
       let userRaw = "";
       let isCorrect = false;
       var scriptBonusMult = 1;
+      var sentenceYomiPartial = false;
       if (q.type === "okurigana_shift") {
         userRaw = kanjiQuizSession.selectedChoice != null ? String(kanjiQuizSession.selectedChoice) : "";
         if (!userRaw) {
@@ -10076,13 +10567,10 @@
           alert("よみを入力してから、「こたえを決定」を おしてください。");
           return;
         }
-        isCorrect = normalizeKanjiQuizInput(userRaw) === normalizeKanjiQuizInput(q.correctAnswer);
-        if (isCorrect) {
-          scriptBonusMult = kanjiQuizSentenceYomiScriptBonusMultiplier(
-            normalizeKanjiQuizInput(userRaw),
-            q.readingKind
-          );
-        }
+        var yomiEval = evaluateSentenceToRubyAnswer_(q, userRaw);
+        isCorrect = !!yomiEval.isCorrect;
+        sentenceYomiPartial = !!yomiEval.isPartial;
+        scriptBonusMult = yomiEval.scriptBonusMult;
       } else if (q.type === "stroke_count") {
         userRaw = kanjiQuizSession.selectedChoice != null ? String(kanjiQuizSession.selectedChoice) : "";
         if (!userRaw) {
@@ -10125,7 +10613,7 @@
         }
       }
       const selectedForFeedback =
-        (q.type === "jukugo_yomi" || q.type === "okurigana_shift") && userRaw
+        (q.type === "jukugo_yomi" || q.type === "okurigana_shift" || q.type === "stroke_count") && userRaw
           ? String(userRaw)
           : "";
       kanjiQuizSession.selectedChoice = null;
@@ -10142,8 +10630,7 @@
       }
       __kanjiQuizSubmitInFlight = true;
       var __kjSubmitBtn = document.getElementById("kanji-play-submit-btn");
-      var __isChoiceFeedbackQ =
-        q.type === "jukugo_yomi" || q.type === "okurigana_shift";
+      var __isChoiceFeedbackQ = isKanjiQuizVerdictRailType_(q.type);
       if (__kjSubmitBtn && !isKanjiQuizHandwritingQuestionType_(q.type) && !__isChoiceFeedbackQ) {
         startKanjiActionBusy(__kjSubmitBtn, "つぎへ");
       }
@@ -10186,41 +10673,41 @@
         qType: q.type
       });
       const summary = document.getElementById("kanji-play-summary");
-      if (summary) {
-        if (isCorrect && q.type === "sentence_to_ruby" && scriptBonusMult < 1) {
-          var hintScript = q.readingKind === "on"
-            ? "音読みはカタカナで答えてください。"
-            : "訓読みはひらがなで答えてください。";
-          summary.innerHTML =
-            '<span style="color:#FFD54F;">せいかい！（ただし表記がちがうため <strong>半分点</strong>）<br><span style="font-size:0.85em;color:#FFE082;">' +
-            escapeHtml(hintScript) +
-            "</span></span>";
-        } else if (isCorrect && q.type === "stroke_order_trace") {
+      const useVerdictRail = isKanjiQuizVerdictRailType_(q.type);
+      if (useVerdictRail) {
+        if (summary) summary.innerHTML = "";
+        if (q.type === "jukugo_yomi" || q.type === "okurigana_shift" || q.type === "stroke_count") {
+          applyJukugoYomiChoiceFeedback_(q, selectedForFeedback, isCorrect);
+        }
+        var verdictOpts = null;
+        if (isCorrect && q.type === "sentence_to_ruby" && sentenceYomiPartial) {
+          verdictOpts = {
+            partial: true,
+            partialHint: getSentenceYomiScriptMismatchHint_(q.readingKind)
+          };
+        }
+        showChoiceQuizVerdict_(q, isCorrect, verdictOpts);
+      } else if (summary) {
+        if (isCorrect && q.type === "stroke_order_trace") {
           const soPts =
-            earnedOverrideVal != null ? earnedOverrideVal : estimateKanjiQuizProvisionalEarned_(scoreForServer, q.type, earnedOverrideVal);
-          const soNote = kanjiQuizSession && kanjiQuizSession.strokeOrderFailedOnce
-            ? "（練習点）"
-            : "（書き順点）";
+            earnedOverrideVal != null
+              ? earnedOverrideVal
+              : estimateKanjiQuizProvisionalEarned_(scoreForServer, q.type, earnedOverrideVal);
+          const soNote =
+            kanjiQuizSession && kanjiQuizSession.strokeOrderFailedOnce
+              ? "（練習点）"
+              : "（書き順点）";
           summary.innerHTML =
             '<span style="color:#69F0AE;">せいかい！ +' +
             soPts +
             "点" +
             soNote +
-            '</span>' +
-            '<span style="display:block;margin-top:4px;color:#607d8b;font-size:0.9em;">つぎの漢字へ自動でうつります…</span>';
-        } else if (q.type === "jukugo_yomi" || q.type === "okurigana_shift") {
-          // 正誤は出題横の判定パネルへ表示するため、フッター要約は出さない
-          summary.innerHTML = "";
+            '</span><span style="display:block;margin-top:4px;color:#607d8b;font-size:0.9em;">つぎの漢字へ自動でうつります…</span>';
         } else if (isCorrect) {
           summary.innerHTML = '<span style="color:#69F0AE;">せいかい！</span>';
         } else {
           summary.innerHTML = '<span style="color:#FF8A80;">ざんねん… 次はがんばろう</span>';
         }
-      }
-      if (q.type === "jukugo_yomi" || q.type === "okurigana_shift") {
-        applyJukugoYomiChoiceFeedback_(q, selectedForFeedback, isCorrect);
-        showChoiceQuizVerdict_(q, isCorrect);
-        if (summary) summary.innerHTML = "";
       }
       function advanceKanjiQuizAfterScore() {
         try {
@@ -10268,8 +10755,8 @@
         kanjiQuizHandleNigateAfterScore(q, isCorrect, scoreForServer, advanceKanjiQuizAfterScore);
       }
       try {
-        if (q.type === "jukugo_yomi" || q.type === "okurigana_shift") {
-          showJukugoYomiNextControls_(runAdvanceAfterScore_);
+        if (useVerdictRail) {
+          showKanjiQuizVerdictNextControls_(runAdvanceAfterScore_, 4000);
         } else if (q.type === "stroke_order_trace") {
           showStrokeOrderAutoNext_(runAdvanceAfterScore_);
         } else {
@@ -10278,7 +10765,7 @@
       } finally {
         __kanjiQuizSubmitInFlight = false;
         try {
-          if (__kjSubmitBtn && q.type !== "jukugo_yomi" && q.type !== "okurigana_shift") {
+          if (__kjSubmitBtn) {
             stopKanjiActionBusy(__kjSubmitBtn);
           }
         } catch (_eRestoreBtn) {}
@@ -10657,6 +11144,20 @@
         inp.dispatchEvent(new Event("input", { bubbles: true }));
         updateTailDisplay();
       }
+      function backspaceKey_() {
+        const inp = document.getElementById(targetInputId);
+        if (!inp) return;
+        const tail = String(window.__kanjiYomiRomajiTail || "");
+        if (tail.length) {
+          window.__kanjiYomiRomajiTail = tail.slice(0, -1);
+          updateTailDisplay();
+          return;
+        }
+        if (inp.value.length) {
+          inp.value = inp.value.slice(0, -1);
+          inp.dispatchEvent(new Event("input", { bubbles: true }));
+        }
+      }
       function finalizeN() {
         const inp = document.getElementById(targetInputId);
         if (!inp) return;
@@ -10667,6 +11168,19 @@
           inp.dispatchEvent(new Event("input", { bubbles: true }));
           updateTailDisplay();
         }
+      }
+      function enterKey_() {
+        finalizeN();
+        if (typeof onEnterSubmit === "function") onEnterSubmit();
+      }
+      function toggleScriptKind_() {
+        const inp = document.getElementById(targetInputId);
+        if (!inp) return;
+        inp.value = kanjiYomiSwapHiraKataString_(String(inp.value || ""));
+        currentScriptKind = currentScriptKind === "on" ? "kun" : "on";
+        refreshScriptBtnLabel();
+        inp.dispatchEvent(new Event("input", { bubbles: true }));
+        updateTailDisplay();
       }
       /**
        * タッチ環境では click だけだと 300ms 遅延・二重発火・直前要素のフォーカス取り合いで
@@ -10732,34 +11246,13 @@
         }
       }
       refreshScriptBtnLabel();
-      bindKeyHandler(scriptBtn, function () {
-        const inp = document.getElementById(targetInputId);
-        if (!inp) return;
-        inp.value = kanjiYomiSwapHiraKataString_(String(inp.value || ""));
-        currentScriptKind = currentScriptKind === "on" ? "kun" : "on";
-        refreshScriptBtnLabel();
-        inp.dispatchEvent(new Event("input", { bubbles: true }));
-        updateTailDisplay();
-      });
+      bindKeyHandler(scriptBtn, toggleScriptKind_);
       rowBs.appendChild(scriptBtn);
       const bsBtn = document.createElement("button");
       bsBtn.type = "button";
       bsBtn.className = "key key-wide";
       bsBtn.textContent = "⌫";
-      bindKeyHandler(bsBtn, function () {
-        const inp = document.getElementById(targetInputId);
-        if (!inp) return;
-        const tail = String(window.__kanjiYomiRomajiTail || "");
-        if (tail.length) {
-          window.__kanjiYomiRomajiTail = tail.slice(0, -1);
-          updateTailDisplay();
-          return;
-        }
-        if (inp.value.length) {
-          inp.value = inp.value.slice(0, -1);
-          inp.dispatchEvent(new Event("input", { bubbles: true }));
-        }
-      });
+      bindKeyHandler(bsBtn, backspaceKey_);
       rowBs.appendChild(bsBtn);
       board.appendChild(rowBs);
       const bottomRow = document.createElement("div");
@@ -10769,15 +11262,18 @@
       enterBtn.className = "key key-action";
       enterBtn.style.flex = "1";
       enterBtn.textContent = "けってい";
-      bindKeyHandler(enterBtn, function () {
-        finalizeN();
-        if (typeof onEnterSubmit === "function") onEnterSubmit();
-      });
+      bindKeyHandler(enterBtn, enterKey_);
       bottomRow.appendChild(enterBtn);
       board.appendChild(bottomRow);
       wrap.appendChild(board);
       container.appendChild(wrap);
       updateTailDisplay();
+      window.__kanjiYomiKbdActions = {
+        applyChar: applyChar,
+        backspace: backspaceKey_,
+        enter: enterKey_,
+        toggleScript: toggleScriptKind_
+      };
     }
 
     let shiftMode = 0; let isShiftHoldMode = false; let shiftPressStartTime = 0; let shiftTimer1s = null; let shiftTimer2s = null;
@@ -12687,6 +13183,8 @@
     });
 
     document.addEventListener('keydown', (e) => {
+      if (handleKanjiYomiPhysicalKeydown_(e)) return;
+
       const answerInput = document.getElementById('type-answer');
       const quizSection = document.getElementById('section-quiz');
       if (!quizSection || !quizSection.classList.contains('active')) return;
