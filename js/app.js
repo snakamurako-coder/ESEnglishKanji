@@ -8837,6 +8837,75 @@
         qBlock.insertBefore(submit, prompt.nextSibling);
       }
     }
+    /** 手書き共通：出題指示を記述カード（canvas-panel）内の右端へ移す */
+    function kanjiHwMountPromptInCard_() {
+      var prompt = document.getElementById("kanji-play-prompt");
+      var panel = document.querySelector(
+        "#kanji-quiz-drill-handwriting .kanji-drill-hw-canvas-panel"
+      );
+      if (!prompt || !panel) return;
+      if (prompt.parentElement === panel && prompt.dataset.kanjiSoInCard === "1") return;
+      prompt.dataset.kanjiSoInCard = "1";
+      panel.appendChild(prompt);
+    }
+    function kanjiHwUnmountPromptFromCard_() {
+      var prompt = document.getElementById("kanji-play-prompt");
+      var qBlock = document.querySelector(".kanji-quiz-play-question-block");
+      if (!prompt || !qBlock) return;
+      if (prompt.dataset.kanjiSoInCard !== "1") return;
+      delete prompt.dataset.kanjiSoInCard;
+      var charEl = document.getElementById("kanji-play-char");
+      var ref =
+        charEl && charEl.parentElement === qBlock ? charEl.nextSibling : qBlock.firstChild;
+      qBlock.insertBefore(prompt, ref);
+    }
+    /* 互換エイリアス */
+    function kanjiStrokeOrderMountPromptInCard_() {
+      kanjiHwMountPromptInCard_();
+    }
+    function kanjiStrokeOrderUnmountPromptFromCard_() {
+      kanjiHwUnmountPromptFromCard_();
+    }
+    var __kanjiYomiKbdFitRo = null;
+    /** よみキーボード：正方形キーのまま、領域内に収まるよう幅を調整して拡大・縮小 */
+    function fitKanjiYomiKeyboardInCol_() {
+      var sec = document.getElementById("section-kanji-quiz-play");
+      if (!sec || !sec.classList.contains("kanji-quiz-typing-active")) return;
+      var col = sec.querySelector(".kanji-yomi-kbd-col");
+      var wrap = document.querySelector(
+        "#kanji-yomi-keyboard-container .keyboard-scale-wrap"
+      );
+      if (!col || !wrap) return;
+      var availW = col.clientWidth;
+      var availH = col.clientHeight;
+      if (availW < 80 || availH < 80) return;
+      /* 正方形キー想定の概形比（列≈10・行≈5）で高さ優先の目標幅 */
+      var idealW = Math.min(availW, Math.floor(availH * 2.15));
+      wrap.style.width = idealW + "px";
+      wrap.style.maxWidth = "100%";
+      /* はみ出したら幅を縮めて縦も比例縮小 */
+      var h = wrap.scrollHeight;
+      if (h > availH && h > 0) {
+        var shrunk = Math.max(160, Math.floor(idealW * (availH / h) * 0.98));
+        wrap.style.width = Math.min(shrunk, availW) + "px";
+      }
+    }
+    function ensureKanjiYomiKeyboardFitObserver_() {
+      fitKanjiYomiKeyboardInCol_();
+      var col = document.querySelector(
+        "#section-kanji-quiz-play.kanji-quiz-typing-active .kanji-yomi-kbd-col"
+      );
+      if (!col || typeof ResizeObserver === "undefined") return;
+      if (__kanjiYomiKbdFitRo) {
+        try {
+          __kanjiYomiKbdFitRo.disconnect();
+        } catch (_e) {}
+      }
+      __kanjiYomiKbdFitRo = new ResizeObserver(function () {
+        fitKanjiYomiKeyboardInCol_();
+      });
+      __kanjiYomiKbdFitRo.observe(col);
+    }
     function kanjiYomiFormatSentenceBlockHtml(q) {
       if (!q) return "";
       let s = String(q.fullExample || "");
@@ -9260,6 +9329,9 @@
         typingWrap.setAttribute("aria-hidden", "true");
       }
       kanjiYomiUnmountTypingRailLayout_();
+      try {
+        kanjiHwUnmountPromptFromCard_();
+      } catch (_eSoP) {}
       const inp = document.getElementById("kanji-play-input");
       if (inp) inp.value = "";
       const yomiInp = document.getElementById("kanji-play-yomi-input");
@@ -9450,6 +9522,7 @@
         } else {
           clearStrokeOrderReadings_();
         }
+        kanjiHwMountPromptInCard_();
         if (drillHand) drillHand.style.display = "flex";
         setKanjiQuizPlayHwFooterActive(true);
         const cvsActions = document.getElementById("kanji-hw-canvas-actions");
@@ -9761,6 +9834,9 @@
             const hidNow = document.getElementById("kanji-play-input");
             if (hidNow) hidNow.value = val;
             submitKanjiQuizScore();
+          });
+          requestAnimationFrame(function () {
+            ensureKanjiYomiKeyboardFitObserver_();
           });
           focusKanjiYomiTypingInput_();
           /* vertical-rl 時代の横スクロール残があると例文が視界外に残る */
@@ -11319,6 +11395,9 @@
         enter: enterKey_,
         toggleScript: toggleScriptKind_
       };
+      requestAnimationFrame(function () {
+        fitKanjiYomiKeyboardInCol_();
+      });
     }
 
     let shiftMode = 0; let isShiftHoldMode = false; let shiftPressStartTime = 0; let shiftTimer1s = null; let shiftTimer2s = null;
