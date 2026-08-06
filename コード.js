@@ -67,10 +67,10 @@ function getDefaultAppSettingsRows_() {
     ["漢字熟語読み_基礎点", 1],
     ["漢字熟語読み_選択肢倍率", 1],
     ["漢字熟語読み_無し選択肢ボーナス", 2],
-    ["trajectory", 40],
-    ["startEnd", 15],
-    ["structure", 20],
-    ["size", 25],
+    ["trajectory", 28],
+    ["startEnd", 10],
+    ["structure", 14],
+    ["size", 18],
     ["strokeCount", 10],
     ["strokeOrder", 20]
   ];

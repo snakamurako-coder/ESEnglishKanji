@@ -6553,6 +6553,17 @@
       }
       return a;
     }
+    /** 熟語よみ：「この中に回答はない」は常に末尾（右→左並びでは左端＝最後） */
+    function shuffleKanjiQuizChoicesKeepingNoneLast_(arr) {
+      const list = Array.isArray(arr) ? arr.slice() : [];
+      const rest = [];
+      const none = [];
+      list.forEach(function (c) {
+        if (c === JUKUGO_NONE_ANSWER_) none.push(c);
+        else rest.push(c);
+      });
+      return shuffleKanjiQuizChoicesArray(rest).concat(none);
+    }
     function isHiraganaChar_(ch) {
       if (!ch) return false;
       const cp = ch.codePointAt(0);
@@ -7050,78 +7061,167 @@
       });
     }
     const KANJI_QUIZ_HAND_PASS = 60;
-    /** 形4項目は shapeBudget 内の比率。strokeCount/strokeOrder は100点中の絶対点 */
-    const KANJI_HW_SHAPE_WEIGHT_DEFAULTS = {
-      trajectory: 0.4,
-      startEnd: 0.15,
-      structure: 0.2,
-      size: 0.25
+    /**
+     * 手書き採点配点（管理ブック指定）は6項目とも100点満点中の絶対点。
+     * 既定合計: 画数10 + 画順20 + 軌道28 + 始点終点10 + 構造14 + 大きさ18 = 100
+     */
+    const KANJI_HW_ABS_POINT_DEFAULTS = {
+      strokeCount: 10,
+      strokeOrder: 20,
+      trajectory: 28,
+      startEnd: 10,
+      structure: 14,
+      size: 18
     };
-    const KANJI_HW_SHAPE_WEIGHT_KEYS = ["trajectory", "startEnd", "structure", "size"];
-    const KANJI_HW_GATE_WEIGHT_DEFAULTS = { strokeCount: 10, strokeOrder: 20 };
     const KANJI_HW_SCORE_WEIGHT_KEYS = ["trajectory", "startEnd", "structure", "size", "strokeCount", "strokeOrder"];
-    const KANJI_HW_SCORE_WEIGHT_DEFAULTS = Object.assign({}, KANJI_HW_SHAPE_WEIGHT_DEFAULTS, KANJI_HW_GATE_WEIGHT_DEFAULTS);
-    function parseKanjiHandScoreWeightSetting_(val, fallbackRatio) {
-      if (val === undefined || val === null || String(val).trim() === "") return fallbackRatio;
-      const n = Number(val);
-      if (isNaN(n) || n < 0) return fallbackRatio;
-      return n > 1 ? n / 100 : n;
-    }
-    /** ゲート点（0〜100の絶対点）。設定が比率(≦1)なら×100 */
-    function parseKanjiHandScoreGatePoints_(val, fallbackPts) {
+    /** 絶対点（0〜100）。比率(≦1)なら×100。空なら fallback */
+    function parseKanjiHandScoreAbsolutePoints_(val, fallbackPts) {
       if (val === undefined || val === null || String(val).trim() === "") return fallbackPts;
       const n = Number(val);
       if (isNaN(n) || n < 0) return fallbackPts;
       const pts = n <= 1 ? n * 100 : n;
       return Math.max(0, Math.min(100, pts));
     }
+    /** 整数配点に丸め、合計を total に合わせる（最大剰余法） */
+    function roundKanjiHandAbsPointsToTotal_(ptsArr, total) {
+      const src = (ptsArr || []).map(function (p) {
+        return Math.max(0, Number(p) || 0);
+      });
+      const n = src.length;
+      if (!n) return [];
+      const sum = src.reduce(function (a, b) {
+        return a + b;
+      }, 0);
+      if (sum <= 0) {
+        const even = Math.floor(total / n);
+        const out = Array(n).fill(even);
+        out[0] += total - even * n;
+        return out;
+      }
+      const scaled = src.map(function (p) {
+        return (p * total) / sum;
+      });
+      const floors = scaled.map(function (p) {
+        return Math.floor(p);
+      });
+      let used = floors.reduce(function (a, b) {
+        return a + b;
+      }, 0);
+      let remain = total - used;
+      const order = scaled
+        .map(function (p, i) {
+          return { i: i, frac: p - floors[i] };
+        })
+        .sort(function (a, b) {
+          return b.frac - a.frac;
+        });
+      for (let k = 0; k < order.length && remain > 0; k++) {
+        floors[order[k].i] += 1;
+        remain -= 1;
+      }
+      return floors;
+    }
     function normalizeKanjiHandScoreWeights_(raw) {
-      function gateFromRaw_(ptsKey, altKey, fallback) {
+      raw = raw && typeof raw === "object" ? raw : {};
+      function pickPts_(ptsKey, altKey, fallback) {
         if (raw[ptsKey] != null && String(raw[ptsKey]).trim() !== "" && !isNaN(Number(raw[ptsKey]))) {
-          return Math.max(0, Math.min(100, Number(raw[ptsKey])));
+          const n = Number(raw[ptsKey]);
+          /* 旧キャッシュの比率(0〜1)は絶対点へ換算しない（legacy 分岐で扱う） */
+          if (n > 1 || ptsKey.indexOf("Pts") >= 0) return Math.max(0, Math.min(100, n));
         }
         if (raw[altKey] != null && String(raw[altKey]).trim() !== "") {
-          return parseKanjiHandScoreGatePoints_(raw[altKey], fallback);
+          return parseKanjiHandScoreAbsolutePoints_(raw[altKey], fallback);
         }
         return fallback;
       }
-      const countPts = gateFromRaw_("strokeCountPts", "strokeCount", KANJI_HW_GATE_WEIGHT_DEFAULTS.strokeCount);
-      const orderPts = Math.min(
-        100 - countPts,
-        gateFromRaw_("strokeOrderPts", "strokeOrder", KANJI_HW_GATE_WEIGHT_DEFAULTS.strokeOrder)
-      );
-      const shapeBudget = Math.max(0, 100 - countPts - orderPts);
-      let t = Number(raw.trajectory) || 0;
-      let se = Number(raw.startEnd) || 0;
-      let st = Number(raw.structure) || 0;
-      let sz = Number(raw.size) || 0;
-      let sum = t + se + st + sz;
-      if (sum <= 0) {
-        t = KANJI_HW_SHAPE_WEIGHT_DEFAULTS.trajectory;
-        se = KANJI_HW_SHAPE_WEIGHT_DEFAULTS.startEnd;
-        st = KANJI_HW_SHAPE_WEIGHT_DEFAULTS.structure;
-        sz = KANJI_HW_SHAPE_WEIGHT_DEFAULTS.size;
-        sum = t + se + st + sz;
+
+      let countPts;
+      let orderPts;
+      let trajPts;
+      let sePts;
+      let strPts;
+      let sizePts;
+
+      const legacyRatio =
+        typeof raw.shapeBudget === "number" &&
+        raw.shapeBudget >= 0 &&
+        typeof raw.trajectory === "number" &&
+        raw.trajectory > 0 &&
+        raw.trajectory <= 1 &&
+        typeof raw.strokeCountPts === "number" &&
+        raw.trajectoryPts == null;
+
+      if (legacyRatio) {
+        countPts = Math.max(0, Number(raw.strokeCountPts) || 0);
+        orderPts = Math.max(0, Number(raw.strokeOrderPts) || 0);
+        const budget = Math.max(0, Number(raw.shapeBudget) || 0);
+        trajPts = budget * (Number(raw.trajectory) || 0);
+        sePts = budget * (Number(raw.startEnd) || 0);
+        strPts = budget * (Number(raw.structure) || 0);
+        sizePts = budget * (Number(raw.size) || 0);
+      } else {
+        countPts = pickPts_("strokeCountPts", "strokeCount", KANJI_HW_ABS_POINT_DEFAULTS.strokeCount);
+        orderPts = pickPts_("strokeOrderPts", "strokeOrder", KANJI_HW_ABS_POINT_DEFAULTS.strokeOrder);
+        trajPts = pickPts_("trajectoryPts", "trajectory", KANJI_HW_ABS_POINT_DEFAULTS.trajectory);
+        sePts = pickPts_("startEndPts", "startEnd", KANJI_HW_ABS_POINT_DEFAULTS.startEnd);
+        strPts = pickPts_("structurePts", "structure", KANJI_HW_ABS_POINT_DEFAULTS.structure);
+        sizePts = pickPts_("sizePts", "size", KANJI_HW_ABS_POINT_DEFAULTS.size);
+
+        /* 旧管理ブック: 形4項目が比率％合計≈100で、ゲートと足すと100超 → 残り枠へ換算 */
+        const shapeSum = trajPts + sePts + strPts + sizePts;
+        const gateSum = countPts + orderPts;
+        const allSum = gateSum + shapeSum;
+        if (allSum > 100.5 && shapeSum >= 95 && shapeSum <= 105.5 && gateSum < 100) {
+          const budget = Math.max(0, 100 - gateSum);
+          trajPts = budget * (trajPts / shapeSum);
+          sePts = budget * (sePts / shapeSum);
+          strPts = budget * (strPts / shapeSum);
+          sizePts = budget * (sizePts / shapeSum);
+        }
       }
+
+      const rounded = roundKanjiHandAbsPointsToTotal_(
+        [countPts, orderPts, trajPts, sePts, strPts, sizePts],
+        100
+      );
+      const shapeBudget = rounded[2] + rounded[3] + rounded[4] + rounded[5];
       return {
-        strokeCountPts: countPts,
-        strokeOrderPts: orderPts,
+        strokeCountPts: rounded[0],
+        strokeOrderPts: rounded[1],
+        trajectoryPts: rounded[2],
+        startEndPts: rounded[3],
+        structurePts: rounded[4],
+        sizePts: rounded[5],
+        totalMax: 100,
+        /* 互換: 旧iframeが shapeBudget + 比率を読んでも同等になるよう残す */
         shapeBudget: shapeBudget,
-        trajectory: t / sum,
-        startEnd: se / sum,
-        structure: st / sum,
-        size: sz / sum
+        trajectory: shapeBudget > 0 ? rounded[2] / shapeBudget : 0,
+        startEnd: shapeBudget > 0 ? rounded[3] / shapeBudget : 0,
+        structure: shapeBudget > 0 ? rounded[4] / shapeBudget : 0,
+        size: shapeBudget > 0 ? rounded[5] / shapeBudget : 0
       };
     }
     function buildKanjiHandScoreWeightsFromSettings_(settings) {
       const src = settings && typeof settings === "object" ? settings : {};
       const raw = {
-        trajectory: parseKanjiHandScoreWeightSetting_(src.trajectory, KANJI_HW_SHAPE_WEIGHT_DEFAULTS.trajectory),
-        startEnd: parseKanjiHandScoreWeightSetting_(src.startEnd, KANJI_HW_SHAPE_WEIGHT_DEFAULTS.startEnd),
-        structure: parseKanjiHandScoreWeightSetting_(src.structure, KANJI_HW_SHAPE_WEIGHT_DEFAULTS.structure),
-        size: parseKanjiHandScoreWeightSetting_(src.size, KANJI_HW_SHAPE_WEIGHT_DEFAULTS.size),
-        strokeCountPts: parseKanjiHandScoreGatePoints_(src.strokeCount, KANJI_HW_GATE_WEIGHT_DEFAULTS.strokeCount),
-        strokeOrderPts: parseKanjiHandScoreGatePoints_(src.strokeOrder, KANJI_HW_GATE_WEIGHT_DEFAULTS.strokeOrder)
+        strokeCountPts: parseKanjiHandScoreAbsolutePoints_(
+          src.strokeCount,
+          KANJI_HW_ABS_POINT_DEFAULTS.strokeCount
+        ),
+        strokeOrderPts: parseKanjiHandScoreAbsolutePoints_(
+          src.strokeOrder,
+          KANJI_HW_ABS_POINT_DEFAULTS.strokeOrder
+        ),
+        trajectoryPts: parseKanjiHandScoreAbsolutePoints_(
+          src.trajectory,
+          KANJI_HW_ABS_POINT_DEFAULTS.trajectory
+        ),
+        startEndPts: parseKanjiHandScoreAbsolutePoints_(src.startEnd, KANJI_HW_ABS_POINT_DEFAULTS.startEnd),
+        structurePts: parseKanjiHandScoreAbsolutePoints_(
+          src.structure,
+          KANJI_HW_ABS_POINT_DEFAULTS.structure
+        ),
+        sizePts: parseKanjiHandScoreAbsolutePoints_(src.size, KANJI_HW_ABS_POINT_DEFAULTS.size)
       };
       return normalizeKanjiHandScoreWeights_(raw);
     }
@@ -7148,7 +7248,13 @@
         const raw = localStorage.getItem(LS_APP_CACHED_KANJI_HAND_SCORE_WEIGHTS);
         if (raw) {
           const d = JSON.parse(raw);
-          if (d && d.weightsNormalized && typeof d.weightsNormalized.trajectory === "number") {
+          if (
+            d &&
+            d.weightsNormalized &&
+            (typeof d.weightsNormalized.trajectoryPts === "number" ||
+              typeof d.weightsNormalized.trajectory === "number" ||
+              typeof d.weightsNormalized.strokeCountPts === "number")
+          ) {
             kanjiHandScoreWeightsMem = normalizeKanjiHandScoreWeights_(d.weightsNormalized);
             return kanjiHandScoreWeightsMem;
           }
@@ -7158,10 +7264,14 @@
           }
         }
       } catch (e) {}
-      kanjiHandScoreWeightsMem = normalizeKanjiHandScoreWeights_(Object.assign({}, KANJI_HW_SCORE_WEIGHT_DEFAULTS, {
-        strokeCountPts: KANJI_HW_GATE_WEIGHT_DEFAULTS.strokeCount,
-        strokeOrderPts: KANJI_HW_GATE_WEIGHT_DEFAULTS.strokeOrder
-      }));
+      kanjiHandScoreWeightsMem = normalizeKanjiHandScoreWeights_({
+        strokeCountPts: KANJI_HW_ABS_POINT_DEFAULTS.strokeCount,
+        strokeOrderPts: KANJI_HW_ABS_POINT_DEFAULTS.strokeOrder,
+        trajectoryPts: KANJI_HW_ABS_POINT_DEFAULTS.trajectory,
+        startEndPts: KANJI_HW_ABS_POINT_DEFAULTS.startEnd,
+        structurePts: KANJI_HW_ABS_POINT_DEFAULTS.structure,
+        sizePts: KANJI_HW_ABS_POINT_DEFAULTS.size
+      });
       return kanjiHandScoreWeightsMem;
     }
     function getKanjiHandScoreWeights() {
@@ -9103,6 +9213,56 @@
       prompt.dataset.kanjiSoInCard = "1";
       panel.appendChild(prompt);
     }
+    /**
+     * カード内縦書き指示文用：句読点で列を分け、途中改行の崩れを防ぐ。
+     * 長い句はおよそキャンバス高さに収まる文字数で分割する。
+     */
+    function splitKanjiHwPromptLines_(text) {
+      const s = String(text || "").replace(/\s+/g, " ").trim();
+      if (!s) return [];
+      const parts = [];
+      let buf = "";
+      Array.from(s).forEach(function (ch) {
+        buf += ch;
+        if (/[、。！？!?]/.test(ch)) {
+          parts.push(buf);
+          buf = "";
+        }
+      });
+      if (buf) parts.push(buf);
+      const MAX = 14;
+      const out = [];
+      parts.forEach(function (p) {
+        const chars = Array.from(String(p || "").trim());
+        if (!chars.length) return;
+        if (chars.length <= MAX) {
+          out.push(chars.join(""));
+          return;
+        }
+        for (let i = 0; i < chars.length; i += MAX) {
+          out.push(chars.slice(i, i + MAX).join(""));
+        }
+      });
+      return out;
+    }
+    function setKanjiHwCardPromptText_(text) {
+      const promptEl = document.getElementById("kanji-play-prompt");
+      if (!promptEl) return;
+      const lines = splitKanjiHwPromptLines_(text);
+      if (!lines.length) {
+        promptEl.textContent = "";
+        return;
+      }
+      promptEl.innerHTML = lines
+        .map(function (line) {
+          const withTcy = escapeHtml(line).replace(
+            /([0-9０-９]+(?:点)?)/g,
+            '<span class="kanji-hw-prompt-tcy">$1</span>'
+          );
+          return '<span class="kanji-hw-prompt-line">' + withTcy + "</span>";
+        })
+        .join("");
+    }
     function kanjiHwUnmountPromptFromCard_() {
       var prompt = document.getElementById("kanji-play-prompt");
       var qBlock = document.querySelector(".kanji-quiz-play-question-block");
@@ -9737,10 +9897,10 @@
       const promptEl = document.getElementById('kanji-play-prompt');
       if (promptEl) {
         if (q.type === "stroke_order_trace") {
-          promptEl.innerText = "うすい線をなぞって書いて、60点以上をめざそう。";
+          setKanjiHwCardPromptText_("うすい線をなぞって書いて、60点以上をめざそう。");
         } else if (q.type === "ruby_to_kanji") {
-          promptEl.innerText = q.prompt || "";
-        }         else if (q.type === "okurigana_shift") promptEl.innerText = "正しい送り仮名を選びましょう。";
+          setKanjiHwCardPromptText_(q.prompt || "漢字練習と同じ画面で書いて、60点以上をめざそう。");
+        } else if (q.type === "okurigana_shift") promptEl.innerText = "正しい送り仮名を選びましょう。";
         else if (q.type === "jukugo_yomi") promptEl.innerText = q.prompt || "例文の下線の熟語の読み方を選びましょう。";
         else if (q.type === "sentence_to_ruby") {
           promptEl.innerText = q.prompt || "赤字のかんじの よみを 入力しましょう。";
@@ -9981,7 +10141,10 @@
           choicesBox.style.removeProperty("min-width");
           choicesBox.style.removeProperty("max-height");
           choicesBox.style.removeProperty("min-height");
-          const arr = shuffleKanjiQuizChoicesArray(q.choices);
+          const arr =
+            q.type === "jukugo_yomi"
+              ? shuffleKanjiQuizChoicesKeepingNoneLast_(q.choices)
+              : shuffleKanjiQuizChoicesArray(q.choices);
           let dispMap =
             q.type === "okurigana_shift" && q.choicesDisplayMap && typeof q.choicesDisplayMap === "object"
               ? q.choicesDisplayMap
