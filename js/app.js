@@ -9755,11 +9755,6 @@
         "</ul>" +
         "</div>" +
         sizeNote +
-        '<p class="kanji-hw-score-total-line">ごうけい <strong>' +
-        total +
-        "</strong> / " +
-        (totalMax || 100) +
-        " てん</p>" +
         "</div>";
     }
     /** KP iframe の kanjiQuizScored を1リスナで処理（クイズ優先、その後のみ練習の GAS 保存） */
@@ -9778,11 +9773,6 @@
           try {
             renderKanjiHwScoreStatus_(ev.data.breakdown || null, ev.data.score);
           } catch (_eBd) {}
-          var quizSum = document.getElementById("kanji-play-summary");
-          if (quizSum) {
-            quizSum.innerHTML =
-              "<span style=\"color:#b8860b;font-weight:700;\">さいてん: " + ev.data.score + " てん</span>";
-          }
           kanjiQuizOnHandwritingScored(ev.data.score);
           return;
         }
@@ -11012,10 +11002,8 @@
         kanjiQuizSetupWriteCanvas();
         kanjiQuizScheduleWriteCanvasReflow();
         kanjiQuizResetHwViewportScroll_();
-        if (summary) {
-          summary.innerHTML =
-            "<span style=\"color:#607d8b;font-size:clamp(12px,3vw,14px);\">さいてんようの データを じゅんびしています…</span>";
-        }
+        clearKanjiHwScoreStatus_();
+        if (summary) summary.innerHTML = "";
         ensureKanjiHwFrameReadyOnce()
           .then(function () {
             const sec = document.getElementById("section-kanji-quiz-play");
@@ -11038,10 +11026,7 @@
             if (isStrokeOrderQ) {
               /* 唯一の差分：記述欄になぞり軌道を載せる */
               if (!kanjiQuizLoadTraceGuideFromFrame_(t0)) {
-                if (summary) {
-                  summary.innerHTML =
-                    '<span style="color:#FF8A80;font-size:clamp(12px,3vw,14px);">なぞり線を出せませんでした。マスに書いて採点できます。</span>';
-                }
+                /* なぞり線がなくても記述欄で採点可能 */
               }
               [200, 520].forEach(function (delayMs) {
                 setTimeout(function () {
@@ -12252,21 +12237,9 @@
         }
         showChoiceQuizVerdict_(q, isCorrect, verdictOpts);
       } else if (summary) {
-        if (isCorrect && q.type === "stroke_order_trace") {
-          const soPts =
-            earnedOverrideVal != null
-              ? earnedOverrideVal
-              : estimateKanjiQuizProvisionalEarned_(scoreForServer, q.type, earnedOverrideVal);
-          const soNote =
-            kanjiQuizSession && kanjiQuizSession.strokeOrderFailedOnce
-              ? "（練習点）"
-              : "（書き順点）";
-          summary.innerHTML =
-            '<span style="color:#69F0AE;">せいかい！ +' +
-            soPts +
-            "点" +
-            soNote +
-            '</span><span style="display:block;margin-top:4px;color:#607d8b;font-size:0.9em;">つぎの漢字へ自動でうつります…</span>';
+        if (q.type === "stroke_order_trace" || q.type === "ruby_to_kanji") {
+          /* 採点結果は #kanji-hw-score-status（手書き共通） */
+          summary.innerHTML = "";
         } else if (isCorrect) {
           summary.innerHTML = '<span style="color:#69F0AE;">せいかい！</span>';
         } else {
