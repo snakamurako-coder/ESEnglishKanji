@@ -9653,7 +9653,113 @@
     function kanjiHwScoreStatusGridHex_(cx, cy, r) {
       return kanjiHwScoreStatusHexPoints_(cx, cy, r, [1, 1, 1, 1, 1, 1]);
     }
-    /** 記述カード下：6角形レーダー＋項目別得点（カラオケ厳密採点風） */
+    /** 項目別の小学生向け定型文（賞賛／助言） */
+    var KANJI_HW_SCORE_FEEDBACK_TMPL_ = {
+      strokeCount: {
+        praise: "画数がぴったりだね！",
+        tip: "もう一度、画の数をかぞえてみよう。"
+      },
+      strokeOrder: {
+        praise: "かきじゅんがじょうず！",
+        tip: "お手本のかきじゅんをよく見てみよう。"
+      },
+      trajectory: {
+        praise: "線のながれがきれいだね！",
+        tip: "線をゆっくり、まっすぐ書いてみよう。"
+      },
+      startEnd: {
+        praise: "はじまりとおわりがうまくいったね！",
+        tip: "はじめる位置と終わる位置を意識してみよう。"
+      },
+      structure: {
+        praise: "字のかたちがよくそろっているよ！",
+        tip: "バランスを見ながら、パーツの位置を整えよう。"
+      },
+      size: {
+        praise: "大きさがちょうどいいね！",
+        tip: "マスいっぱいに、大きすぎず書いてみよう。"
+      }
+    };
+    function kanjiHwScoreFeedbackTmpl_(key) {
+      return (
+        KANJI_HW_SCORE_FEEDBACK_TMPL_[key] || {
+          praise: "とてもよく書けているよ！",
+          tip: "お手本を見て、もう一度書いてみよう。"
+        }
+      );
+    }
+    /** rate 上位2を賞賛、下位2を助言（key 重複なし） */
+    function pickKanjiHwScoreFeedbackItems_(items, rates) {
+      const ranked = items
+        .map(function (it, i) {
+          return {
+            key: String(it.key || ""),
+            label: String(it.label || ""),
+            rate: rates[i],
+            idx: i
+          };
+        })
+        .filter(function (x) {
+          return x.key && x.label && x.label !== "—" && x.key.indexOf("pad") !== 0;
+        });
+      const byHigh = ranked.slice().sort(function (a, b) {
+        if (b.rate !== a.rate) return b.rate - a.rate;
+        return a.idx - b.idx;
+      });
+      const praise = byHigh.slice(0, 2);
+      const praiseKeys = {};
+      praise.forEach(function (p) {
+        praiseKeys[p.key] = true;
+      });
+      const byLow = ranked.slice().sort(function (a, b) {
+        if (a.rate !== b.rate) return a.rate - b.rate;
+        return a.idx - b.idx;
+      });
+      const tips = [];
+      byLow.forEach(function (t) {
+        if (tips.length >= 2) return;
+        if (praiseKeys[t.key]) return;
+        tips.push(t);
+      });
+      /* 賞賛と重なって足りない場合は残りから補完 */
+      if (tips.length < 2) {
+        byLow.forEach(function (t) {
+          if (tips.length >= 2) return;
+          const already = tips.some(function (x) {
+            return x.key === t.key;
+          });
+          if (already) return;
+          tips.push(t);
+        });
+      }
+      return { praise: praise, tips: tips.slice(0, 2) };
+    }
+    function buildKanjiHwScoreFeedbackHtml_(items, rates) {
+      const picked = pickKanjiHwScoreFeedbackItems_(items, rates);
+      if (!picked.praise.length && !picked.tips.length) return "";
+      let html = '<div class="kanji-hw-score-feedback" aria-label="さいてんのアドバイス">';
+      picked.praise.forEach(function (p) {
+        const tmpl = kanjiHwScoreFeedbackTmpl_(p.key);
+        html +=
+          '<p class="is-praise"><span class="kanji-hw-score-fb-label">よくできた：' +
+          escapeHtml(p.label) +
+          "</span>" +
+          escapeHtml(tmpl.praise) +
+          "</p>";
+      });
+      picked.tips.forEach(function (t) {
+        const tmpl = kanjiHwScoreFeedbackTmpl_(t.key);
+        html +=
+          '<p class="is-tip"><span class="kanji-hw-score-fb-label">がんばろう：' +
+          escapeHtml(t.label) +
+          "</span>" +
+          escapeHtml(tmpl.tip) +
+          "</p>";
+      });
+      html += "</div>";
+      return html;
+    }
+    /** 記述カード横：横長レーダー＋ゲージ＋賞賛／助言 */
     function renderKanjiHwScoreStatus_(breakdown, scoreFallback) {
       const el = document.getElementById("kanji-hw-score-status");
       if (!el) return;
@@ -9759,6 +9865,7 @@
           "%</span>" +
           "</li>";
       });
+      const feedbackHtml = buildKanjiHwScoreFeedbackHtml_(items, rates);
       const sizeNote =
         bd && bd.sizeLabel
           ? '<p class="kanji-hw-score-note">' + escapeHtml(String(bd.sizeLabel)) + "</p>"
@@ -9797,6 +9904,7 @@
         rows +
         "</ul>" +
         "</div>" +
+        feedbackHtml +
         sizeNote +
         "</div>";
     }
