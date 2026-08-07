@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>学習アプリ</title>
-  <link rel="stylesheet" href="css/app.css?v=20260807-kp-vg">
+  <link rel="stylesheet" href="css/app.css?v=20260807-hw-scroll">
 </head>
 <body>
 <div id="global-header">👤 <span id="header-user-info"></span></div>
@@ -109,7 +109,7 @@
     </div>
     <div class="kp-controls-row kp-search-panel">
       <div class="kp-panel-heading">漢字・よみでさがす（全学年）</div>
-      <p class="kp-search-lead">ブック／シート／セットの選択とは別に、漢字や読みで検索します。教材にない漢字でも、KanjiVG にあれば書いて練習できます。</p>
+      <p class="kp-search-lead">ブック／シート／セットの選択とは別に、漢字や音訓（音読み・訓読み）で検索します。教材にない漢字でも、KanjiVG にあれば書いて練習できます。</p>
       <div class="kp-search-input-row">
         <input id="kp-search-input" type="search" enterkeyhint="search" placeholder="例：園　／　その　／　エン" oninput="onKpGlobalSearchInput()" autocomplete="off">
         <button type="button" class="kp-search-clear-btn" onclick="clearKpGlobalSearch()">クリア</button>
@@ -166,13 +166,7 @@
   <div id="section-inventory" class="section"><h1>🎒 もちもの</h1><p>おうちの人に画面を見せてボタンをおしてね。</p><div style="margin-bottom: 15px;"><button id="toggle-inventory-btn" class="menu-btn btn-gray" onclick="toggleInventoryView()" style="width: auto; padding: 10px 20px; font-size: 16px;">すべて表示する</button></div><div id="inventory-container"><p>よみこみ中...</p></div><button class="cancel-btn" style="margin-top:20px;" onclick="showHome(JSON.parse(localStorage.getItem('app_kid_user')))">ホームにもどる</button></div>
   
   <div id="section-materials" class="section">
-    <div class="kanji-study-materials-wrap">
-    <div class="kanji-page-title-stack">
-      <h1 id="materials-title">なにを勉強する？</h1>
-      <button type="button" class="cancel-btn kanji-menu-back-btn" onclick="backFromMaterials()">もどる</button>
-    </div>
-    <div id="materials-container" style="display: flex; flex-direction: column; gap: 15px; max-width: 400px; margin: 0 auto;"></div>
-    <!-- 漢字クイズ：問題形式 → 学年 → セット（下段） -->
+    <!-- 漢字クイズ：問題形式 → 学年 → セット（左寄せ・教材ボタンと分離） -->
     <div id="kanji-quiz-format-first" class="kanji-quiz-format-first" style="display:none;" hidden>
       <h2 class="kanji-quiz-format-first-title">問題形式からさがす</h2>
       <p class="kanji-quiz-format-first-lead">もんだいのしかた → 学年 → セット のじゅんにえらべます</p>
@@ -213,6 +207,12 @@
         <button type="button" class="menu-btn btn-gray" id="kq-ff-list-btn" onclick="openKanjiQuizSetsFromFormatFirst(this)">セットいちらんをみる</button>
       </div>
     </div>
+    <div class="kanji-study-materials-wrap">
+    <div class="kanji-page-title-stack">
+      <h1 id="materials-title">なにを勉強する？</h1>
+      <button type="button" class="cancel-btn kanji-menu-back-btn" onclick="backFromMaterials()">もどる</button>
+    </div>
+    <div id="materials-container" style="display: flex; flex-direction: column; gap: 15px; max-width: 400px; margin: 0 auto;"></div>
     </div>
   </div>
   <div id="section-kanji-quiz-sets" class="section">
@@ -268,6 +268,10 @@
         <p class="kanji-quiz-hw-wrong-label-plain">せいかいのかんじ</p>
         <div id="kanji-quiz-wrong-red-chars" class="kanji-quiz-wrong-red-chars"></div>
         <p class="kanji-quiz-hw-wrong-stroke-label">かきじゅん（みょうじ）</p>
+        <div class="kanji-quiz-wrong-demo-btns" role="group" aria-label="お手本と書き順">
+          <button type="button" class="kanji-quiz-wrong-demo-btn" id="kanji-quiz-wrong-otehon-btn" onclick="kanjiQuizWrongShowOtehon()">お手本表示</button>
+          <button type="button" class="kanji-quiz-wrong-demo-btn is-stroke" id="kanji-quiz-wrong-stroke-btn" onclick="kanjiQuizWrongPlayStrokeDemo()">書き順デモ再生</button>
+        </div>
         <div id="kanji-quiz-wrong-model-wrap" class="kanji-quiz-wrong-model-wrap"></div>
       </div>
       <!-- 記述カードとよみ・例文を縦積み（よみはカード外＝スクロール原因にしない） -->
@@ -570,7 +574,7 @@
   <script src="js/state.js"></script>
   <script src="js/api.js"></script>
   <script src="js/main.js"></script>
-  <script src="kanji-vg.js?v=20260807-kp-vg"></script>
-  <script src="js/app.js?v=20260807-kp-vg"></script>
+  <script src="kanji-vg.js?v=20260807-hw-scroll"></script>
+  <script src="js/app.js?v=20260807-hw-scroll"></script>
 </body>
 </html>

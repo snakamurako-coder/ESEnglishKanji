@@ -6019,6 +6019,8 @@
           "body[data-kp-quiz-wrong='1'] #kanji-selector-area{display:none!important;}" +
           "body[data-kp-quiz-wrong='1'] [data-kp-section='tools']{display:none!important;}" +
           "body[data-kp-quiz-wrong='1'] [data-kp-section='strict']{display:none!important;}" +
+          "body[data-kp-quiz-wrong='1'] .controls{pointer-events:auto!important;}" +
+          "body[data-kp-quiz-wrong='1'] .controls button{pointer-events:auto!important;cursor:pointer!important;}" +
           "body[data-kp-quiz-wrong='1'] #mode-msg{margin:4px 0 6px!important;font-size:12px!important;line-height:1.35!important;}" +
           "body[data-kp-quiz-wrong='1'] #result-box{margin-top:8px!important;padding:8px 12px!important;}" +
           "body[data-kp-quiz-wrong='1'] #result-box .score{font-size:32px!important;line-height:1.1!important;}" +
@@ -6404,16 +6406,35 @@
         .catch(function () { return finish({}); });
       return __kpKanjiVgInflight;
     }
-    function kpItemSearchHay_(item) {
-      const k = String(item.kanji || "");
-      const fromNew = String(item.searchText || "").toLowerCase();
-      const readings = (Array.isArray(item.readings) ? item.readings : [])
-        .map(function (r) {
-          return (r.reading || "") + " " + (Array.isArray(r.examples) ? r.examples.join(" ") : "");
+    function kpNormalizeReadingForSearch_(s) {
+      return String(s || "")
+        .normalize("NFC")
+        .replace(/[\u30a1-\u30f6]/g, function (ch) {
+          return String.fromCharCode(ch.charCodeAt(0) - 0x60);
         })
-        .join(" ")
         .toLowerCase();
-      return (fromNew || (k + " " + readings)).toLowerCase();
+    }
+    /** 検索用テキスト：漢字本体＋音読み・訓読みのみ（例文・searchText は含めない） */
+    function kpItemSearchHay_(item) {
+      const parts = [];
+      const k = String(item.kanji || "").trim();
+      if (k) parts.push(k);
+      const pushReading = function (raw) {
+        const r = String(raw || "").trim();
+        if (!r) return;
+        parts.push(r);
+        const norm = kpNormalizeReadingForSearch_(r);
+        if (norm && norm !== r.toLowerCase()) parts.push(norm);
+      };
+      (Array.isArray(item.readings) ? item.readings : []).forEach(function (r) {
+        if (!r) return;
+        pushReading(r.reading);
+      });
+      /* 一部クイズ形式は readings 配列ではなく単一フィールド */
+      pushReading(item.readingHint);
+      pushReading(item.readingDisplay);
+      pushReading(item.reading);
+      return kpNormalizeReadingForSearch_(parts.join(" "));
     }
     /** キャッシュ済み問題から検索索引を組み立てる（学年×セット付き） */
     function kpBuildGlobalSearchIndex_() {
@@ -6579,6 +6600,7 @@
     function runKpGlobalSearch_(rawQ) {
       const raw = String(rawQ || "").trim();
       const q = raw.toLowerCase();
+      const qReading = kpNormalizeReadingForSearch_(raw);
       const box = document.getElementById("kp-search-results");
       if (!box) return;
       if (!q) {
@@ -6588,8 +6610,10 @@
       const index = kpBuildGlobalSearchIndex_();
       const cachedSets = kpCountCachedQuestionSets_();
       const hits = index.filter(function (row) {
-        return String(row.kanji || "").toLowerCase().indexOf(q) >= 0 ||
-          String(row.hay || "").indexOf(q) >= 0;
+        const kanji = String(row.kanji || "");
+        const hay = String(row.hay || "");
+        return kanji.toLowerCase().indexOf(q) >= 0 ||
+          (qReading && hay.indexOf(qReading) >= 0);
       });
       const allBookKanji = Object.create(null);
       index.forEach(function (row) {
@@ -8510,6 +8534,9 @@
         var c = document.getElementById("kanji-quiz-write-canvas");
         kanjiQuizWebKitCanvasPaintNudge_(c);
       } catch (eNudge) {}
+      try {
+        kanjiQuizResetHwViewportScroll_();
+      } catch (eScrHw) {}
       setTimeout(function () {
         try {
           kpResizeFrameToContent();
@@ -9909,6 +9936,10 @@
       const frame = document.getElementById("kp-pro-frame");
       if (!modelWrap || !frame || !ch) return;
       function mountAndPlayDemo() {
+        try {
+          /* 書き順プレイ用の「canvas だけ」モードが残っているとボタンが消える */
+          applyKpStrokeOrderPlayCompactMode_(frame, false);
+        } catch (_eOff) {}
         if (frame.parentElement !== modelWrap) {
           modelWrap.innerHTML = "";
           modelWrap.appendChild(frame);
@@ -9918,11 +9949,13 @@
         applyKpQuizWrongPanelCompactMode(frame, true);
         frame.style.width = "100%";
         frame.style.maxWidth = "100%";
+        frame.style.pointerEvents = "auto";
         /* 初期高さを確保（後でラップ高さに合わせてリサイズ） */
         var wrapH0 = modelWrap.clientHeight || 0;
         var initH = wrapH0 >= 360 ? wrapH0 : Math.min(560, Math.max(480, Math.floor(window.innerHeight * 0.62)));
         frame.style.minHeight = initH + "px";
         frame.style.height = initH + "px";
+        try { patchKanjiFrameForQuizPostMessage(frame); } catch (_ePatch) {}
         /* 高さ確定→ピン留め→表示（途中のスライドを見せない） */
         setTimeout(function () {
           try {
@@ -9964,6 +9997,56 @@
         setTimeout(trySelectOnce, 360);
       }
       ensureKanjiHwFrameReadyOnce().then(trySelectWithRetry);
+    }
+    /** 誤答パネル：お手本（完成形）を表示 */
+    function kanjiQuizWrongShowOtehon() {
+      const frame = document.getElementById("kp-pro-frame");
+      const wrap = document.getElementById("kanji-quiz-wrong-model-wrap");
+      if (!frame || !frame.contentWindow) return;
+      try {
+        applyKpStrokeOrderPlayCompactMode_(frame, false);
+        if (wrap && frame.parentElement !== wrap) {
+          const ch = (kanjiQuizSession && kanjiQuizSession.wrongModelKanjiChar) || "";
+          if (ch) kanjiQuizMountWrongModelFrameForChar(ch);
+        }
+        applyKpQuizWrongPanelCompactMode(frame, true);
+        frame.contentWindow.postMessage({ type: "quizSwitchMode", mode: "demo" }, "*");
+        if (typeof frame.contentWindow.switchMode === "function") {
+          frame.contentWindow.switchMode("demo");
+        }
+        setTimeout(function () {
+          try { kpPinWrongPanelViewToModeButtons_(frame); } catch (_e) {}
+        }, 80);
+      } catch (_e2) {}
+    }
+    /** 誤答パネル：書き順デモを再生 */
+    function kanjiQuizWrongPlayStrokeDemo() {
+      const frame = document.getElementById("kp-pro-frame");
+      const wrap = document.getElementById("kanji-quiz-wrong-model-wrap");
+      if (!frame || !frame.contentWindow) return;
+      try {
+        applyKpStrokeOrderPlayCompactMode_(frame, false);
+        if (wrap && frame.parentElement !== wrap) {
+          const ch = (kanjiQuizSession && kanjiQuizSession.wrongModelKanjiChar) || "";
+          if (ch) {
+            kanjiQuizMountWrongModelFrameForChar(ch);
+            return;
+          }
+        }
+        applyKpQuizWrongPanelCompactMode(frame, true);
+        frame.contentWindow.postMessage({ type: "quizPlayStrokeOrderDemo" }, "*");
+        if (typeof frame.contentWindow.switchMode === "function") {
+          frame.contentWindow.switchMode("demo");
+        }
+        setTimeout(function () {
+          try {
+            if (typeof frame.contentWindow.playAnimation === "function") {
+              frame.contentWindow.playAnimation();
+            }
+            kpPinWrongPanelViewToModeButtons_(frame);
+          } catch (_e) {}
+        }, 120);
+      } catch (_e2) {}
     }
     function kanjiQuizShowHandwritingWrongFeedback(sc) {
       const panel = document.getElementById("kanji-quiz-hw-wrong-panel");
@@ -10023,6 +10106,7 @@
           hw.style.display = "flex";
         }
       } catch (eShowHw) {}
+      kanjiQuizResetHwViewportScroll_();
     }
     function normalizeKanjiQuizInput(str) {
       try {
@@ -10515,6 +10599,42 @@
       const ch = String(q.kanji || "");
       if (ch) kanjiQuizMountWrongModelFrameForChar(ch);
     }
+    /**
+     * 書いて答える／書き順：フッター以外のビュー（.kanji-quiz-drill-main）を
+     * 初期位置＝右上（scrollTop=0 / 右端が見える横位置）へ戻す。
+     */
+    function kanjiQuizResetHwViewportScroll_() {
+      const sec = document.getElementById("section-kanji-quiz-play");
+      if (!sec) return;
+      if (
+        !sec.classList.contains("kanji-quiz-hw-active") &&
+        !sec.classList.contains("kanji-quiz-stroke-order-active")
+      ) {
+        return;
+      }
+      const main = sec.querySelector(".kanji-quiz-drill-main");
+      const wrap = sec.querySelector(".kanji-quiz-drill-wrap");
+      const apply = function () {
+        try {
+          if (wrap) {
+            wrap.scrollLeft = 0;
+            wrap.scrollTop = 0;
+          }
+          if (!main) return;
+          main.scrollTop = 0;
+          /* 横：右端を初期表示（縦書きドリルの「右上」） */
+          const maxL = Math.max(0, main.scrollWidth - main.clientWidth);
+          main.scrollLeft = maxL;
+        } catch (_e) {}
+      };
+      apply();
+      requestAnimationFrame(function () {
+        apply();
+        requestAnimationFrame(apply);
+      });
+      setTimeout(apply, 80);
+      setTimeout(apply, 220);
+    }
     function setKanjiQuizPlayHwFooterActive(on) {
       const sec = document.getElementById("section-kanji-quiz-play");
       if (sec) sec.classList.toggle("kanji-quiz-hw-active", !!on);
@@ -10533,14 +10653,7 @@
           typingWrap.style.display = "none";
           typingWrap.setAttribute("aria-hidden", "true");
         }
-        /* vertical-rl の wrap が横スクロール位置を持つ場合があるので先頭へ戻す */
-        try {
-          const wrap = sec && sec.querySelector(".kanji-quiz-drill-wrap");
-          if (wrap) {
-            wrap.scrollLeft = 0;
-            wrap.scrollTop = 0;
-          }
-        } catch (eScroll) {}
+        kanjiQuizResetHwViewportScroll_();
       } else {
         /* 非手書き時は display:"" だと既定表示に戻って見えてしまうため none を明示 */
         if (refreshLayoutBtn) refreshLayoutBtn.style.display = "none";
@@ -10855,6 +10968,7 @@
         kanjiQuizClearWritePad(false);
         kanjiQuizSetupWriteCanvas();
         kanjiQuizScheduleWriteCanvasReflow();
+        kanjiQuizResetHwViewportScroll_();
         if (summary) {
           summary.innerHTML =
             "<span style=\"color:#607d8b;font-size:clamp(12px,3vw,14px);\">さいてんようの データを じゅんびしています…</span>";
