@@ -3926,7 +3926,7 @@ function buildRubyToKanjiQuizQuestion_(item) {
     readingLabel: pick.r.label,
     readingDisplay: readingDisp,
     maskedSentence: masked.masked,
-    prompt: "読みと例文の空欄の漢字を、筆順どおりに手書きしましょう（各字とも60点以上）。",
+    prompt: "読みと例文の空欄の漢字を書いて、60点以上をめざそう。",
     correctAnswer: k,
     searchText: searchParts
   };
