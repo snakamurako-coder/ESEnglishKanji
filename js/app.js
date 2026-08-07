@@ -2201,6 +2201,8 @@
         if(d.status==="success") {
           appSettings = d.settings; 
           localStorage.setItem(cacheKey, JSON.stringify(d));
+          /* 管理ブックの手書き配点を毎回反映（旧既定10/20キャッシュが残らないようにする） */
+          try { persistKanjiHandScoreWeightsFromSettings(d.settings); } catch (_eW) {}
         }
         return d; 
       }).catch(function () {
@@ -2209,6 +2211,7 @@
           try {
             const d = JSON.parse(cached);
             appSettings = d.settings;
+            try { persistKanjiHandScoreWeightsFromSettings(d.settings); } catch (_eW2) {}
             return d;
           } catch(e) {}
         }
@@ -5680,6 +5683,8 @@
       openKanjiPracticePro();
       initKanjiPracticeScoreListener();
       initKanjiPracticeCatalog();
+      try { kpScheduleSearchIndexPrefetch_(); } catch (_ePref) {}
+      try { kpEnsureKanjiVgMap_(); } catch (_eVg) {}
     }
     /** 漢字練習画面用: iframe 採点メッセージの受け口は initKanjiParentKanjiQuizScoredBridge と共有 */
     function initKanjiPracticeScoreListener() {
@@ -5692,7 +5697,7 @@
         try { alert("高機能モードの読み込みに失敗しました。"); } catch (_e) {}
         return;
       }
-      const KP_EMBED_VER = "8";
+      const KP_EMBED_VER = "9";
       const KP_SRC = "assets/kp-practice.html";
       if (frame.dataset.kpEmbedVer !== KP_EMBED_VER) {
         frame.dataset.kpLoaded = "";
@@ -5766,6 +5771,33 @@
     function kpFrameInStrokeOrderPlaySlot_(frame) {
       return frame && frame.parentElement && frame.parentElement.id === "kanji-stroke-order-play-slot";
     }
+    function kpFrameInPracticeSlot_(frame) {
+      return !!(frame && frame.parentElement && frame.parentElement.id === "kp-iframe-slot-practice");
+    }
+    function kpMeasurePracticeContentHeight_(frame) {
+      try {
+        const doc = frame.contentWindow && frame.contentWindow.document;
+        if (!doc || !doc.body) return 0;
+        let maxBottom = 0;
+        Array.prototype.forEach.call(doc.body.children, function (el) {
+          if (!el || !el.getBoundingClientRect) return;
+          const id = el.id || "";
+          if (id === "loading-overlay" || id === "settings-modal" || id === "wizard-modal") return;
+          let hidden = false;
+          try {
+            const st = frame.contentWindow.getComputedStyle(el);
+            if (st && (st.display === "none" || st.visibility === "hidden")) hidden = true;
+          } catch (_eSt) {}
+          if (hidden) return;
+          const top = Number(el.offsetTop) || 0;
+          const h = Number(el.offsetHeight) || 0;
+          maxBottom = Math.max(maxBottom, top + h);
+        });
+        return maxBottom > 80 ? maxBottom + 28 : 0;
+      } catch (_e) {
+        return 0;
+      }
+    }
     function kpComputeFrameHeight_(frame, bodyH, htmlH) {
       if (kpFrameInStrokeOrderPlaySlot_(frame)) {
         const slot = frame.parentElement;
@@ -5780,6 +5812,12 @@
         if (wrapH >= 360) return wrapH;
         const cap = Math.min(window.innerHeight * 0.78, 640);
         return Math.min(Math.max(bodyH, htmlH, 480), cap);
+      }
+      if (kpFrameInPracticeSlot_(frame)) {
+        const measured = kpMeasurePracticeContentHeight_(frame);
+        const raw = Math.max(measured, bodyH || 0, htmlH || 0, 520);
+        const viewportCap = Math.max(520, Math.floor(window.innerHeight * 0.88));
+        return Math.min(raw, viewportCap);
       }
       return Math.max(bodyH, htmlH, 620) + 8;
     }
@@ -6037,6 +6075,10 @@
         const htmlH = doc.documentElement ? doc.documentElement.scrollHeight : 0;
         const h = kpComputeFrameHeight_(frame, bodyH, htmlH);
         frame.style.height = `${h}px`;
+        if (kpFrameInPracticeSlot_(frame)) {
+          frame.style.maxHeight = Math.max(520, Math.floor(window.innerHeight * 0.88)) + "px";
+          frame.style.overflow = "auto";
+        }
         if (!frame.dataset.kpObserved) {
           const ro = new ResizeObserver(() => {
             if (kpFrameInStrokeOrderPlaySlot_(frame)) {
@@ -6049,6 +6091,10 @@
             const dH = doc.documentElement ? doc.documentElement.scrollHeight : 0;
             const nextH = kpComputeFrameHeight_(frame, bH, dH);
             frame.style.height = `${nextH}px`;
+            if (kpFrameInPracticeSlot_(frame)) {
+              frame.style.maxHeight = Math.max(520, Math.floor(window.innerHeight * 0.88)) + "px";
+              frame.style.overflow = "auto";
+            }
             /* 覗き窓は RO 連打で動かさない（初期ピンのみ） */
           });
           if (doc.body) ro.observe(doc.body);
@@ -6088,6 +6134,7 @@
         kpCatalogState.materials = pickKanjiMaterials(all);
         kpCatalogState.loaded = true;
         kpRenderBookSelect();
+        try { kpScheduleSearchIndexPrefetch_(); } catch (_e) {}
       };
       const fetchMaterialsFresh = () => {
         fetchMaterialsListFromServer()
@@ -6248,22 +6295,15 @@
       });
     }
     function kpApplyFilterAndRender() {
-      const kpSearchEl = document.getElementById('kp-search-input');
-      const q = ((kpSearchEl && kpSearchEl.value) || "").trim().toLowerCase();
-      const list = (kpCatalogState.setQuestions || []).filter(item => {
-        const k = String(item.kanji || "");
-        const fromNew = String(item.searchText || "").toLowerCase();
-        const readings = (Array.isArray(item.readings) ? item.readings : [])
-          .map(r => `${r.reading || ""} ${(Array.isArray(r.examples) ? r.examples.join(" ") : "")}`)
-          .join(" ")
-          .toLowerCase();
-        const hay = fromNew || `${k} ${readings}`;
-        if (!q) return true;
-        return k.toLowerCase().includes(q) || hay.includes(q);
-      }).map(item => String(item.kanji || "")).filter(Boolean);
+      /* セット内タイルは教材セット選択のみ（検索は独立パネル） */
+      const list = (kpCatalogState.setQuestions || [])
+        .map(function (item) { return String(item.kanji || ""); })
+        .filter(Boolean);
       kpCatalogState.filteredChars = list;
       kpRenderTiles(list);
-      setKpStatus(`${list.length} 件表示中 / セット内 ${(kpCatalogState.setQuestions || []).length} 問`);
+      setKpStatus(list.length
+        ? (list.length + " 件表示中 / セット内 " + (kpCatalogState.setQuestions || []).length + " 問")
+        : "このセットに漢字がありません");
     }
     function kpRenderTiles(chars) {
       const grid = document.getElementById('kp-tile-grid');
@@ -6293,26 +6333,532 @@
         grid.appendChild(b);
       });
     }
+    let __kpSearchTimer = null;
+    let __kpSearchPrefetchStarted = false;
+    let __kpSearchPrefetchBusy = false;
+    let __kpKanjiVgMap = null;
+    let __kpKanjiVgInflight = null;
+
+    function kpSetSearchStatus_(text) {
+      const el = document.getElementById("kp-search-status");
+      if (el) el.textContent = text || "";
+    }
+    /** 検索文字列から漢字（CJK 統合漢字）を抽出 */
+    function kpExtractIdeographs_(s) {
+      const out = [];
+      const seen = Object.create(null);
+      const str = String(s || "").normalize("NFC");
+      for (let i = 0; i < str.length; ) {
+        const cp = str.codePointAt(i);
+        i += cp > 0xffff ? 2 : 1;
+        if (
+          (cp >= 0x4e00 && cp <= 0x9fff) ||
+          (cp >= 0x3400 && cp <= 0x4dbf) ||
+          (cp >= 0xf900 && cp <= 0xfaff)
+        ) {
+          const ch = String.fromCodePoint(cp);
+          if (!seen[ch]) {
+            seen[ch] = true;
+            out.push(ch);
+          }
+        }
+      }
+      return out;
+    }
+    /** KanjiVG マップ（親側）。iframe の KANJI_DATA があればそれを優先 */
+    function kpEnsureKanjiVgMap_() {
+      if (__kpKanjiVgMap && typeof __kpKanjiVgMap === "object") {
+        return Promise.resolve(__kpKanjiVgMap);
+      }
+      if (__kpKanjiVgInflight) return __kpKanjiVgInflight;
+      try {
+        const frame = document.getElementById("kp-pro-frame");
+        const kd = frame && frame.contentWindow && frame.contentWindow.KANJI_DATA;
+        if (kd && typeof kd === "object" && Object.keys(kd).length > 50) {
+          __kpKanjiVgMap = kd;
+          return Promise.resolve(__kpKanjiVgMap);
+        }
+      } catch (_eFrame) {}
+      const finish = function (map) {
+        __kpKanjiVgMap = map && typeof map === "object" ? map : {};
+        __kpKanjiVgInflight = null;
+        return __kpKanjiVgMap;
+      };
+      if (window.KanjiVg && typeof window.KanjiVg.fetchMap === "function") {
+        __kpKanjiVgInflight = window.KanjiVg.fetchMap()
+          .then(function (m) { return finish(m); })
+          .catch(function () { return finish({}); });
+        return __kpKanjiVgInflight;
+      }
+      __kpKanjiVgInflight = fetch("KanjiVG.txt")
+        .then(function (r) {
+          if (!r.ok) throw new Error("HTTP " + r.status);
+          return r.text();
+        })
+        .then(function (text) {
+          if (window.KanjiVg && typeof window.KanjiVg.parseTsv === "function") {
+            return finish(window.KanjiVg.parseTsv(text));
+          }
+          return finish({});
+        })
+        .catch(function () { return finish({}); });
+      return __kpKanjiVgInflight;
+    }
+    function kpItemSearchHay_(item) {
+      const k = String(item.kanji || "");
+      const fromNew = String(item.searchText || "").toLowerCase();
+      const readings = (Array.isArray(item.readings) ? item.readings : [])
+        .map(function (r) {
+          return (r.reading || "") + " " + (Array.isArray(r.examples) ? r.examples.join(" ") : "");
+        })
+        .join(" ")
+        .toLowerCase();
+      return (fromNew || (k + " " + readings)).toLowerCase();
+    }
+    /** キャッシュ済み問題から検索索引を組み立てる（学年×セット付き） */
+    function kpBuildGlobalSearchIndex_() {
+      const map = Object.create(null);
+      (kpCatalogState.materials || []).forEach(function (mat) {
+        const modeId = String(mat.modeId || "");
+        const modeName = String(mat.modeName || modeId);
+        (mat.units || []).forEach(function (unitName) {
+          const unit = String(unitName || "");
+          const setsCached = kpGetCachedJson(kpCacheKeySets(modeId, unit));
+          const sets = setsCached && Array.isArray(setsCached.sets) ? setsCached.sets : [];
+          sets.forEach(function (s) {
+            const setId = String(s.setId || "");
+            if (!setId) return;
+            const qCached = kpGetCachedJson(kpCacheKeyQuestions(modeId, unit, setId));
+            if (!qCached || !Array.isArray(qCached.questions)) return;
+            qCached.questions.forEach(function (item) {
+              const kanji = String(item.kanji || "");
+              if (!kanji) return;
+              const key = modeId + "\t" + unit + "\t" + kanji;
+              if (!map[key]) {
+                map[key] = {
+                  kanji: kanji,
+                  hay: kpItemSearchHay_(item),
+                  modeId: modeId,
+                  modeName: modeName,
+                  unitName: unit,
+                  setIds: []
+                };
+              } else {
+                map[key].hay = (map[key].hay + " " + kpItemSearchHay_(item)).trim();
+              }
+              if (map[key].setIds.indexOf(setId) < 0) map[key].setIds.push(setId);
+            });
+          });
+        });
+      });
+      return Object.keys(map).map(function (k) { return map[k]; });
+    }
+    function kpCountCachedQuestionSets_() {
+      let n = 0;
+      (kpCatalogState.materials || []).forEach(function (mat) {
+        const modeId = String(mat.modeId || "");
+        (mat.units || []).forEach(function (unitName) {
+          const setsCached = kpGetCachedJson(kpCacheKeySets(modeId, unitName));
+          const sets = setsCached && Array.isArray(setsCached.sets) ? setsCached.sets : [];
+          sets.forEach(function (s) {
+            const sid = String(s.setId || "");
+            if (sid && kpGetCachedJson(kpCacheKeyQuestions(modeId, unitName, sid))) n++;
+          });
+        });
+      });
+      return n;
+    }
+    function kpScheduleSearchIndexPrefetch_() {
+      if (__kpSearchPrefetchStarted) return;
+      __kpSearchPrefetchStarted = true;
+      const start = function () {
+        try { kpPrefetchAllForSearch_(); } catch (_e) {}
+      };
+      try {
+        if (typeof requestIdleCallback === "function") requestIdleCallback(start, { timeout: 4000 });
+        else setTimeout(start, 600);
+      } catch (_e2) {
+        setTimeout(start, 600);
+      }
+    }
+    function kpPrefetchAllForSearch_() {
+      if (__kpSearchPrefetchBusy) return;
+      const mats = kpCatalogState.materials || [];
+      if (!mats.length) {
+        __kpSearchPrefetchStarted = false;
+        return;
+      }
+      __kpSearchPrefetchBusy = true;
+      const jobs = [];
+      mats.forEach(function (mat) {
+        const modeId = String(mat.modeId || "");
+        (mat.units || []).forEach(function (unitName) {
+          jobs.push({ modeId: modeId, unitName: String(unitName || "") });
+        });
+      });
+      let i = 0;
+      const CONCURRENCY = 2;
+      const runNext = function () {
+        if (i >= jobs.length) {
+          __kpSearchPrefetchBusy = false;
+          const q = ((document.getElementById("kp-search-input") || {}).value || "").trim();
+          if (q) runKpGlobalSearch_(q);
+          return;
+        }
+        const batch = [];
+        while (batch.length < CONCURRENCY && i < jobs.length) batch.push(jobs[i++]);
+        Promise.all(batch.map(function (job) {
+          return kpEnsureSheetCachedForSearch_(job.modeId, job.unitName);
+        })).then(runNext).catch(runNext);
+      };
+      kpSetSearchStatus_("検索用データを準備中…（初回のみ時間がかかることがあります）");
+      runNext();
+    }
+    function kpEnsureSheetCachedForSearch_(modeId, unitName) {
+      const setsKey = kpCacheKeySets(modeId, unitName);
+      const ensureSets = function () {
+        const cached = kpGetCachedJson(setsKey);
+        if (cached && cached.status === "success" && Array.isArray(cached.sets)) {
+          return Promise.resolve(cached.sets);
+        }
+        return gasApiFetchJson(
+          { action: "get_kanji_quiz_sets", modeId: modeId, unitName: unitName },
+          { retries: 2, timeoutMs: 60000, xhrFallback: true }
+        ).then(function (d) {
+          const sets = d && d.status === "success" && Array.isArray(d.sets) ? d.sets : [];
+          kpSetCachedJson(setsKey, { status: "success", sets: sets, sheetKind: (d && d.sheetKind) || "" });
+          return sets;
+        }).catch(function () { return []; });
+      };
+      return ensureSets().then(function (sets) {
+        const targets = (sets || []).slice(0, 10);
+        let p = Promise.resolve();
+        targets.forEach(function (s) {
+          p = p.then(function () {
+            const sid = String(s.setId || "");
+            if (!sid) return null;
+            const qKey = kpCacheKeyQuestions(modeId, unitName, sid);
+            if (kpGetCachedJson(qKey)) return null;
+            return gasApiFetchJson(
+              { action: "get_kanji_quiz_questions", modeId: modeId, unitName: unitName, setId: sid },
+              { retries: 1, timeoutMs: 60000, xhrFallback: true }
+            ).then(function (q) {
+              if (q && q.status === "success" && Array.isArray(q.questions)) {
+                kpSetCachedJson(qKey, { status: "success", questions: q.questions });
+              }
+            }).catch(function () {});
+          });
+        });
+        return p;
+      });
+    }
+    function onKpGlobalSearchInput() {
+      const el = document.getElementById("kp-search-input");
+      const q = ((el && el.value) || "").trim();
+      if (__kpSearchTimer) clearTimeout(__kpSearchTimer);
+      if (!q) {
+        clearKpGlobalSearchResults_();
+        return;
+      }
+      kpSetSearchStatus_("検索中…");
+      __kpSearchTimer = setTimeout(function () {
+        if (!__kpSearchPrefetchStarted) kpScheduleSearchIndexPrefetch_();
+        runKpGlobalSearch_(q);
+      }, 280);
+    }
+    function clearKpGlobalSearch() {
+      const el = document.getElementById("kp-search-input");
+      if (el) el.value = "";
+      clearKpGlobalSearchResults_();
+    }
+    function clearKpGlobalSearchResults_() {
+      const box = document.getElementById("kp-search-results");
+      if (box) box.innerHTML = "";
+      kpSetSearchStatus_("");
+    }
+    function runKpGlobalSearch_(rawQ) {
+      const raw = String(rawQ || "").trim();
+      const q = raw.toLowerCase();
+      const box = document.getElementById("kp-search-results");
+      if (!box) return;
+      if (!q) {
+        clearKpGlobalSearchResults_();
+        return;
+      }
+      const index = kpBuildGlobalSearchIndex_();
+      const cachedSets = kpCountCachedQuestionSets_();
+      const hits = index.filter(function (row) {
+        return String(row.kanji || "").toLowerCase().indexOf(q) >= 0 ||
+          String(row.hay || "").indexOf(q) >= 0;
+      });
+      const allBookKanji = Object.create(null);
+      index.forEach(function (row) {
+        const k = String(row.kanji || "");
+        if (k) allBookKanji[k] = true;
+      });
+      const renderAll = function (vgHits) {
+        const vgList = Array.isArray(vgHits) ? vgHits : [];
+        if (!hits.length && !vgList.length) {
+          box.innerHTML = '<div style="color:#999;text-align:center;padding:16px;">該当なし' +
+            (cachedSets < 3 ? "（データ準備中の可能性があります。少し待って再検索してください）" : "") +
+            "</div>";
+          kpSetSearchStatus_(__kpSearchPrefetchBusy
+            ? "索引準備中… いま見つかった件数: 0"
+            : "0 件");
+          return;
+        }
+        /* 学年（シート）ごとにまとめる */
+        const bySheet = Object.create(null);
+        hits.forEach(function (row) {
+          const sk = row.modeId + "\t" + row.unitName;
+          if (!bySheet[sk]) {
+            bySheet[sk] = {
+              modeId: row.modeId,
+              modeName: row.modeName,
+              unitName: row.unitName,
+              rows: []
+            };
+          }
+          bySheet[sk].rows.push(row);
+        });
+        const sheetKeys = Object.keys(bySheet).sort(function (a, b) {
+          return String(bySheet[a].unitName).localeCompare(String(bySheet[b].unitName), "ja");
+        });
+        box.innerHTML = "";
+        sheetKeys.forEach(function (sk) {
+          const group = bySheet[sk];
+          const sec = document.createElement("section");
+          sec.className = "kp-search-sheet-group";
+          const title = document.createElement("h3");
+          title.className = "kp-search-sheet-title";
+          title.textContent = "📄 " + formatUnitSheetDisplayLabel(group.unitName) +
+            (group.modeName ? "（" + group.modeName + "）" : "");
+          sec.appendChild(title);
+          const grid = document.createElement("div");
+          grid.className = "kp-search-hit-grid";
+          group.rows
+            .sort(function (a, b) { return String(a.kanji).localeCompare(String(b.kanji), "ja"); })
+            .forEach(function (row) {
+              const setLabel = (row.setIds || []).slice().sort(function (a, b) {
+                return Number(a) - Number(b);
+              }).map(function (id) { return "セット" + id; }).join("・");
+              const btn = document.createElement("button");
+              btn.type = "button";
+              btn.className = "kp-search-hit";
+              btn.innerHTML = '<span class="kp-search-hit-kanji">' + escapeHtml(row.kanji) + "</span>" +
+                '<span class="kp-search-hit-meta">' + escapeHtml(setLabel || "セット不明") + "</span>";
+              btn.title = row.kanji + " を練習（" + formatUnitSheetDisplayLabel(row.unitName) + " / " + setLabel + "）";
+              btn.onclick = function () {
+                kpSelectPracticeFromSearchHit_(row);
+              };
+              grid.appendChild(btn);
+            });
+          sec.appendChild(grid);
+          box.appendChild(sec);
+        });
+        if (vgList.length) {
+          const secVg = document.createElement("section");
+          secVg.className = "kp-search-sheet-group is-kanjivg";
+          const titleVg = document.createElement("h3");
+          titleVg.className = "kp-search-sheet-title";
+          titleVg.textContent = "✏️ KanjiVG（教材にない漢字）";
+          secVg.appendChild(titleVg);
+          const gridVg = document.createElement("div");
+          gridVg.className = "kp-search-hit-grid";
+          vgList
+            .sort(function (a, b) { return String(a.kanji).localeCompare(String(b.kanji), "ja"); })
+            .forEach(function (row) {
+              const btn = document.createElement("button");
+              btn.type = "button";
+              btn.className = "kp-search-hit is-kanjivg";
+              btn.innerHTML = '<span class="kp-search-hit-kanji">' + escapeHtml(row.kanji) + "</span>" +
+                '<span class="kp-search-hit-meta">書いて練習</span>';
+              btn.title = row.kanji + " を KanjiVG の筆順で練習";
+              btn.onclick = function () {
+                kpSelectPracticeFromSearchHit_(row);
+              };
+              gridVg.appendChild(btn);
+            });
+          secVg.appendChild(gridVg);
+          box.appendChild(secVg);
+        }
+        const total = hits.length + vgList.length;
+        const sheetPart = sheetKeys.length
+          ? sheetKeys.length + " 学年"
+          : (vgList.length ? "KanjiVG" : "0 学年");
+        kpSetSearchStatus_(total + " 件 / " + sheetPart +
+          (vgList.length && hits.length ? " + KanjiVG " + vgList.length + " 字" : "") +
+          (__kpSearchPrefetchBusy ? "（索引準備中）" : ""));
+      };
+      kpEnsureKanjiVgMap_().then(function (vgMap) {
+        const vgHits = [];
+        const seen = Object.create(null);
+        kpExtractIdeographs_(raw).forEach(function (ch) {
+          if (seen[ch] || !vgMap || !vgMap[ch]) return;
+          if (allBookKanji[ch]) return;
+          seen[ch] = true;
+          vgHits.push({ kanji: ch, source: "kanjivg" });
+        });
+        renderAll(vgHits);
+      }).catch(function () {
+        renderAll([]);
+      });
+    }
+    function kpSelectPracticeFromSearchHit_(row) {
+      if (!row || !row.kanji) return;
+      if (row.source === "kanjivg") {
+        kpSelectPracticeChar(row.kanji);
+        setKpStatus("「" + row.kanji + "」を練習（KanjiVG・教材外）");
+        try {
+          const frame = document.getElementById("kp-pro-frame");
+          if (frame) frame.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        } catch (_e) {}
+        return;
+      }
+      const bsel = document.getElementById("kp-book-select");
+      const ssel = document.getElementById("kp-sheet-select");
+      const setSel = document.getElementById("kp-set-select");
+      const preferSet = (row.setIds && row.setIds.length) ? String(row.setIds[0]) : "";
+      const finish = function () {
+        kpSelectPracticeChar(row.kanji);
+        setKpStatus("「" + row.kanji + "」を練習（" +
+          formatUnitSheetDisplayLabel(row.unitName) +
+          (preferSet ? " / セット" + preferSet : "") + "）");
+        try {
+          const frame = document.getElementById("kp-pro-frame");
+          if (frame) frame.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        } catch (_e) {}
+      };
+      if (bsel && row.modeId) bsel.value = row.modeId;
+      const mat = (kpCatalogState.materials || []).find(function (m) {
+        return String(m.modeId) === String(row.modeId);
+      });
+      if (ssel && mat) {
+        const units = Array.isArray(mat.units) ? mat.units : [];
+        ssel.innerHTML = units.map(function (u) {
+          return '<option value="' + escapeHtml(u) + '">' + escapeHtml(formatUnitSheetDisplayLabel(u)) + "</option>";
+        }).join("");
+        ssel.value = row.unitName;
+      }
+      const modeId = row.modeId;
+      const unitName = row.unitName;
+      const applySetAndQuestions = function (sets) {
+        if (setSel) {
+          setSel.innerHTML = (sets || []).map(function (s) {
+            return '<option value="' + escapeHtml(String(s.setId || "")) + '">セット ' +
+              escapeHtml(String(s.setId || "")) + "（" + escapeHtml(String(s.count || 0)) + "字）</option>";
+          }).join("");
+          if (preferSet) setSel.value = preferSet;
+        }
+        const sid = preferSet || (setSel && setSel.value) || "";
+        if (!sid) {
+          finish();
+          return;
+        }
+        const qKey = kpCacheKeyQuestions(modeId, unitName, sid);
+        const cachedQ = kpGetCachedJson(qKey);
+        if (cachedQ && Array.isArray(cachedQ.questions)) {
+          kpCatalogState.sets = sets || [];
+          kpCatalogState.setQuestions = cachedQ.questions;
+          kpApplyFilterAndRender();
+          finish();
+          return;
+        }
+        gasApiFetchJson(
+          { action: "get_kanji_quiz_questions", modeId: modeId, unitName: unitName, setId: sid },
+          { retries: 2, timeoutMs: 60000, xhrFallback: true }
+        ).then(function (d) {
+          kpCatalogState.sets = sets || [];
+          kpCatalogState.setQuestions = d && Array.isArray(d.questions) ? d.questions : [];
+          if (d && d.status === "success") {
+            kpSetCachedJson(qKey, { status: "success", questions: kpCatalogState.setQuestions });
+          }
+          kpApplyFilterAndRender();
+          finish();
+        }).catch(function () {
+          finish();
+        });
+      };
+      const setsKey = kpCacheKeySets(modeId, unitName);
+      const cachedSets = kpGetCachedJson(setsKey);
+      if (cachedSets && Array.isArray(cachedSets.sets)) {
+        applySetAndQuestions(cachedSets.sets);
+        return;
+      }
+      gasApiFetchJson(
+        { action: "get_kanji_quiz_sets", modeId: modeId, unitName: unitName },
+        { retries: 2, timeoutMs: 60000, xhrFallback: true }
+      ).then(function (d) {
+        const sets = d && Array.isArray(d.sets) ? d.sets : [];
+        kpSetCachedJson(setsKey, { status: "success", sets: sets, sheetKind: (d && d.sheetKind) || "" });
+        applySetAndQuestions(sets);
+      }).catch(function () {
+        finish();
+      });
+    }
     function kpSelectPracticeChar(ch) {
       const frame = document.getElementById('kp-pro-frame');
       if (!frame || !frame.contentWindow) return;
-      try {
-        const doc = frame.contentWindow.document;
-        const sel = doc.getElementById('target-kanji');
-        if (!sel) return;
-        const has = Array.from(sel.options || []).some(o => String(o.value) === String(ch));
-        if (!has) {
-          setKpStatus(`「${ch}」は筆順データ（KanjiVG）未登録です。`);
+      const target = String(ch || "");
+      if (!target) return;
+      const applySelect = function () {
+        try {
+          const win = frame.contentWindow;
+          const doc = win.document;
+          const sel = doc.getElementById('target-kanji');
+          if (!sel) return false;
+          try { win.__kpPendingKanjiSelect = target; } catch (_ePend) {}
+          let has = Array.from(sel.options || []).some(function (o) {
+            return String(o.value) === target;
+          });
+          if (!has) {
+            let paths = null;
+            try {
+              if (win.KANJI_DATA && win.KANJI_DATA[target]) paths = win.KANJI_DATA[target];
+            } catch (_eKd) {}
+            if (!paths && __kpKanjiVgMap && __kpKanjiVgMap[target]) {
+              paths = __kpKanjiVgMap[target];
+              try {
+                if (!win.KANJI_DATA || typeof win.KANJI_DATA !== "object") win.KANJI_DATA = {};
+                win.KANJI_DATA[target] = paths;
+              } catch (_eSet) {}
+            }
+            if (paths) {
+              const opt = doc.createElement("option");
+              opt.value = target;
+              opt.textContent = target;
+              sel.appendChild(opt);
+              has = true;
+            }
+          }
+          if (!has) return false;
+          sel.value = target;
+          if (typeof win.initTargetKanji === "function") win.initTargetKanji();
+          if (typeof win.switchMode === "function") win.switchMode("score");
+          kpResizeFrameToContent();
+          setKpStatus("練習対象を「" + target + "」に切替えました。");
+          return true;
+        } catch (_e) {
+          return false;
+        }
+      };
+      if (applySelect()) return;
+      kpEnsureKanjiVgMap_().then(function (vgMap) {
+        if (!vgMap || !vgMap[target]) {
+          setKpStatus("「" + target + "」は筆順データ（KanjiVG）未登録です。");
           return;
         }
-        sel.value = ch;
-        if (typeof frame.contentWindow.initTargetKanji === "function") frame.contentWindow.initTargetKanji();
-        if (typeof frame.contentWindow.switchMode === "function") frame.contentWindow.switchMode("score");
-        kpResizeFrameToContent();
-        setKpStatus(`練習対象を「${ch}」に切替えました。`);
-      } catch (_) {
-        setKpStatus("練習対象の切替に失敗しました。");
-      }
+        if (applySelect()) return;
+        try {
+          frame.contentWindow.__kpPendingKanjiSelect = target;
+        } catch (_e2) {}
+        setKpStatus("「" + target + "」の筆順データを読み込み中… 少し待ってから再タップしてください。");
+        if (typeof frame.contentWindow.loadKanjiData === "function") {
+          Promise.resolve(frame.contentWindow.loadKanjiData()).then(function () {
+            applySelect();
+          }).catch(function () {});
+        }
+      });
     }
     function kpShowModelDemo() {
       const frame = document.getElementById('kp-pro-frame');
@@ -6348,6 +6894,11 @@
     function loadMaterialsByFilter(btn, category) {
       const origText = toggleBtnLoading(btn, true);
       document.getElementById('materials-container').innerHTML = "<p>よみこみ中...</p>";
+      const formatFirstEl = document.getElementById("kanji-quiz-format-first");
+      if (formatFirstEl) {
+        formatFirstEl.style.display = "none";
+        formatFirstEl.hidden = true;
+      }
       ensureMaterialsListLoaded()
         .then(() => {
           toggleBtnLoading(btn, false, origText);
@@ -6365,41 +6916,42 @@
           });
           if (list.length === 0) {
             c.innerHTML = "<p>表示できる教材がありません。</p>";
+            __kanjiQuizMaterialsIndex_ = { standard: [], jukugo: [] };
             return;
-          }
-          function appendKanjiBookButtons_(books) {
-            books.forEach(function (m) {
-              const sub = document.createElement("h3");
-              sub.style.margin = "8px 0 4px";
-              sub.style.fontSize = "1.05em";
-              sub.innerText = "📁 " + m.modeName;
-              c.appendChild(sub);
-              m.units.forEach(function (u) {
-                const b = document.createElement("button");
-                b.className = "menu-btn btn-gray";
-                b.innerText = "📄 " + formatUnitSheetDisplayLabel(u);
-                b.onclick = function () { loadQuestionsForSettings(b, m.modeId, m.modeName, u, category); };
-                c.appendChild(b);
-              });
-            });
           }
           if (category === "kanji") {
             const standardBooks = list.filter(function (m) { return !/熟語/.test(String(m.modeName || "")); });
             const jukugoBooks = list.filter(function (m) { return /熟語/.test(String(m.modeName || "")); });
+            __kanjiQuizMaterialsIndex_ = { standard: standardBooks, jukugo: jukugoBooks };
+            function appendSheetButtons_(books) {
+              books.forEach(function (m) {
+                (m.units || []).forEach(function (u) {
+                  const b = document.createElement("button");
+                  b.className = "menu-btn btn-gray";
+                  b.innerText = "📄 " + formatUnitSheetDisplayLabel(u);
+                  b.onclick = function () { loadQuestionsForSettings(b, m.modeId, m.modeName, u, category); };
+                  c.appendChild(b);
+                });
+              });
+            }
             if (standardBooks.length) {
               const hStd = document.createElement("h2");
-              hStd.innerText = "📚 通常漢字ブック";
+              hStd.className = "kanji-materials-book-heading";
+              hStd.innerText = "📚 単一漢字";
               c.appendChild(hStd);
-              appendKanjiBookButtons_(standardBooks);
+              appendSheetButtons_(standardBooks);
             }
             if (jukugoBooks.length) {
               const hJuk = document.createElement("h2");
+              hJuk.className = "kanji-materials-book-heading";
               hJuk.style.marginTop = standardBooks.length ? "18px" : "0";
-              hJuk.innerText = "📚 漢字熟語ブック";
+              hJuk.innerText = "📚 漢字熟語";
               c.appendChild(hJuk);
-              appendKanjiBookButtons_(jukugoBooks);
+              appendSheetButtons_(jukugoBooks);
             }
+            showKanjiQuizFormatFirstPanel_();
           } else {
+            __kanjiQuizMaterialsIndex_ = { standard: [], jukugo: [] };
             list.forEach(function (m) {
               const t = document.createElement("h2");
               t.innerText = "📁 " + m.modeName;
@@ -6417,6 +6969,241 @@
         .catch(() => {
           toggleBtnLoading(btn, false, origText);
           document.getElementById('materials-container').innerHTML = "<p>よみこみに失敗しました。</p>";
+        });
+    }
+    let __kanjiQuizMaterialsIndex_ = { standard: [], jukugo: [] };
+
+    function encodeKanjiFfSheetValue_(modeId, modeName, unitName) {
+      return JSON.stringify({
+        modeId: String(modeId || ""),
+        modeName: String(modeName || ""),
+        unitName: String(unitName || "")
+      });
+    }
+    function decodeKanjiFfSheetValue_(raw) {
+      try {
+        const o = JSON.parse(String(raw || ""));
+        if (o && o.modeId && o.unitName) return o;
+      } catch (e) {}
+      return null;
+    }
+    function showKanjiQuizFormatFirstPanel_() {
+      const el = document.getElementById("kanji-quiz-format-first");
+      if (!el) return;
+      el.hidden = false;
+      el.style.display = "flex";
+      const fmt = document.getElementById("kq-ff-format");
+      if (fmt) {
+        try {
+          const v = localStorage.getItem(LS_KANJI_QUIZ_FORMAT);
+          if (v && Array.from(fmt.options).some(function (o) { return o.value === v; })) fmt.value = v;
+        } catch (e) {}
+      }
+      syncKanjiQuizFormatFirstJukugoOptsFromStorage_();
+      onKanjiQuizFormatFirstFormatChange();
+    }
+    function syncKanjiQuizFormatFirstJukugoOptsFromStorage_() {
+      try {
+        const cc = localStorage.getItem(LS_KANJI_JUKUGO_CHOICE_COUNT);
+        const inc = localStorage.getItem(LS_KANJI_JUKUGO_INCLUDE_NONE);
+        const sel = document.getElementById("kq-ff-jukugo-choice-count");
+        if (sel && cc) sel.value = cc;
+        const chk = document.getElementById("kq-ff-jukugo-include-none");
+        if (chk) chk.checked = inc === "1";
+      } catch (e) {}
+    }
+    function onKanjiQuizFormatFirstJukugoOptsChange() {
+      const ccEl = document.getElementById("kq-ff-jukugo-choice-count");
+      const incEl = document.getElementById("kq-ff-jukugo-include-none");
+      try {
+        if (ccEl) localStorage.setItem(LS_KANJI_JUKUGO_CHOICE_COUNT, String(ccEl.value || "4"));
+        if (incEl) localStorage.setItem(LS_KANJI_JUKUGO_INCLUDE_NONE, incEl.checked ? "1" : "0");
+      } catch (e) {}
+      /* セット画面の同行オプションも同期 */
+      const mainCc = document.getElementById("jukugo-choice-count");
+      const mainInc = document.getElementById("jukugo-include-none");
+      if (mainCc && ccEl) mainCc.value = ccEl.value;
+      if (mainInc && incEl) mainInc.checked = !!incEl.checked;
+    }
+    function onKanjiQuizFormatFirstFormatChange() {
+      const fmt = document.getElementById("kq-ff-format");
+      const mode = fmt ? fmt.value : "write_kanji";
+      try { localStorage.setItem(LS_KANJI_QUIZ_FORMAT, mode); } catch (e) {}
+      const jukugoOpts = document.getElementById("kq-ff-jukugo-opts");
+      if (jukugoOpts) jukugoOpts.style.display = mode === "jukugo_yomi" ? "block" : "none";
+      const sheetSel = document.getElementById("kq-ff-sheet");
+      const setSel = document.getElementById("kq-ff-set");
+      if (!sheetSel) return;
+      const books = mode === "jukugo_yomi"
+        ? (__kanjiQuizMaterialsIndex_.jukugo || [])
+        : (__kanjiQuizMaterialsIndex_.standard || []);
+      sheetSel.innerHTML = "";
+      if (!books.length) {
+        sheetSel.innerHTML = '<option value="">この形式の学年がありません</option>';
+        if (setSel) setSel.innerHTML = '<option value="">—</option>';
+        return;
+      }
+      const ph = document.createElement("option");
+      ph.value = "";
+      ph.textContent = "学年をえらんでね";
+      sheetSel.appendChild(ph);
+      books.forEach(function (m) {
+        (m.units || []).forEach(function (u) {
+          const opt = document.createElement("option");
+          opt.value = encodeKanjiFfSheetValue_(m.modeId, m.modeName, u);
+          opt.textContent = formatUnitSheetDisplayLabel(u);
+          sheetSel.appendChild(opt);
+        });
+      });
+      if (setSel) setSel.innerHTML = '<option value="">先に学年をえらんでね</option>';
+    }
+    function fetchKanjiQuizSetsForFormatFirst_(modeId, unitName) {
+      const setsCacheKey = kanjiQuizDrillCacheKeySets(modeId, unitName);
+      if (__kanjiQuizSetsSessionCache[setsCacheKey] && __kanjiQuizSetsSessionCache[setsCacheKey].sheetKind) {
+        return Promise.resolve(__kanjiQuizSetsSessionCache[setsCacheKey]);
+      }
+      try {
+        const cachedSets = localStorage.getItem(setsCacheKey);
+        if (cachedSets) {
+          const d = JSON.parse(cachedSets);
+          if (d && d.status === "success" && d.sheetKind) {
+            __kanjiQuizSetsSessionCache[setsCacheKey] = d;
+            return Promise.resolve(d);
+          }
+        }
+      } catch (e) {}
+      return gasApiFetchJson({ action: "get_kanji_quiz_sets", modeId: modeId, unitName: unitName }, {
+        retries: 2,
+        timeoutMs: 60000,
+        xhrFallback: true,
+        retryDelaysMs: [800, 1800]
+      }).then(function (d) {
+        if (d && d.status === "success") {
+          try { localStorage.setItem(setsCacheKey, JSON.stringify(d)); } catch (e2) {}
+          __kanjiQuizSetsSessionCache[setsCacheKey] = d;
+        }
+        return d || { status: "error", message: "セット取得に失敗しました" };
+      });
+    }
+    function onKanjiQuizFormatFirstSheetChange() {
+      const sheetSel = document.getElementById("kq-ff-sheet");
+      const setSel = document.getElementById("kq-ff-set");
+      if (!sheetSel || !setSel) return;
+      const info = decodeKanjiFfSheetValue_(sheetSel.value);
+      if (!info) {
+        setSel.innerHTML = '<option value="">先に学年をえらんでね</option>';
+        return;
+      }
+      setSel.innerHTML = '<option value="">セットをよみこみ中…</option>';
+      fetchKanjiQuizSetsForFormatFirst_(info.modeId, info.unitName)
+        .then(function (d) {
+          if (!d || d.status !== "success") {
+            setSel.innerHTML = '<option value="">セット取得失敗</option>';
+            return;
+          }
+          const sets = Array.isArray(d.sets) ? d.sets : [];
+          if (!sets.length) {
+            setSel.innerHTML = '<option value="">セットなし</option>';
+            return;
+          }
+          setSel.innerHTML = sets.map(function (s) {
+            return '<option value="' + escapeHtml(String(s.setId || "")) + '">セット ' +
+              escapeHtml(String(s.setId || "")) + '（' + escapeHtml(String(s.count || 0)) + '字）</option>';
+          }).join("");
+        })
+        .catch(function () {
+          setSel.innerHTML = '<option value="">セット取得失敗</option>';
+        });
+    }
+    function applyFormatFirstChoicesToMainQuizUi_() {
+      const fmt = document.getElementById("kq-ff-format");
+      const mode = fmt ? fmt.value : "write_kanji";
+      try { localStorage.setItem(LS_KANJI_QUIZ_FORMAT, mode); } catch (e) {}
+      onKanjiQuizFormatFirstJukugoOptsChange();
+      kanjiQuizCurrentSheetKind_ = mode === "jukugo_yomi" ? "jukugo" : "standard";
+      const mainFmt = document.getElementById("kanji-quiz-format-select");
+      if (mainFmt) {
+        applyKanjiQuizSheetKind_(kanjiQuizCurrentSheetKind_);
+        if (mode === "jukugo_yomi" || kanjiQuizCurrentSheetKind_ !== "jukugo") {
+          try { mainFmt.value = mode; } catch (e2) {}
+        }
+        syncKanjiQuizFormatSelectFromStorage();
+        updateKanjiQuizFormatOptionVisibility_();
+      }
+    }
+    function openKanjiQuizSetsFromFormatFirst(btn) {
+      const sheetSel = document.getElementById("kq-ff-sheet");
+      const info = sheetSel ? decodeKanjiFfSheetValue_(sheetSel.value) : null;
+      if (!info) {
+        alert("先に学年（シート）をえらんでね。");
+        return;
+      }
+      applyFormatFirstChoicesToMainQuizUi_();
+      const orig = toggleBtnLoading(btn, true);
+      openKanjiQuizSets(info.modeId, info.modeName, info.unitName, btn, orig);
+    }
+    function startKanjiQuizFromFormatFirst(btn) {
+      const sheetSel = document.getElementById("kq-ff-sheet");
+      const setSel = document.getElementById("kq-ff-set");
+      const info = sheetSel ? decodeKanjiFfSheetValue_(sheetSel.value) : null;
+      const setId = setSel ? String(setSel.value || "").trim() : "";
+      if (!info) {
+        alert("先に学年（シート）をえらんでね。");
+        return;
+      }
+      if (!setId) {
+        alert("セット番号をえらんでね。");
+        return;
+      }
+      applyFormatFirstChoicesToMainQuizUi_();
+      const orig = toggleBtnLoading(btn, true);
+      showKanjiQuizSetLoadingOverlay_("セット " + setId);
+      const qKey = kanjiQuizDrillCacheKeyQuestions(info.modeId, info.unitName, setId);
+      const finishErr = function (msg) {
+        toggleBtnLoading(btn, false, orig);
+        hideKanjiQuizSetLoadingOverlay_();
+        alert(msg || "はじめられませんでした。");
+      };
+      const startFromQ = function (q) {
+        toggleBtnLoading(btn, false, orig);
+        if (!q || q.status !== "success") {
+          hideKanjiQuizSetLoadingOverlay_();
+          alert("取得失敗: " + ((q && q.message) || "エラー"));
+          return;
+        }
+        var raw = Array.isArray(q.questions) ? q.questions : [];
+        var prep = prepareKanjiQuizQuestionsForPlay(raw);
+        if (!prep) {
+          hideKanjiQuizSetLoadingOverlay_();
+          return;
+        }
+        startKanjiQuizPlay({
+          modeId: info.modeId,
+          modeName: info.modeName,
+          unitName: info.unitName,
+          setId: String(q.setId != null ? q.setId : setId),
+          allQuestions: raw,
+          formatMode: prep.formatMode
+        });
+      };
+      pauseKanjiQuizQuestionsPrefetch_();
+      const cachedQ = readKanjiQuizQuestionsCache_(qKey);
+      if (cachedQ) {
+        startFromQ(cachedQ);
+        resumeKanjiQuizQuestionsPrefetch_();
+        return;
+      }
+      fetchKanjiQuizQuestionsForSetStart_(info.modeId, info.unitName, setId)
+        .then(function (q) {
+          if (q && q.status === "success") rememberKanjiQuizQuestionsCache_(qKey, q);
+          startFromQ(q || { status: "error", message: "応答を解釈できませんでした。" });
+        })
+        .catch(function (err) {
+          var detail = err && err.message ? String(err.message) : "";
+          finishErr("通信エラーが発生しました。" + (detail ? "\n（" + detail.slice(0, 120) + "）" : ""));
+        })
+        .then(function () {
+          resumeKanjiQuizQuestionsPrefetch_();
         });
     }
     const LS_KANJI_QUIZ_FORMAT = 'app_kanji_quiz_format_v1';
@@ -7244,10 +8031,20 @@
     }
     function loadKanjiHandScoreWeightsFromLocalCache() {
       if (kanjiHandScoreWeightsMem) return kanjiHandScoreWeightsMem;
+      /* 1) 配点専用キャッシュ: sourceSettings があれば管理ブック値から再構築（旧正規化の stale を避ける） */
       try {
         const raw = localStorage.getItem(LS_APP_CACHED_KANJI_HAND_SCORE_WEIGHTS);
         if (raw) {
           const d = JSON.parse(raw);
+          if (d && d.sourceSettings && typeof d.sourceSettings === "object") {
+            const hasAny = KANJI_HW_SCORE_WEIGHT_KEYS.some(function (k) {
+              return d.sourceSettings[k] !== undefined && d.sourceSettings[k] !== null && String(d.sourceSettings[k]).trim() !== "";
+            });
+            if (hasAny) {
+              kanjiHandScoreWeightsMem = buildKanjiHandScoreWeightsFromSettings_(d.sourceSettings);
+              return kanjiHandScoreWeightsMem;
+            }
+          }
           if (
             d &&
             d.weightsNormalized &&
@@ -7258,12 +8055,20 @@
             kanjiHandScoreWeightsMem = normalizeKanjiHandScoreWeights_(d.weightsNormalized);
             return kanjiHandScoreWeightsMem;
           }
-          if (d && d.sourceSettings) {
-            kanjiHandScoreWeightsMem = buildKanjiHandScoreWeightsFromSettings_(d.sourceSettings);
+        }
+      } catch (e) {}
+      /* 2) アプリ設定キャッシュから配点を復元 */
+      try {
+        const legacy = localStorage.getItem("app_cached_settings");
+        if (legacy) {
+          const d = JSON.parse(legacy);
+          if (d && d.settings) {
+            kanjiHandScoreWeightsMem = buildKanjiHandScoreWeightsFromSettings_(d.settings);
+            try { persistKanjiHandScoreWeightsFromSettings(d.settings); } catch (_eP) {}
             return kanjiHandScoreWeightsMem;
           }
         }
-      } catch (e) {}
+      } catch (e2) {}
       kanjiHandScoreWeightsMem = normalizeKanjiHandScoreWeights_({
         strokeCountPts: KANJI_HW_ABS_POINT_DEFAULTS.strokeCount,
         strokeOrderPts: KANJI_HW_ABS_POINT_DEFAULTS.strokeOrder,
@@ -9282,7 +10087,8 @@
         }
       });
       if (buf) parts.push(buf);
-      const MAX = 14;
+      /* キャンバス高さに収まるよう、やや短めの列に分割（潰れて多列ラップしない前提） */
+      const MAX = 12;
       const out = [];
       parts.forEach(function (p) {
         const chars = Array.from(String(p || "").trim());

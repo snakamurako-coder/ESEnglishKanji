@@ -150,14 +150,9 @@
             c.innerHTML = "<p>表示できる教材がありません。</p>";
             return;
           }
-          function appendKanjiBookButtons_(books) {
+          function appendSheetButtons_(books) {
             books.forEach(function (m) {
-              const sub = document.createElement("h3");
-              sub.style.margin = "8px 0 4px";
-              sub.style.fontSize = "1.05em";
-              sub.innerText = "📁 " + m.modeName;
-              c.appendChild(sub);
-              m.units.forEach(function (u) {
+              (m.units || []).forEach(function (u) {
                 const b = document.createElement("button");
                 b.className = "menu-btn btn-gray";
                 b.innerText = "📄 " + formatUnitSheetDisplayLabel(u);
@@ -171,16 +166,18 @@
             const jukugoBooks = list.filter(function (m) { return /熟語/.test(String(m.modeName || "")); });
             if (standardBooks.length) {
               const hStd = document.createElement("h2");
-              hStd.innerText = "📚 通常漢字ブック";
+              hStd.className = "kanji-materials-book-heading";
+              hStd.innerText = "📚 単一漢字";
               c.appendChild(hStd);
-              appendKanjiBookButtons_(standardBooks);
+              appendSheetButtons_(standardBooks);
             }
             if (jukugoBooks.length) {
               const hJuk = document.createElement("h2");
+              hJuk.className = "kanji-materials-book-heading";
               hJuk.style.marginTop = standardBooks.length ? "18px" : "0";
-              hJuk.innerText = "📚 漢字熟語ブック";
+              hJuk.innerText = "📚 漢字熟語";
               c.appendChild(hJuk);
-              appendKanjiBookButtons_(jukugoBooks);
+              appendSheetButtons_(jukugoBooks);
             }
           } else {
             list.forEach(function (m) {

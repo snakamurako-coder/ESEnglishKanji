@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>学習アプリ</title>
-  <link rel="stylesheet" href="css/app.css?v=d4b62af1">
+  <link rel="stylesheet" href="css/app.css?v=20260807-kp-vg">
 </head>
 <body>
 <div id="global-header">👤 <span id="header-user-info"></span></div>
@@ -95,21 +95,31 @@
     <div class="kanji-practice-vertical-head">
     <h1 class="kp-page-title">漢字練習・設定調整</h1>
     <button type="button" class="cancel-btn kanji-menu-back-btn" onclick="openKanjiLearningMenu()">漢字学習メニューにもどる</button>
-    <p style="text-align:center;color:#666;max-width:980px;margin:0 auto 10px;font-size:14px;">練習・調整（キャリブレーション／ペン設定）モードです。教材セットから選んで、漢字／よみで検索できます。</p>
+    <p class="kp-page-lead">教材のセットから選ぶか、下の検索で学年をまたいで探せます。漢字をタップすると練習できます。</p>
     </div>
-    <div class="kp-controls-row" style="width:96vw;max-width:1200px;margin:0 auto 10px;background:#f5f7fa;border:1px solid #d8dde5;border-radius:12px;padding:12px;box-sizing:border-box;">
-      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;justify-content:center;">
-        <select id="kp-book-select" onchange="kpOnBookChange()" style="min-width:180px;max-width:280px;padding:8px;background:#fff;color:#222;border:1px solid #b8c1cc;border-radius:8px;"></select>
-        <select id="kp-sheet-select" onchange="kpOnSheetChange()" style="min-width:140px;max-width:220px;padding:8px;background:#fff;color:#222;border:1px solid #b8c1cc;border-radius:8px;"></select>
-        <select id="kp-set-select" onchange="kpOnSetChange()" style="min-width:140px;max-width:220px;padding:8px;background:#fff;color:#222;border:1px solid #b8c1cc;border-radius:8px;"></select>
-        <input id="kp-search-input" type="text" placeholder="漢字・よみで検索" oninput="kpApplyFilterAndRender()" style="min-width:220px;max-width:420px;width:38%;padding:8px;background:#fff;color:#222;border:1px solid #b8c1cc;border-radius:8px;">
+    <div class="kp-controls-row kp-browse-panel">
+      <div class="kp-panel-heading">教材セットからえらぶ</div>
+      <div class="kp-browse-selects">
+        <select id="kp-book-select" onchange="kpOnBookChange()" aria-label="ブック"></select>
+        <select id="kp-sheet-select" onchange="kpOnSheetChange()" aria-label="学年シート"></select>
+        <select id="kp-set-select" onchange="kpOnSetChange()" aria-label="セット番号"></select>
       </div>
-      <div id="kp-practice-status" style="margin-top:8px;text-align:center;color:#607080;font-size:13px;">教材を読み込み中...</div>
-      <div id="kp-tile-grid" style="margin-top:10px;display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:10px;padding:4px;"></div>
+      <div id="kp-practice-status" class="kp-practice-status">教材を読み込み中...</div>
+      <div id="kp-tile-grid" class="kp-tile-grid"></div>
     </div>
-    <div style="width:96vw;max-width:1200px;margin:0 auto 10px;">
+    <div class="kp-controls-row kp-search-panel">
+      <div class="kp-panel-heading">漢字・よみでさがす（全学年）</div>
+      <p class="kp-search-lead">ブック／シート／セットの選択とは別に、漢字や読みで検索します。教材にない漢字でも、KanjiVG にあれば書いて練習できます。</p>
+      <div class="kp-search-input-row">
+        <input id="kp-search-input" type="search" enterkeyhint="search" placeholder="例：園　／　その　／　エン" oninput="onKpGlobalSearchInput()" autocomplete="off">
+        <button type="button" class="kp-search-clear-btn" onclick="clearKpGlobalSearch()">クリア</button>
+      </div>
+      <div id="kp-search-status" class="kp-search-status" aria-live="polite"></div>
+      <div id="kp-search-results" class="kp-search-results"></div>
+    </div>
+    <div class="kp-iframe-wrap">
       <div id="kp-iframe-slot-practice">
-      <iframe id="kp-pro-frame" src="about:blank" title="Kanji Practice Pro" scrolling="no" style="width:100%;height:900px;min-height:620px;border:1px solid #ccd3db;border-radius:10px;background:#fff;overflow:hidden;"></iframe>
+        <iframe id="kp-pro-frame" class="kp-pro-frame-practice" src="about:blank" title="Kanji Practice Pro" style="width:100%;min-height:520px;border:1px solid #ccd3db;border-radius:10px;background:#fff;"></iframe>
       </div>
     </div>
   </div>
@@ -162,6 +172,47 @@
       <button type="button" class="cancel-btn kanji-menu-back-btn" onclick="backFromMaterials()">もどる</button>
     </div>
     <div id="materials-container" style="display: flex; flex-direction: column; gap: 15px; max-width: 400px; margin: 0 auto;"></div>
+    <!-- 漢字クイズ：問題形式 → 学年 → セット（下段） -->
+    <div id="kanji-quiz-format-first" class="kanji-quiz-format-first" style="display:none;" hidden>
+      <h2 class="kanji-quiz-format-first-title">問題形式からさがす</h2>
+      <p class="kanji-quiz-format-first-lead">もんだいのしかた → 学年 → セット のじゅんにえらべます</p>
+      <label class="kanji-quiz-format-first-label" for="kq-ff-format">① もんだいのしかた</label>
+      <select id="kq-ff-format" class="large-select kanji-quiz-format-first-select" onchange="onKanjiQuizFormatFirstFormatChange()">
+        <option value="mixed">混合（3しゅるいを まぜる）</option>
+        <option value="select_kana">よみかな・おくりがな（せんたく）</option>
+        <option value="type_yomi">よみかなを タイプして こたえる</option>
+        <option value="write_kanji" selected>かんじを かいて こたえる</option>
+        <option value="stroke_order">書き順クイズ（なぞる）</option>
+        <option value="jukugo_yomi">漢字熟語の読み方（せんたく）</option>
+      </select>
+      <div id="kq-ff-jukugo-opts" class="kanji-quiz-format-first-jukugo" style="display:none;">
+        <label for="kq-ff-jukugo-choice-count">選択肢の数（3〜8）</label>
+        <select id="kq-ff-jukugo-choice-count" class="large-select" onchange="onKanjiQuizFormatFirstJukugoOptsChange()">
+          <option value="3">3択</option>
+          <option value="4" selected>4択</option>
+          <option value="5">5択</option>
+          <option value="6">6択</option>
+          <option value="7">7択</option>
+          <option value="8">8択</option>
+        </select>
+        <label class="kanji-quiz-format-first-check">
+          <input type="checkbox" id="kq-ff-jukugo-include-none" onchange="onKanjiQuizFormatFirstJukugoOptsChange()">
+          <span>「この中に回答はない」を含める</span>
+        </label>
+      </div>
+      <label class="kanji-quiz-format-first-label" for="kq-ff-sheet">② 学年（シート）</label>
+      <select id="kq-ff-sheet" class="large-select kanji-quiz-format-first-select" onchange="onKanjiQuizFormatFirstSheetChange()">
+        <option value="">学年をえらんでね</option>
+      </select>
+      <label class="kanji-quiz-format-first-label" for="kq-ff-set">③ セット番号</label>
+      <select id="kq-ff-set" class="large-select kanji-quiz-format-first-select">
+        <option value="">先に学年をえらんでね</option>
+      </select>
+      <div class="kanji-quiz-format-first-actions">
+        <button type="button" class="submit-btn btn-red" id="kq-ff-start-btn" onclick="startKanjiQuizFromFormatFirst(this)">この条件ではじめる</button>
+        <button type="button" class="menu-btn btn-gray" id="kq-ff-list-btn" onclick="openKanjiQuizSetsFromFormatFirst(this)">セットいちらんをみる</button>
+      </div>
+    </div>
     </div>
   </div>
   <div id="section-kanji-quiz-sets" class="section">
@@ -519,6 +570,7 @@
   <script src="js/state.js"></script>
   <script src="js/api.js"></script>
   <script src="js/main.js"></script>
-  <script src="js/app.js?v=d4b62af1"></script>
+  <script src="kanji-vg.js?v=20260807-kp-vg"></script>
+  <script src="js/app.js?v=20260807-kp-vg"></script>
 </body>
 </html>
