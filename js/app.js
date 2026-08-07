@@ -9130,7 +9130,7 @@
         submitKanjiQuizScore();
         return;
       }
-      /* 書いて答える：採点ステータスを見せてから「次へ」または4秒で進行 */
+      /* 書いて答える：採点ステータスを見せ、「次へ」操作でのみ進行 */
       kanjiQuizHideWrongFeedback();
       setKanjiQuizHwCardControlsLocked(true);
       showKanjiHwPassNextControls_(function () {
@@ -9170,7 +9170,7 @@
         kanjiHwPassAutoNextTimer_ = null;
       }
     }
-    /** 書いて答える合格時：ステータス表示のまま「次へ」or 4秒で進む */
+    /** 書いて答える合格時：ステータス表示のまま「次へ」操作でのみ進む（自動遷移なし） */
     function showKanjiHwPassNextControls_(advanceFn) {
       if (!kanjiQuizSession) return;
       clearKanjiHwPassAutoNext_();
@@ -9189,7 +9189,6 @@
         skipBtn.disabled = false;
         stopKanjiActionBusy(skipBtn);
       }
-      kanjiHwPassAutoNextTimer_ = setTimeout(goNext, 4000);
     }
     function kanjiQuizSkipHandwritingQuestion(btn) {
       if (!kanjiQuizSession) return;
