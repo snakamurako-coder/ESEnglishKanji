@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>学習アプリ</title>
-  <link rel="stylesheet" href="css/app.css?v=20260807-hw-scroll">
+  <link rel="stylesheet" href="css/app.css?v=20260807-search-shared">
 </head>
 <body>
 <div id="global-header">👤 <span id="header-user-info"></span></div>
@@ -109,7 +109,7 @@
     </div>
     <div class="kp-controls-row kp-search-panel">
       <div class="kp-panel-heading">漢字・よみでさがす（全学年）</div>
-      <p class="kp-search-lead">ブック／シート／セットの選択とは別に、漢字や音訓（音読み・訓読み）で検索します。教材にない漢字でも、KanjiVG にあれば書いて練習できます。</p>
+      <p class="kp-search-lead">ブック／シート／セットの選択とは別に、漢字や音訓（音読み・訓読み）で検索します。検索は学習セットと同じローカルキャッシュを使います。教材にない漢字でも、KanjiVG にあれば書いて練習できます。</p>
       <div class="kp-search-input-row">
         <input id="kp-search-input" type="search" enterkeyhint="search" placeholder="例：園　／　その　／　エン" oninput="onKpGlobalSearchInput()" autocomplete="off">
         <button type="button" class="kp-search-clear-btn" onclick="clearKpGlobalSearch()">クリア</button>
@@ -574,7 +574,7 @@
   <script src="js/state.js"></script>
   <script src="js/api.js"></script>
   <script src="js/main.js"></script>
-  <script src="kanji-vg.js?v=20260807-hw-scroll"></script>
-  <script src="js/app.js?v=20260807-hw-scroll"></script>
+  <script src="kanji-vg.js?v=20260807-search-shared"></script>
+  <script src="js/app.js?v=20260807-search-shared"></script>
 </body>
 </html>
