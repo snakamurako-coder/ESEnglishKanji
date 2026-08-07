@@ -5683,6 +5683,10 @@
       openKanjiPracticePro();
       initKanjiPracticeScoreListener();
       initKanjiPracticeCatalog();
+      try {
+        const warmed = kpWarmSearchIndexFromCache_();
+        if (warmed) kpSetSearchStatus_("セットキャッシュから検索準備（" + warmed + " 字）");
+      } catch (_eWarm) {}
       try { kpScheduleSearchIndexPrefetch_(); } catch (_ePref) {}
       try { kpEnsureKanjiVgMap_(); } catch (_eVg) {}
     }
@@ -6135,7 +6139,9 @@
       const applyMaterials = (all) => {
         kpCatalogState.materials = pickKanjiMaterials(all);
         kpCatalogState.loaded = true;
+        __kpSearchIndexMem = null;
         kpRenderBookSelect();
+        try { kpWarmSearchIndexFromCache_(); } catch (_eW) {}
         try { kpScheduleSearchIndexPrefetch_(); } catch (_e) {}
       };
       const fetchMaterialsFresh = () => {
@@ -6340,6 +6346,9 @@
     let __kpSearchPrefetchBusy = false;
     let __kpKanjiVgMap = null;
     let __kpKanjiVgInflight = null;
+    /** 検索索引はセット問題キャッシュ（app_cached_kp_sets_* / questions_*）だけを正とする。二重保存しない。 */
+    let __kpSearchIndexMem = null;
+    const LS_KP_SEARCH_INDEX_LEGACY = "app_cached_kp_search_index_v2";
 
     function kpSetSearchStatus_(text) {
       const el = document.getElementById("kp-search-status");
@@ -6474,6 +6483,32 @@
       });
       return Object.keys(map).map(function (k) { return map[k]; });
     }
+    function kpClearLegacySearchIndexBlob_() {
+      try { localStorage.removeItem(LS_KP_SEARCH_INDEX_LEGACY); } catch (_e) {}
+      try { localStorage.removeItem("app_cached_kp_search_index_v1"); } catch (_e2) {}
+    }
+    /** セット／問題のローカルキャッシュだけから索引を組み立て（別キーへ二重保存しない） */
+    function kpGetSearchIndex_() {
+      if (__kpSearchIndexMem && __kpSearchIndexMem.length) return __kpSearchIndexMem;
+      const built = kpBuildGlobalSearchIndex_();
+      if (built.length) __kpSearchIndexMem = built;
+      return built;
+    }
+    function kpRebuildSearchIndexFromSetCaches_() {
+      const built = kpBuildGlobalSearchIndex_();
+      __kpSearchIndexMem = built.length ? built : null;
+      return built;
+    }
+    /** 既に端末にあるセット問題キャッシュから索引を温める（ネットワーク不要） */
+    function kpWarmSearchIndexFromCache_() {
+      try {
+        kpClearLegacySearchIndexBlob_();
+        const built = kpRebuildSearchIndexFromSetCaches_();
+        return built.length;
+      } catch (_e) {
+        return 0;
+      }
+    }
     function kpCountCachedQuestionSets_() {
       let n = 0;
       (kpCatalogState.materials || []).forEach(function (mat) {
@@ -6522,8 +6557,13 @@
       const runNext = function () {
         if (i >= jobs.length) {
           __kpSearchPrefetchBusy = false;
+          try { kpRebuildSearchIndexFromSetCaches_(); } catch (_eSave) {}
           const q = ((document.getElementById("kp-search-input") || {}).value || "").trim();
           if (q) runKpGlobalSearch_(q);
+          else {
+            const n = (__kpSearchIndexMem && __kpSearchIndexMem.length) || 0;
+            if (n) kpSetSearchStatus_("検索準備完了（" + n + " 字・セットキャッシュ共用）");
+          }
           return;
         }
         const batch = [];
@@ -6532,7 +6572,9 @@
           return kpEnsureSheetCachedForSearch_(job.modeId, job.unitName);
         })).then(runNext).catch(runNext);
       };
-      kpSetSearchStatus_("検索用データを準備中…（初回のみ時間がかかることがあります）");
+      kpSetSearchStatus_(__kpSearchIndexMem && __kpSearchIndexMem.length
+        ? "セットキャッシュを確認・更新中…"
+        : "検索用データを準備中…（初回のみ時間がかかることがあります）");
       runNext();
     }
     function kpEnsureSheetCachedForSearch_(modeId, unitName) {
@@ -6607,7 +6649,7 @@
         clearKpGlobalSearchResults_();
         return;
       }
-      const index = kpBuildGlobalSearchIndex_();
+      const index = kpGetSearchIndex_();
       const cachedSets = kpCountCachedQuestionSets_();
       const hits = index.filter(function (row) {
         const kanji = String(row.kanji || "");
@@ -6620,14 +6662,15 @@
         const k = String(row.kanji || "");
         if (k) allBookKanji[k] = true;
       });
+      const fromCache = !!(__kpSearchIndexMem && __kpSearchIndexMem.length);
       const renderAll = function (vgHits) {
         const vgList = Array.isArray(vgHits) ? vgHits : [];
         if (!hits.length && !vgList.length) {
           box.innerHTML = '<div style="color:#999;text-align:center;padding:16px;">該当なし' +
-            (cachedSets < 3 ? "（データ準備中の可能性があります。少し待って再検索してください）" : "") +
+            (cachedSets < 3 && !fromCache ? "（データ準備中の可能性があります。少し待って再検索してください）" : "") +
             "</div>";
           kpSetSearchStatus_(__kpSearchPrefetchBusy
-            ? "索引準備中… いま見つかった件数: 0"
+            ? "索引更新中… いま見つかった件数: 0"
             : "0 件");
           return;
         }
@@ -6712,7 +6755,7 @@
           : (vgList.length ? "KanjiVG" : "0 学年");
         kpSetSearchStatus_(total + " 件 / " + sheetPart +
           (vgList.length && hits.length ? " + KanjiVG " + vgList.length + " 字" : "") +
-          (__kpSearchPrefetchBusy ? "（索引準備中）" : ""));
+          (__kpSearchPrefetchBusy ? "（セット更新中）" : (fromCache ? "（セットキャッシュ）" : "")));
       };
       kpEnsureKanjiVgMap_().then(function (vgMap) {
         const vgHits = [];
