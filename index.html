@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>学習アプリ</title>
-  <link rel="stylesheet" href="css/app.css?v=20260808-no-card-select">
+  <link rel="stylesheet" href="css/app.css?v=20260809-rt-stroke-order">
 </head>
 <body>
 <div id="global-header">👤 <span id="header-user-info"></span></div>
@@ -276,6 +276,14 @@
           <div id="kanji-quiz-wrong-model-wrap" class="kanji-quiz-wrong-model-wrap"></div>
         </div>
         <div class="kanji-quiz-hw-question-col">
+          <!-- 書き順クイズ専用：リアルタイム書き順判定トグル（デフォルトOFF） -->
+          <div id="kanji-quiz-rt-order-row" class="kanji-quiz-rt-order-row">
+            <label class="kanji-quiz-rt-order-label" for="kanji-quiz-rt-order-toggle">
+              <input type="checkbox" id="kanji-quiz-rt-order-toggle" onchange="kanjiQuizOnRtOrderToggleChanged()">
+              リアルタイム書き順判定をオン
+            </label>
+            <span id="kanji-quiz-rt-order-feedback" class="kanji-quiz-rt-order-feedback" aria-live="polite"></span>
+          </div>
           <div id="kanji-quiz-drill-handwriting" class="kanji-drill-hw-row" style="display:none;">
               <div class="kanji-drill-hw-canvas-panel">
                 <div id="kanji-hw-controls-col" class="kanji-drill-hw-controls-col">
@@ -569,6 +577,6 @@
   <script src="js/api.js"></script>
   <script src="js/main.js"></script>
   <script src="kanji-vg.js?v=20260807-search-shared"></script>
-  <script src="js/app.js?v=20260808-no-card-select"></script>
+  <script src="js/app.js?v=20260809-rt-stroke-order"></script>
 </body>
 </html>

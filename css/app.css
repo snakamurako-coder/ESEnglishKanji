@@ -185,6 +185,54 @@ body { font-family: 'Hiragino Maru Gothic ProN', sans-serif; background-color: #
       touch-action: manipulation;
       pointer-events: auto !important;
     }
+    /* 書き順クイズ専用：リアルタイム書き順判定トグル（記述カード上部・デフォルト非表示） */
+    .kanji-quiz-rt-order-row {
+      display: none;
+    }
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-stroke-order-active .kanji-quiz-rt-order-row {
+      display: flex;
+      direction: ltr;
+      align-items: center;
+      justify-content: flex-start;
+      flex-wrap: wrap;
+      gap: 8px 14px;
+      margin: 0 0 8px;
+      padding: 6px 12px;
+      background: #fffde7;
+      border: 1px solid #ffe082;
+      border-radius: 10px;
+      font-size: 14px;
+      pointer-events: auto !important;
+    }
+    .kanji-quiz-rt-order-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      font-weight: bold;
+      color: #5d4037;
+      cursor: pointer;
+      white-space: nowrap;
+      pointer-events: auto !important;
+      touch-action: manipulation;
+    }
+    .kanji-quiz-rt-order-label input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      margin: 0;
+      accent-color: #1a73e8;
+      pointer-events: auto !important;
+    }
+    .kanji-quiz-rt-order-feedback {
+      font-weight: bold;
+      min-height: 1.2em;
+    }
+    .kanji-quiz-rt-order-feedback.is-ok { color: #2e7d32; }
+    .kanji-quiz-rt-order-feedback.is-ng { color: #d32f2f; }
+    /* さいてんステータス：何画目で書き順を間違えたかの注記 */
+    .kanji-hw-score-order-note {
+      color: #d32f2f;
+      font-weight: bold;
+    }
     .pen-canvas {
       background: #fff;
       border: 1px solid #555;
