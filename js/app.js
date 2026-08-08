@@ -4587,7 +4587,15 @@
         document.getElementById('training-admin-main').style.display = "block";
         switchTrainingAdminTab('menus');
         renderTrainingAdminMenuGrid();
-        setTrainingAdminMessage("", true);
+        if (d.kanjiSampleEnsure && (d.kanjiSampleEnsure.created || d.kanjiSampleEnsure.updated)) {
+          const mid = d.kanjiSampleEnsure.menuId || "";
+          setTrainingAdminMessage(
+            "漢字サンプル特訓をメニュー" + mid + " に自動入力しました（漢字学習サンプル／漢字熟語ブックの参考ルート）。",
+            true
+          );
+        } else {
+          setTrainingAdminMessage("", true);
+        }
       }).catch(() => setTrainingAdminMessage("通信エラー", false));
     }
 
@@ -4614,10 +4622,13 @@
           return `<option value="${escapeHtml(p.color)}"${sel}>${escapeHtml(p.color)}</option>`;
         }).join("");
         const routeCount = Array.isArray(menu.routes) ? menu.routes.length : 0;
+        const sampleBadge = menu.isKanjiSample
+          ? `<span style="margin-left:6px;font-size:11px;color:#CE93D8;border:1px solid #7B1FA2;border-radius:4px;padding:1px 6px;">漢字サンプル</span>`
+          : "";
         return `<div class="training-admin-card" style="border-left:4px solid ${escapeHtml(menu.color)};">
           <div class="training-admin-card-head">
             <span class="training-admin-color-dot" style="background:${escapeHtml(menu.color)};"></span>
-            <span>メニュー ${menu.id}</span>
+            <span>メニュー ${menu.id}</span>${sampleBadge}
             <span style="margin-left:auto;font-size:12px;color:#888;">${routeCount} ステップ</span>
           </div>
           <div class="training-admin-field">
