@@ -336,15 +336,7 @@
         document.getElementById('training-admin-main').style.display = "block";
         switchTrainingAdminTab('menus');
         renderTrainingAdminMenuGrid();
-        if (d.kanjiSampleEnsure && (d.kanjiSampleEnsure.created || d.kanjiSampleEnsure.updated)) {
-          const mid = d.kanjiSampleEnsure.menuId || "";
-          setTrainingAdminMessage(
-            "漢字サンプル特訓をメニュー" + mid + " に自動入力しました（漢字学習サンプル／漢字熟語ブックの参考ルート）。",
-            true
-          );
-        } else {
-          setTrainingAdminMessage("", true);
-        }
+        setTrainingAdminMessage("", true);
       }).catch(() => setTrainingAdminMessage("通信エラー", false));
     }
 
@@ -373,7 +365,9 @@
         const routeCount = Array.isArray(menu.routes) ? menu.routes.length : 0;
         const sampleBadge = menu.isKanjiSample
           ? `<span style="margin-left:6px;font-size:11px;color:#CE93D8;border:1px solid #7B1FA2;border-radius:4px;padding:1px 6px;">漢字サンプル</span>`
-          : "";
+          : (menu.isEnglishSample
+            ? `<span style="margin-left:6px;font-size:11px;color:#90CAF9;border:1px solid #1976D2;border-radius:4px;padding:1px 6px;">英語サンプル</span>`
+            : "");
         return `<div class="training-admin-card" style="border-left:4px solid ${escapeHtml(menu.color)};">
           <div class="training-admin-card-head">
             <span class="training-admin-color-dot" style="background:${escapeHtml(menu.color)};"></span>
