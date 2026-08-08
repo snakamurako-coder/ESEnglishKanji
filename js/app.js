@@ -3676,25 +3676,44 @@
             let foundModeId = null;
             let foundModeName = "";
             let resolvedUnitName = "";
-            const isKanjiRoute = /漢字/.test(String(route.qFormat || "")) || /採点/.test(String(route.aFormat || ""));
+            const isKanjiRoute = isKanjiTrainingQFormat_(route.qFormat) || /採点/.test(String(route.aFormat || ""));
             const routeUnitRaw = String(route.unitName || "");
             const routeUnitNorm = normalizeUnitNameForCompare(routeUnitRaw);
+            const preferJukugo = isKanjiJukugoTrainingQFormat_(route.qFormat);
+            const preferStandardKanji = isKanjiRoute && !preferJukugo;
+            let fallbackMat = null;
             for (let m of materialsData) {
                 const units = Array.isArray(m.units) ? m.units : [];
                 const exact = units.find(u => String(u) === routeUnitRaw);
-                if (exact) {
-                  foundModeId = m.modeId;
-                  foundModeName = m.modeName;
-                  resolvedUnitName = String(exact);
-                  break;
+                const fuzzy = exact || units.find(u => normalizeUnitNameForCompare(u) === routeUnitNorm);
+                if (!fuzzy) continue;
+                if (!fallbackMat) {
+                  fallbackMat = { modeId: m.modeId, modeName: m.modeName, unit: String(fuzzy), category: m.category };
                 }
-                const fuzzy = units.find(u => normalizeUnitNameForCompare(u) === routeUnitNorm);
-                if (fuzzy) {
+                const isJuk = /熟語/.test(String(m.modeName || ""));
+                if (preferJukugo && isJuk) {
                   foundModeId = m.modeId;
                   foundModeName = m.modeName;
                   resolvedUnitName = String(fuzzy);
                   break;
                 }
+                if (preferStandardKanji && (m.category === "kanji" || /漢字/.test(String(m.modeName || ""))) && !isJuk) {
+                  foundModeId = m.modeId;
+                  foundModeName = m.modeName;
+                  resolvedUnitName = String(fuzzy);
+                  break;
+                }
+                if (!isKanjiRoute) {
+                  foundModeId = m.modeId;
+                  foundModeName = m.modeName;
+                  resolvedUnitName = String(fuzzy);
+                  break;
+                }
+            }
+            if (!foundModeId && fallbackMat) {
+              foundModeId = fallbackMat.modeId;
+              foundModeName = fallbackMat.modeName;
+              resolvedUnitName = fallbackMat.unit;
             }
             if(!foundModeId) {
                 alert(`「${formatUnitSheetDisplayLabel(route.unitName)}」のデータが見つかりませんでした。`);
@@ -3705,24 +3724,44 @@
             currentModeName = foundModeName;
 
             if (isKanjiRoute) {
+              const mappedKanji = trainingRouteLabelsToInternal(route.qFormat, route.aFormat);
+              let kanjiFormatMode = mappedKanji.format || "write_kanji";
+              if (kanjiFormatMode === "kanji_hand") kanjiFormatMode = "write_kanji";
+              try {
+                if (typeof LS_KANJI_QUIZ_FORMAT !== "undefined") {
+                  localStorage.setItem(LS_KANJI_QUIZ_FORMAT, kanjiFormatMode);
+                } else {
+                  localStorage.setItem("app_kanji_quiz_format_v1", kanjiFormatMode);
+                }
+              } catch (_eFmt) {}
+              const quizFetchBody = {
+                action: "get_kanji_quiz_questions",
+                modeId: foundModeId,
+                unitName: currentUnitName,
+                setId: "",
+                formatMode: kanjiFormatMode,
+                choiceCount: 4,
+                includeNoneOption: false
+              };
               fetch(GAS_API_URL, { method: 'POST', body: JSON.stringify({ action: "get_kanji_quiz_sets", modeId: foundModeId, unitName: currentUnitName }) })
               .then(r => r.json()).then(d => {
                 if (d.status !== "success") throw new Error(d.message || "漢字セット取得失敗");
                 const sets = Array.isArray(d.sets) ? d.sets : [];
                 if (!sets.length) throw new Error("セットが見つかりません");
                 const first = sets[0];
-                return fetch(GAS_API_URL, { method: 'POST', body: JSON.stringify({ action: "get_kanji_quiz_questions", modeId: foundModeId, unitName: currentUnitName, setId: String(first.setId || "") }) });
+                quizFetchBody.setId = String(first.setId || "");
+                return fetch(GAS_API_URL, { method: 'POST', body: JSON.stringify(quizFetchBody) });
               })
               .then(r => r.json()).then(q => {
                 if (q.status !== "success") throw new Error(q.message || "漢字問題取得失敗");
                 var raw = Array.isArray(q.questions) ? q.questions : [];
-                var prep = prepareKanjiQuizQuestionsForPlay(raw);
+                var prep = prepareKanjiQuizQuestionsForPlay(raw, kanjiFormatMode);
                 if (!prep) throw new Error("この形式の問題がありません");
                 startKanjiQuizPlay({
                   modeId: foundModeId,
                   modeName: foundModeName,
                   unitName: currentUnitName,
-                  setId: String((q.setId != null) ? q.setId : ""),
+                  setId: String((q.setId != null) ? q.setId : quizFetchBody.setId),
                   allQuestions: raw,
                   formatMode: prep.formatMode,
                   isTrainingMode: true,
@@ -4109,7 +4148,17 @@
       "英語→英語": "en_to_en",
       "英単語→英単語": "en_to_en",
       "英語読み上げ→英語": "en_audio_to_en",
-      "漢字→採点チャレンジ": "kanji_hand"
+      "漢字→よみかな選択": "select_kana",
+      "送り仮名選択": "select_kana",
+      "漢字→よみかな入力": "type_yomi",
+      "読み仮名タイプ": "type_yomi",
+      "漢字→書いて答える": "write_kanji",
+      "書いて問題に回答": "write_kanji",
+      "漢字→書き順なぞる": "stroke_order",
+      "書き順チェック": "stroke_order",
+      "漢字→採点チャレンジ": "kanji_hand",
+      "漢字熟語→読み選択": "jukugo_yomi",
+      "熟語読み方選択": "jukugo_yomi"
     };
     const TRAINING_AFORMAT_TO_INTERNAL = {
       "4択": "4choice",
@@ -4126,7 +4175,8 @@
       "すべて用いる": "sort_all",
       "不要語混入": "sort_dummy",
       "不足語補足": "sort_missing",
-      "採点": "hand_grade"
+      "採点": "hand_grade",
+      "クイズ": "quiz"
     };
 
     function trainingRouteLabelsToInternal(qFormat, aFormat) {
@@ -4136,15 +4186,45 @@
       return { format: format, ansType: ansType };
     }
 
-    function findTrainingMaterialForUnit(unitName, materials) {
+    function isKanjiJukugoTrainingModeName(modeName) {
+      return /熟語/.test(String(modeName || ""));
+    }
+
+    function isKanjiTrainingQFormat_(qFormat) {
+      const q = String(qFormat || "").trim();
+      if (!q) return false;
+      if (/漢字/.test(q) || /採点/.test(q)) return true;
+      return (
+        q === "送り仮名選択" ||
+        q === "読み仮名タイプ" ||
+        q === "書いて問題に回答" ||
+        q === "書き順チェック" ||
+        q === "熟語読み方選択"
+      );
+    }
+
+    function isKanjiJukugoTrainingQFormat_(qFormat) {
+      const q = String(qFormat || "").trim();
+      return /漢字熟語/.test(q) || q === "熟語読み方選択";
+    }
+
+    function findTrainingMaterialForUnit(unitName, materials, qFormat) {
       const unit = String(unitName || "").trim();
       if (!unit) return null;
       const mats = materials || (trainingAdminData && trainingAdminData.materials) || materialsData || [];
+      const q = String(qFormat || "");
+      const preferJukugo = isKanjiJukugoTrainingQFormat_(q);
+      const preferStandardKanji = isKanjiTrainingQFormat_(q) && !preferJukugo;
+      let fallback = null;
       for (let i = 0; i < mats.length; i++) {
         const m = mats[i];
-        if ((m.units || []).some(function (u) { return String(u) === unit; })) return m;
+        if (!(m.units || []).some(function (u) { return String(u) === unit; })) continue;
+        if (!fallback) fallback = m;
+        const isJuk = isKanjiJukugoTrainingModeName(m.modeName);
+        if (preferJukugo && isJuk) return m;
+        if (preferStandardKanji && (m.category === "kanji" || /漢字/.test(String(m.modeName || ""))) && !isJuk) return m;
       }
-      return null;
+      return fallback;
     }
 
     function getTrainingModeNameForUnit(unitName, materials) {
@@ -4161,7 +4241,16 @@
 
     function getLearnerFormatOptions(modeName, category) {
       if (category === "kanji" || /漢字/.test(String(modeName || ""))) {
-        return [{ value: "kanji_hand", label: "漢字 → 採点チャレンジ", qFormat: "漢字→採点チャレンジ" }];
+        if (isKanjiJukugoTrainingModeName(modeName)) {
+          return [{ value: "jukugo_yomi", label: "熟語読み方選択", qFormat: "熟語読み方選択" }];
+        }
+        return [
+          { value: "select_kana", label: "送り仮名選択", qFormat: "送り仮名選択" },
+          { value: "type_yomi", label: "読み仮名タイプ", qFormat: "読み仮名タイプ" },
+          { value: "write_kanji", label: "書いて問題に回答", qFormat: "書いて問題に回答" },
+          { value: "stroke_order", label: "書き順チェック", qFormat: "書き順チェック" },
+          { value: "kanji_hand", label: "漢字 → 採点チャレンジ", qFormat: "漢字→採点チャレンジ" }
+        ];
       }
       const isWord = String(modeName || "").includes("単語");
       if (isWord) {
@@ -4190,6 +4279,16 @@
       function add(value, label, aFormat) { opts.push({ value: value, label: label, aFormat: aFormat }); }
       if (format === "kanji_hand") {
         add("hand_grade", "採点", "採点");
+        return opts;
+      }
+      if (
+        format === "select_kana" ||
+        format === "type_yomi" ||
+        format === "write_kanji" ||
+        format === "stroke_order" ||
+        format === "jukugo_yomi"
+      ) {
+        add("quiz", "クイズ", "クイズ");
         return opts;
       }
       if (format === "ja_to_en_sort") {
@@ -4247,8 +4346,11 @@
     function isValidTrainingRouteCombo(unitName, qFormat, aFormat, materials) {
       const parsed = trainingRouteLabelsToInternal(qFormat, aFormat);
       if (!parsed.format || !parsed.ansType) return false;
-      const modeName = getTrainingModeNameForUnit(unitName, materials);
-      const category = getTrainingCategoryForUnit(unitName, materials);
+      const mat = findTrainingMaterialForUnit(unitName, materials, qFormat);
+      const modeName = mat ? String(mat.modeName || "") : getTrainingModeNameForUnit(unitName, materials);
+      const category = mat
+        ? ((mat.category === "kanji" || /漢字/.test(modeName)) ? "kanji" : "english")
+        : getTrainingCategoryForUnit(unitName, materials);
       if (!modeName && category !== "kanji") return false;
       const formats = getLearnerFormatOptions(modeName, category);
       const fmt = formats.find(function (f) { return f.qFormat === String(qFormat || "").trim(); });
@@ -7357,7 +7459,7 @@
       const sel = document.getElementById('kanji-quiz-format-select');
       if (!sel) return;
       // 単漢字ブック向け形式（熟語読み以外）
-      const standardFormats = ['mixed', 'select_kana', 'type_yomi', 'write_kanji', 'stroke_order'];
+      const standardFormats = ['select_kana', 'type_yomi', 'write_kanji', 'stroke_order'];
       if (kanjiQuizCurrentSheetKind_ === 'jukugo') {
         // 熟語ブック → 熟語読みのみ
         Array.from(sel.options).forEach(function (opt) {
@@ -7374,11 +7476,11 @@
           opt.disabled = !on;
           opt.hidden = !on;
         });
-        if (sel.value === 'jukugo_yomi' || !sel.value || (sel.options[sel.selectedIndex] && sel.options[sel.selectedIndex].disabled)) {
+        if (sel.value === 'jukugo_yomi' || sel.value === 'mixed' || !sel.value || (sel.options[sel.selectedIndex] && sel.options[sel.selectedIndex].disabled)) {
           let fallback = 'write_kanji';
           try {
             const v = localStorage.getItem(LS_KANJI_QUIZ_FORMAT);
-            if (v && standardFormats.indexOf(v) >= 0) fallback = v;
+            if (v && v !== 'mixed' && standardFormats.indexOf(v) >= 0) fallback = v;
           } catch (e) {}
           sel.value = fallback;
           try { localStorage.setItem(LS_KANJI_QUIZ_FORMAT, fallback); } catch (e2) {}
@@ -7390,10 +7492,21 @@
     }
     function getKanjiQuizFormatMode() {
       const sel = document.getElementById('kanji-quiz-format-select');
-      if (sel && sel.value) return sel.value;
+      if (sel && sel.value) {
+        if (sel.value === 'mixed') {
+          sel.value = 'write_kanji';
+          try { localStorage.setItem(LS_KANJI_QUIZ_FORMAT, 'write_kanji'); } catch (e0) {}
+          return 'write_kanji';
+        }
+        return sel.value;
+      }
       try {
         const v = localStorage.getItem(LS_KANJI_QUIZ_FORMAT);
-        if (v && ['mixed', 'write_kanji', 'select_kana', 'type_yomi', 'stroke_order', 'jukugo_yomi'].indexOf(v) >= 0) return v;
+        if (v === 'mixed') {
+          try { localStorage.setItem(LS_KANJI_QUIZ_FORMAT, 'write_kanji'); } catch (e1) {}
+          return 'write_kanji';
+        }
+        if (v && ['write_kanji', 'select_kana', 'type_yomi', 'stroke_order', 'jukugo_yomi'].indexOf(v) >= 0) return v;
       } catch (e) {}
       return 'write_kanji';
     }
@@ -7419,7 +7532,8 @@
     }
     function filterKanjiQuizQuestionsByFormat(questions, mode) {
       const arr = Array.isArray(questions) ? questions : [];
-      if (!mode || mode === 'mixed') return arr.slice();
+      var m = mode || 'write_kanji';
+      if (m === 'mixed') m = 'write_kanji';
       var typeMap = {
         write_kanji: 'ruby_to_kanji',
         select_kana: 'okurigana_shift',
@@ -7427,8 +7541,8 @@
         stroke_order: 'stroke_order_trace',
         jukugo_yomi: 'jukugo_yomi'
       };
-      var t = typeMap[mode];
-      if (!t) return arr.slice();
+      var t = typeMap[m];
+      if (!t) return arr.filter(function (q) { return q.type === 'ruby_to_kanji'; });
       return arr.filter(function (q) { return q.type === t; });
     }
     function shuffleKanjiQuizQuestionsArray(arr) {
@@ -7619,15 +7733,15 @@
       if (!readingSent && raw) q.contextSentenceReading = raw;
       return q;
     }
-    function prepareKanjiQuizQuestionsForPlay(rawList) {
-      var mode = getKanjiQuizFormatMode();
+    function prepareKanjiQuizQuestionsForPlay(rawList, formatModeOverride) {
+      var mode = formatModeOverride || getKanjiQuizFormatMode();
       var normalized = (Array.isArray(rawList) ? rawList : []).map(function (q) {
         if (!q || q.type !== "okurigana_shift") return q;
         return rebuildOkuriganaQuestionByAlgorithm_(q);
       });
       var filtered = filterKanjiQuizQuestionsByFormat(normalized, mode);
       if (!filtered.length) {
-        alert('この しかた では もんだいがありません。\nほかの しかたを えらぶか、混合にしてください。');
+        alert('この しかた では もんだいがありません。\nほかの しかたを えらんでください。');
         return null;
       }
       // 出題順のシャッフルは startKanjiQuizPlay 内で1回だけ行う（二重シャッフル防止）
@@ -10771,12 +10885,12 @@
       return { isCorrect: false, isPartial: false, scriptBonusMult: 0 };
     }
     function kanjiQuizTypeBadgeText(type) {
-      if (type === "okurigana_shift") return "問題タイプ: おくりがな（選択）";
-      if (type === "ruby_to_kanji") return "問題タイプ: よみ→かんじ（しゅどく）";
-      if (type === "sentence_to_ruby") return "問題タイプ: れいぶん→よみ（タイピング）";
+      if (type === "okurigana_shift") return "問題タイプ: 送り仮名選択";
+      if (type === "ruby_to_kanji") return "問題タイプ: 書いて問題に回答";
+      if (type === "sentence_to_ruby") return "問題タイプ: 読み仮名タイプ";
       if (type === "stroke_count") return "問題タイプ: かくすう";
-      if (type === "stroke_order_trace") return "問題タイプ: 書き順（なぞり）";
-      if (type === "jukugo_yomi") return "問題タイプ: 熟語の読み（選択）";
+      if (type === "stroke_order_trace") return "問題タイプ: 書き順チェック";
+      if (type === "jukugo_yomi") return "問題タイプ: 熟語読み方選択";
       return "";
     }
     function roundKanjiPtOneDecimal_(n) {
@@ -11528,7 +11642,7 @@
         const filtered = filterKanjiQuizQuestionsByFormat(ctx.allQuestions, mode);
         if (!filtered.length) {
           hideKanjiQuizSetLoadingOverlay_();
-          alert("この しかた では もんだいがありません。\nほかの しかたを えらぶか、混合にしてください。");
+          alert("この しかた では もんだいがありません。\nほかの しかたを えらんでください。");
           return;
         }
         allQuestionsStored = filtered.slice();
@@ -11627,7 +11741,7 @@
           nigateBypassFilter: true,
           nigateTraining: !!ctx.nigateTraining,
           nigateAxis: ctx.nigateAxis,
-          formatMode: ctx.formatMode || "mixed"
+          formatMode: ctx.formatMode || "write_kanji"
         });
         return;
       }
@@ -11650,7 +11764,7 @@
         const filtered = filterKanjiQuizQuestionsByFormat(ctx.allQuestions, mode);
         if (!filtered.length) {
           alert(
-            "この しかた では もんだいがありません。\nほかの しかたを えらぶか、混合にしてください。"
+            "この しかた では もんだいがありません。\nほかの しかたを えらんでください。"
           );
           return;
         }
