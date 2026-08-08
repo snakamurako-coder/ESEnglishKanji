@@ -239,7 +239,7 @@
       const sel = document.getElementById('kanji-quiz-format-select');
       if (!sel) return;
       // 単漢字ブック向け形式（熟語読み以外）
-      const standardFormats = ['mixed', 'select_kana', 'type_yomi', 'write_kanji', 'stroke_order'];
+      const standardFormats = ['select_kana', 'type_yomi', 'write_kanji', 'stroke_order'];
       if (kanjiQuizCurrentSheetKind_ === 'jukugo') {
         // 熟語ブック → 熟語読みのみ
         Array.from(sel.options).forEach(function (opt) {
@@ -256,11 +256,11 @@
           opt.disabled = !on;
           opt.hidden = !on;
         });
-        if (sel.value === 'jukugo_yomi' || !sel.value || (sel.options[sel.selectedIndex] && sel.options[sel.selectedIndex].disabled)) {
+        if (sel.value === 'jukugo_yomi' || sel.value === 'mixed' || !sel.value || (sel.options[sel.selectedIndex] && sel.options[sel.selectedIndex].disabled)) {
           let fallback = 'write_kanji';
           try {
             const v = localStorage.getItem(LS_KANJI_QUIZ_FORMAT);
-            if (v && standardFormats.indexOf(v) >= 0) fallback = v;
+            if (v && v !== 'mixed' && standardFormats.indexOf(v) >= 0) fallback = v;
           } catch (e) {}
           sel.value = fallback;
           try { localStorage.setItem(LS_KANJI_QUIZ_FORMAT, fallback); } catch (e2) {}
@@ -272,10 +272,21 @@
     }
     function getKanjiQuizFormatMode() {
       const sel = document.getElementById('kanji-quiz-format-select');
-      if (sel && sel.value) return sel.value;
+      if (sel && sel.value) {
+        if (sel.value === 'mixed') {
+          sel.value = 'write_kanji';
+          try { localStorage.setItem(LS_KANJI_QUIZ_FORMAT, 'write_kanji'); } catch (e0) {}
+          return 'write_kanji';
+        }
+        return sel.value;
+      }
       try {
         const v = localStorage.getItem(LS_KANJI_QUIZ_FORMAT);
-        if (v && ['mixed', 'write_kanji', 'select_kana', 'type_yomi', 'stroke_order', 'jukugo_yomi'].indexOf(v) >= 0) return v;
+        if (v === 'mixed') {
+          try { localStorage.setItem(LS_KANJI_QUIZ_FORMAT, 'write_kanji'); } catch (e1) {}
+          return 'write_kanji';
+        }
+        if (v && ['write_kanji', 'select_kana', 'type_yomi', 'stroke_order', 'jukugo_yomi'].indexOf(v) >= 0) return v;
       } catch (e) {}
       return 'write_kanji';
     }
@@ -301,7 +312,8 @@
     }
     function filterKanjiQuizQuestionsByFormat(questions, mode) {
       const arr = Array.isArray(questions) ? questions : [];
-      if (!mode || mode === 'mixed') return arr.slice();
+      var m = mode || 'write_kanji';
+      if (m === 'mixed') m = 'write_kanji';
       var typeMap = {
         write_kanji: 'ruby_to_kanji',
         select_kana: 'okurigana_shift',
@@ -309,8 +321,8 @@
         stroke_order: 'stroke_order_trace',
         jukugo_yomi: 'jukugo_yomi'
       };
-      var t = typeMap[mode];
-      if (!t) return arr.slice();
+      var t = typeMap[m];
+      if (!t) return arr.filter(function (q) { return q.type === 'ruby_to_kanji'; });
       return arr.filter(function (q) { return q.type === t; });
     }
     function shuffleKanjiQuizQuestionsArray(arr) {
@@ -490,15 +502,15 @@
       if (!readingSent && raw) q.contextSentenceReading = raw;
       return q;
     }
-    function prepareKanjiQuizQuestionsForPlay(rawList) {
-      var mode = getKanjiQuizFormatMode();
+    function prepareKanjiQuizQuestionsForPlay(rawList, formatModeOverride) {
+      var mode = formatModeOverride || getKanjiQuizFormatMode();
       var normalized = (Array.isArray(rawList) ? rawList : []).map(function (q) {
         if (!q || q.type !== "okurigana_shift") return q;
         return rebuildOkuriganaQuestionByAlgorithm_(q);
       });
       var filtered = filterKanjiQuizQuestionsByFormat(normalized, mode);
       if (!filtered.length) {
-        alert('この しかた では もんだいがありません。\nほかの しかたを えらぶか、混合にしてください。');
+        alert('この しかた では もんだいがありません。\nほかの しかたを えらんでください。');
         return null;
       }
       // 出題順のシャッフルは startKanjiQuizPlay 内で1回だけ行う（二重シャッフル防止）

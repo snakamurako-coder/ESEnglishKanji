@@ -153,25 +153,50 @@
             let foundModeId = null;
             let foundModeName = "";
             let resolvedUnitName = "";
-            const isKanjiRoute = /漢字/.test(String(route.qFormat || "")) || /採点/.test(String(route.aFormat || ""));
+            const isKanjiRoute =
+              (typeof isKanjiTrainingQFormat_ === "function" && isKanjiTrainingQFormat_(route.qFormat)) ||
+              /漢字/.test(String(route.qFormat || "")) ||
+              /採点/.test(String(route.aFormat || "")) ||
+              /送り仮名選択|読み仮名タイプ|書いて問題に回答|書き順チェック|熟語読み方選択/.test(String(route.qFormat || ""));
             const routeUnitRaw = String(route.unitName || "");
             const routeUnitNorm = normalizeUnitNameForCompare(routeUnitRaw);
+            const preferJukugo =
+              (typeof isKanjiJukugoTrainingQFormat_ === "function" && isKanjiJukugoTrainingQFormat_(route.qFormat)) ||
+              /漢字熟語|熟語読み方選択/.test(String(route.qFormat || ""));
+            const preferStandardKanji = isKanjiRoute && !preferJukugo;
+            let fallbackMat = null;
             for (let m of materialsData) {
                 const units = Array.isArray(m.units) ? m.units : [];
                 const exact = units.find(u => String(u) === routeUnitRaw);
-                if (exact) {
-                  foundModeId = m.modeId;
-                  foundModeName = m.modeName;
-                  resolvedUnitName = String(exact);
-                  break;
+                const fuzzy = exact || units.find(u => normalizeUnitNameForCompare(u) === routeUnitNorm);
+                if (!fuzzy) continue;
+                if (!fallbackMat) {
+                  fallbackMat = { modeId: m.modeId, modeName: m.modeName, unit: String(fuzzy), category: m.category };
                 }
-                const fuzzy = units.find(u => normalizeUnitNameForCompare(u) === routeUnitNorm);
-                if (fuzzy) {
+                const isJuk = /熟語/.test(String(m.modeName || ""));
+                if (preferJukugo && isJuk) {
                   foundModeId = m.modeId;
                   foundModeName = m.modeName;
                   resolvedUnitName = String(fuzzy);
                   break;
                 }
+                if (preferStandardKanji && (m.category === "kanji" || /漢字/.test(String(m.modeName || ""))) && !isJuk) {
+                  foundModeId = m.modeId;
+                  foundModeName = m.modeName;
+                  resolvedUnitName = String(fuzzy);
+                  break;
+                }
+                if (!isKanjiRoute) {
+                  foundModeId = m.modeId;
+                  foundModeName = m.modeName;
+                  resolvedUnitName = String(fuzzy);
+                  break;
+                }
+            }
+            if (!foundModeId && fallbackMat) {
+              foundModeId = fallbackMat.modeId;
+              foundModeName = fallbackMat.modeName;
+              resolvedUnitName = fallbackMat.unit;
             }
             if(!foundModeId) {
                 alert(`「${formatUnitSheetDisplayLabel(route.unitName)}」のデータが見つかりませんでした。`);
@@ -182,24 +207,46 @@
             currentModeName = foundModeName;
 
             if (isKanjiRoute) {
+              const mappedKanji = (typeof trainingRouteLabelsToInternal === "function")
+                ? trainingRouteLabelsToInternal(route.qFormat, route.aFormat)
+                : { format: "write_kanji" };
+              let kanjiFormatMode = mappedKanji.format || "write_kanji";
+              if (kanjiFormatMode === "kanji_hand") kanjiFormatMode = "write_kanji";
+              try {
+                if (typeof LS_KANJI_QUIZ_FORMAT !== "undefined") {
+                  localStorage.setItem(LS_KANJI_QUIZ_FORMAT, kanjiFormatMode);
+                } else {
+                  localStorage.setItem("app_kanji_quiz_format_v1", kanjiFormatMode);
+                }
+              } catch (_eFmt) {}
+              const quizFetchBody = {
+                action: "get_kanji_quiz_questions",
+                modeId: foundModeId,
+                unitName: currentUnitName,
+                setId: "",
+                formatMode: kanjiFormatMode,
+                choiceCount: 4,
+                includeNoneOption: false
+              };
               fetch(GAS_API_URL, { method: 'POST', body: JSON.stringify({ action: "get_kanji_quiz_sets", modeId: foundModeId, unitName: currentUnitName }) })
               .then(r => r.json()).then(d => {
                 if (d.status !== "success") throw new Error(d.message || "漢字セット取得失敗");
                 const sets = Array.isArray(d.sets) ? d.sets : [];
                 if (!sets.length) throw new Error("セットが見つかりません");
                 const first = sets[0];
-                return fetch(GAS_API_URL, { method: 'POST', body: JSON.stringify({ action: "get_kanji_quiz_questions", modeId: foundModeId, unitName: currentUnitName, setId: String(first.setId || "") }) });
+                quizFetchBody.setId = String(first.setId || "");
+                return fetch(GAS_API_URL, { method: 'POST', body: JSON.stringify(quizFetchBody) });
               })
               .then(r => r.json()).then(q => {
                 if (q.status !== "success") throw new Error(q.message || "漢字問題取得失敗");
                 var raw = Array.isArray(q.questions) ? q.questions : [];
-                var prep = prepareKanjiQuizQuestionsForPlay(raw);
+                var prep = prepareKanjiQuizQuestionsForPlay(raw, kanjiFormatMode);
                 if (!prep) throw new Error("この形式の問題がありません");
                 startKanjiQuizPlay({
                   modeId: foundModeId,
                   modeName: foundModeName,
                   unitName: currentUnitName,
-                  setId: String((q.setId != null) ? q.setId : ""),
+                  setId: String((q.setId != null) ? q.setId : quizFetchBody.setId),
                   allQuestions: raw,
                   formatMode: prep.formatMode,
                   isTrainingMode: true,
