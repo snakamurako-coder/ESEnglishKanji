@@ -212,6 +212,7 @@
     </div>
   </div>
 
+<script src="../js/kanjiEvaluator.js?v=20260809-rel-shape-order"></script>
 <script>
   const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxll664xMVHu8aOMASTCRpECaCBBkTxYa8ffEvCigrS4xdxYQeMSu2_BeUWF1gEyCPyaw/exec";
   function postKanjiApi(action, payload = {}) {
@@ -826,129 +827,6 @@
     return strokes.map(s => s.map(p => ({x: (p.x - minX) / scale, y: (p.y - minY) / scale})));
   }
 
-  /* ==== 書き順・形状判定（点列距離＋方向ペナルティ方式） ====
-     ユーザー1画とお手本1画を N 点に等間隔リサンプリングし、
-     総合コスト = 形状距離（対応点のユークリッド距離平均） + 方向ペナルティ(1−cosθ)×重み
-     が閾値未満なら合格。i 画目どうしを照合し、最初に不合格になった画が「間違えた画」。 */
-  const KJ_ORDER_EVAL_CFG = {
-    SAMPLE_POINTS: 32,      // リサンプリング点数
-    PENALTY_WEIGHT: 20.0,   // 方向ペナルティの重み
-    SCORE_THRESHOLD: 22.0,  // 合格判定閾値（総合コスト）
-    SVG_BASE_SIZE: 109.0,   // KanjiVG の基本サイズ
-    REF_CANVAS_SIZE: 300.0  // 閾値を定義した基準キャンバスサイズ(px)
-  };
-
-  function kjOrderResamplePoints(points, targetCount) {
-    if (!points || !points.length) return Array(targetCount).fill({ x: 0, y: 0 });
-    if (points.length < 2) return Array(targetCount).fill({ x: points[0].x, y: points[0].y });
-    let totalLen = 0;
-    for (let i = 0; i < points.length - 1; i++) {
-      totalLen += Math.hypot(points[i + 1].x - points[i].x, points[i + 1].y - points[i].y);
-    }
-    if (totalLen <= 0) return Array(targetCount).fill({ x: points[0].x, y: points[0].y });
-    const interval = totalLen / (targetCount - 1);
-    const result = [{ x: points[0].x, y: points[0].y }];
-    let distAcc = 0;
-    for (let i = 0; i < points.length - 1; i++) {
-      let p1 = points[i];
-      const p2 = points[i + 1];
-      let segmentLen = Math.hypot(p2.x - p1.x, p2.y - p1.y);
-      if (segmentLen === 0) continue;
-      while (distAcc + segmentLen >= interval && result.length < targetCount) {
-        const t = (interval - distAcc) / segmentLen;
-        const newPt = { x: p1.x + t * (p2.x - p1.x), y: p1.y + t * (p2.y - p1.y) };
-        result.push(newPt);
-        segmentLen -= (interval - distAcc);
-        p1 = newPt;
-        distAcc = 0;
-      }
-      distAcc += segmentLen;
-    }
-    while (result.length < targetCount) {
-      result.push({ x: points[points.length - 1].x, y: points[points.length - 1].y });
-    }
-    return result.slice(0, targetCount);
-  }
-
-  function kjOrderShapeDistance(userPts, refPts) {
-    let sum = 0;
-    for (let i = 0; i < userPts.length; i++) {
-      sum += Math.hypot(userPts[i].x - refPts[i].x, userPts[i].y - refPts[i].y);
-    }
-    return sum / Math.max(1, userPts.length);
-  }
-
-  function kjOrderDirectionPenalty(userPts, refPts) {
-    const n = userPts.length;
-    const uVec = { x: userPts[n - 1].x - userPts[0].x, y: userPts[n - 1].y - userPts[0].y };
-    const rVec = { x: refPts[n - 1].x - refPts[0].x, y: refPts[n - 1].y - refPts[0].y };
-    const uMag = Math.hypot(uVec.x, uVec.y) || 1.0;
-    const rMag = Math.hypot(rVec.x, rVec.y) || 1.0;
-    const cos = (uVec.x * rVec.x + uVec.y * rVec.y) / (uMag * rMag);
-    return 1.0 - Math.max(-1.0, Math.min(1.0, cos));
-  }
-
-  /** 1画分の合否判定（純関数）。座標は同一キャンバス空間であること */
-  function kjOrderEvaluateStrokePair(rawUserPoints, refPoints, canvasSize) {
-    const cfg = KJ_ORDER_EVAL_CFG;
-    /* 閾値は基準キャンバス(300px)で定義。別サイズでは座標を基準サイズへ換算して比較 */
-    const adj = canvasSize > 0 ? cfg.REF_CANVAS_SIZE / canvasSize : 1;
-    const u = kjOrderResamplePoints(rawUserPoints, cfg.SAMPLE_POINTS).map(p => ({ x: p.x * adj, y: p.y * adj }));
-    const r = kjOrderResamplePoints(refPoints, cfg.SAMPLE_POINTS).map(p => ({ x: p.x * adj, y: p.y * adj }));
-    const shapeDist = kjOrderShapeDistance(u, r);
-    const dirPenalty = kjOrderDirectionPenalty(u, r);
-    const totalScore = shapeDist + dirPenalty * cfg.PENALTY_WEIGHT;
-    return {
-      pass: totalScore < cfg.SCORE_THRESHOLD,
-      shapeDist: Number(shapeDist.toFixed(1)),
-      dirPenalty: Number(dirPenalty.toFixed(2)),
-      totalScore: Number(totalScore.toFixed(1))
-    };
-  }
-
-  function kjOrderBBox(strokesPts) {
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    strokesPts.forEach(s => s.forEach(p => {
-      minX = Math.min(minX, p.x); minY = Math.min(minY, p.y);
-      maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y);
-    }));
-    if (!isFinite(minX)) return { cx: 0, cy: 0, size: 1 };
-    return {
-      cx: (minX + maxX) / 2,
-      cy: (minY + maxY) / 2,
-      size: Math.max(1, Math.max(maxX - minX, maxY - minY))
-    };
-  }
-
-  /**
-   * 全画を i 画目どうしで照合する（純関数）。
-   * 戻り値: { orderOk, firstWrongStroke（1始まり・なければ0）, results[] }
-   * opts.align: 全体の位置・大きさ差は他項目で採点するため、判定前に外形を合わせる
-   */
-  function kjOrderEvaluateStrokes(userStrokesPts, refStrokesPts, canvasSize, opts) {
-    let uStrokes = userStrokesPts;
-    if (opts && opts.align && userStrokesPts.length && refStrokesPts.length) {
-      const uB = kjOrderBBox(userStrokesPts);
-      const rB = kjOrderBBox(refStrokesPts);
-      const s = rB.size / uB.size;
-      uStrokes = userStrokesPts.map(stroke => stroke.map(p => ({
-        x: (p.x - uB.cx) * s + rB.cx,
-        y: (p.y - uB.cy) * s + rB.cy
-      })));
-    }
-    const n = Math.min(uStrokes.length, refStrokesPts.length);
-    const results = [];
-    let firstWrong = 0;
-    for (let i = 0; i < n; i++) {
-      const ev = kjOrderEvaluateStrokePair(uStrokes[i], refStrokesPts[i], canvasSize);
-      results.push(ev);
-      if (!ev.pass && !firstWrong) firstWrong = i + 1;
-    }
-    /* 画数が合わない場合は、はみ出した（または足りない）最初の画を誤りとする */
-    if (!firstWrong && uStrokes.length !== refStrokesPts.length) firstWrong = n + 1;
-    return { orderOk: firstWrong === 0, firstWrongStroke: firstWrong, results: results };
-  }
-
   function dtwMeanDistance(a, b) {
     const n = a.length, m = b.length;
     if (n === 0 || m === 0) return 1;
@@ -1160,15 +1038,27 @@
     const sizeS = calcSizeScoreCanvas(userResampled, scaledRefs);
 
     const countOk = userStrokes.length === referenceStrokes.length;
-    /* 書き順判定は「点列距離＋方向ペナルティ方式」に一本化（旧: DTW割当の恒等チェック） */
+    /* 書き順判定: 相対・形状優先（kanjiEvaluator.js） */
     const orderEval = kjOrderEvaluateStrokes(
       userStrokes.map(function (s) { return s.points; }),
       scaledRefs.map(function (s) { return s.points; }),
-      CANVAS_SIZE,
-      { align: true }
+      CANVAS_SIZE
     );
     let orderOk = countOk && orderEval.orderOk;
     const firstWrongStroke = orderEval.firstWrongStroke || 0;
+    try {
+      console.log('[kjOrderEval]', orderEval.results.map(function (r) {
+        return {
+          stroke: r.strokeIndex + 1,
+          pass: r.pass,
+          total: r.totalScore,
+          shape: r.shapeDist,
+          dirPen: r.dirPenalty,
+          relPen: r.relStartPenalty,
+          details: r.details
+        };
+      }));
+    } catch (_eLog) {}
     let trajS = 0, seS = 0, strS = 0;
     let assignment = null;
 
@@ -1257,6 +1147,7 @@
         countOk: !!countOk,
         orderOk: !!orderOk,
         firstWrongStroke: orderOk ? 0 : firstWrongStroke,
+        orderEvalDetails: orderEval.results,
         userStrokeCount: userStrokes.length,
         referenceStrokeCount: referenceStrokes.length,
         items: [
