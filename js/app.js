@@ -8283,7 +8283,7 @@
           if (!t || !t.closest) return;
           if (
             t.closest(
-              "#kanji-quiz-write-canvas, .kanji-drill-hw-prefix-col, .kanji-drill-hw-suffix-col, #kanji-play-char-handwriting, #kanji-play-prompt, #kanji-stroke-order-readings, #kanji-quiz-hw-wrong-panel, .kanji-quiz-title-rail-wrap, #kanji-play-progress"
+              "#kanji-quiz-write-canvas, .kanji-drill-hw-prefix-col, .kanji-drill-hw-suffix-col, #kanji-play-char-handwriting, #kanji-play-prompt, #kanji-quiz-hw-wrong-panel, .kanji-quiz-title-rail-wrap, #kanji-play-progress"
             )
           ) {
             /* canvas 自身の描画は別リスナが preventDefault する。ここでは選択対象外の表示領域のみ */
@@ -10857,17 +10857,31 @@
       }
       const main = sec.querySelector(".kanji-quiz-drill-main");
       const wrap = sec.querySelector(".kanji-quiz-drill-wrap");
+      const stack = sec.querySelector(".kanji-quiz-hw-stack");
+      const readings = document.getElementById("kanji-stroke-order-readings");
       const apply = function () {
         try {
           if (wrap) {
             wrap.scrollLeft = 0;
             wrap.scrollTop = 0;
           }
-          if (!main) return;
-          main.scrollTop = 0;
-          /* 横：右端を初期表示（縦書きドリルの「右上」） */
-          const maxL = Math.max(0, main.scrollWidth - main.clientWidth);
-          main.scrollLeft = maxL;
+          if (main) {
+            main.scrollTop = 0;
+            /* 横：右端を初期表示（縦書きドリルの「右上」） */
+            const maxL = Math.max(0, main.scrollWidth - main.clientWidth);
+            main.scrollLeft = maxL;
+          }
+          /* 書き順：カード帯・よみ帯は direction:rtl のため scrollLeft=0 が右端（開始側） */
+          if (sec.classList.contains("kanji-quiz-stroke-order-active")) {
+            if (stack) {
+              stack.scrollLeft = 0;
+              stack.scrollTop = 0;
+            }
+            if (readings) {
+              readings.scrollLeft = 0;
+              readings.scrollTop = 0;
+            }
+          }
         } catch (_e) {}
       };
       apply();
