@@ -9306,13 +9306,13 @@
       const idleLabel = isStrokeBusy ? "これで採点" : "これでかいとう";
       const submitted = kanjiQuizHwAnswerSubmitted_();
       kanjiQuizHandSubmitBusy = !!isBusy;
-      if (opts.silentBusy) {
-        if (btn) btn.disabled = !!isBusy || submitted;
-        return;
-      }
       if (kanjiQuizHandSubmitAnimTimer) {
         clearInterval(kanjiQuizHandSubmitAnimTimer);
         kanjiQuizHandSubmitAnimTimer = null;
+      }
+      if (opts.silentBusy) {
+        if (btn) btn.disabled = !!isBusy || submitted;
+        return;
       }
       if (!btn) return;
       btn.disabled = !!isBusy || submitted;
@@ -9402,6 +9402,11 @@
       if (!secHand || !secHand.classList.contains("active")) return;
       const q = kanjiQuizSession.questions[kanjiQuizSession.index];
       if (!q || !isKanjiQuizHandwritingQuestionType_(q.type)) return;
+      /* 採点済み後の二重 postMessage は無視（さいてんステータス表示後の再採点ループ防止） */
+      if (kanjiQuizHwAnswerSubmitted_()) {
+        setKanjiQuizHandSubmitBusy(false);
+        return;
+      }
       // 書き順は合格確定後の二重採点を無視（自動で次字へ移るまでの間）
       if (
         q.type === "stroke_order_trace" &&
@@ -9412,6 +9417,7 @@
       }
       /* 書いて答える：合格待機中の再採点は無視 */
       if (q.type === "ruby_to_kanji" && typeof kanjiQuizSession.hwPassPendingAdvance === "function") {
+        setKanjiQuizHandSubmitBusy(false);
         return;
       }
       if (sc == null || sc < KANJI_QUIZ_HAND_PASS) {
@@ -9493,6 +9499,7 @@
         if (typeof advanceFn === "function") advanceFn();
       }
       kanjiQuizSession.hwPassPendingAdvance = goNext;
+      setKanjiQuizHandSubmitBusy(false);
       const skipBtn = document.getElementById("kanji-quiz-skip-hw-btn");
       if (skipBtn) {
         skipBtn.textContent = "次へ";
@@ -10270,6 +10277,15 @@
 
         var quizSec = document.getElementById("section-kanji-quiz-play");
         if (quizSec && quizSec.classList.contains("active") && kanjiQuizSession) {
+          var qNow = kanjiQuizSession.questions[kanjiQuizSession.index];
+          if (
+            qNow &&
+            isKanjiQuizHandwritingQuestionType_(qNow.type) &&
+            kanjiQuizHwAnswerSubmitted_()
+          ) {
+            setKanjiQuizHandSubmitBusy(false);
+            return;
+          }
           kanjiQuizSession.lastHandScore = ev.data.score;
           var qNow = kanjiQuizSession.questions[kanjiQuizSession.index];
           var kToast = String(ev.data.kanjiChar || (qNow && qNow.kanji) || "").trim();
