@@ -5808,7 +5808,7 @@
         try { alert("高機能モードの読み込みに失敗しました。"); } catch (_e) {}
         return;
       }
-      const KP_EMBED_VER = "10";
+      const KP_EMBED_VER = "11";
       const KP_SRC = "assets/kp-practice.html";
       if (frame.dataset.kpEmbedVer !== KP_EMBED_VER) {
         frame.dataset.kpLoaded = "";
@@ -8394,7 +8394,7 @@
         if (!isKanjiQuizHandwritingPlayActive_()) return false;
         const t = e && e.target;
         if (!t || !t.closest) return true;
-        if (t.closest("button, a, input, textarea, select, [contenteditable='true']")) return false;
+        if (t.closest("button, a, input, textarea, select, label, [contenteditable='true']")) return false;
         return true;
       };
       const block = function (e) {
@@ -8436,7 +8436,7 @@
             clearSel_();
             return;
           }
-          if (t.closest && t.closest("button, a, input, textarea, select")) return;
+          if (t.closest && t.closest("button, a, input, textarea, select, label")) return;
           if (typeof e.preventDefault === "function") e.preventDefault();
           clearSel_();
         },
@@ -8713,6 +8713,7 @@
           if (pts.length) {
             const typ = kanjiQuizClassifyStroke(pts, kanjiQuizStrokeStartTime);
             kanjiQuizParentStrokes.push({ type: typ, points: pts });
+            kanjiQuizMaybeRealtimeStrokeOrderJudge_();
           }
           kanjiQuizCurrentStrokePoints = [];
           kanjiQuizRedrawParentCanvas();
@@ -8882,6 +8883,123 @@
       if (dy < 0 || angleDiff > thr.hookAngleDiff) return "hane";
       return "harai";
     }
+    /* ==== 書き順判定（点列距離＋方向ペナルティ方式・iframe 側と同一ロジック） ====
+       1画を N 点に等間隔リサンプリングし、
+       総合コスト = 形状距離（対応点距離平均） + 方向ペナルティ(1−cosθ)×重み < 閾値 で合格 */
+    const KJ_ORDER_EVAL_CFG_ = {
+      SAMPLE_POINTS: 32,
+      PENALTY_WEIGHT: 20.0,
+      SCORE_THRESHOLD: 22.0,
+      REF_CANVAS_SIZE: 300.0
+    };
+    function kjOrderResamplePoints_(points, targetCount) {
+      if (!points || !points.length) return Array(targetCount).fill({ x: 0, y: 0 });
+      if (points.length < 2) return Array(targetCount).fill({ x: points[0].x, y: points[0].y });
+      let totalLen = 0;
+      for (let i = 0; i < points.length - 1; i++) {
+        totalLen += Math.hypot(points[i + 1].x - points[i].x, points[i + 1].y - points[i].y);
+      }
+      if (totalLen <= 0) return Array(targetCount).fill({ x: points[0].x, y: points[0].y });
+      const interval = totalLen / (targetCount - 1);
+      const result = [{ x: points[0].x, y: points[0].y }];
+      let distAcc = 0;
+      for (let i = 0; i < points.length - 1; i++) {
+        let p1 = points[i];
+        const p2 = points[i + 1];
+        let segmentLen = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+        if (segmentLen === 0) continue;
+        while (distAcc + segmentLen >= interval && result.length < targetCount) {
+          const t = (interval - distAcc) / segmentLen;
+          const newPt = { x: p1.x + t * (p2.x - p1.x), y: p1.y + t * (p2.y - p1.y) };
+          result.push(newPt);
+          segmentLen -= (interval - distAcc);
+          p1 = newPt;
+          distAcc = 0;
+        }
+        distAcc += segmentLen;
+      }
+      while (result.length < targetCount) {
+        result.push({ x: points[points.length - 1].x, y: points[points.length - 1].y });
+      }
+      return result.slice(0, targetCount);
+    }
+    /** 1画分の合否判定（純関数）。user/ref とも同一キャンバス座標系で渡す */
+    function kjOrderEvaluateStrokePair_(rawUserPoints, refPoints, canvasSize) {
+      const cfg = KJ_ORDER_EVAL_CFG_;
+      const adj = canvasSize > 0 ? cfg.REF_CANVAS_SIZE / canvasSize : 1;
+      const u = kjOrderResamplePoints_(rawUserPoints, cfg.SAMPLE_POINTS).map(function (p) {
+        return { x: p.x * adj, y: p.y * adj };
+      });
+      const r = kjOrderResamplePoints_(refPoints, cfg.SAMPLE_POINTS).map(function (p) {
+        return { x: p.x * adj, y: p.y * adj };
+      });
+      let sum = 0;
+      for (let i = 0; i < u.length; i++) {
+        sum += Math.hypot(u[i].x - r[i].x, u[i].y - r[i].y);
+      }
+      const shapeDist = sum / Math.max(1, u.length);
+      const n = u.length;
+      const uVec = { x: u[n - 1].x - u[0].x, y: u[n - 1].y - u[0].y };
+      const rVec = { x: r[n - 1].x - r[0].x, y: r[n - 1].y - r[0].y };
+      const uMag = Math.hypot(uVec.x, uVec.y) || 1.0;
+      const rMag = Math.hypot(rVec.x, rVec.y) || 1.0;
+      const cos = Math.max(-1.0, Math.min(1.0, (uVec.x * rVec.x + uVec.y * rVec.y) / (uMag * rMag)));
+      const dirPenalty = 1.0 - cos;
+      const totalScore = shapeDist + dirPenalty * cfg.PENALTY_WEIGHT;
+      return {
+        pass: totalScore < cfg.SCORE_THRESHOLD,
+        shapeDist: Number(shapeDist.toFixed(1)),
+        dirPenalty: Number(dirPenalty.toFixed(2)),
+        totalScore: Number(totalScore.toFixed(1))
+      };
+    }
+    /* ==== リアルタイム書き順判定（書き順クイズ専用・トグルで有効化） ==== */
+    function kanjiQuizRealtimeOrderEnabled_() {
+      const cb = document.getElementById("kanji-quiz-rt-order-toggle");
+      return !!(cb && cb.checked);
+    }
+    function setKanjiQuizRtOrderFeedback_(msg, kind) {
+      const el = document.getElementById("kanji-quiz-rt-order-feedback");
+      if (!el) return;
+      el.textContent = msg || "";
+      el.classList.toggle("is-ok", kind === "ok");
+      el.classList.toggle("is-ng", kind === "ng");
+    }
+    function kanjiQuizOnRtOrderToggleChanged() {
+      if (kanjiQuizRealtimeOrderEnabled_()) {
+        setKanjiQuizRtOrderFeedback_("かきはじめると、1画ごとに判定するよ", "ok");
+      } else {
+        setKanjiQuizRtOrderFeedback_("");
+      }
+    }
+    /** 直前に書き終えた1画をお手本の同じ画と照合し、間違えた瞬間に何画目かを知らせる */
+    function kanjiQuizMaybeRealtimeStrokeOrderJudge_() {
+      try {
+        if (!kanjiQuizRealtimeOrderEnabled_()) return;
+        if (!kanjiQuizSession) return;
+        const q = kanjiQuizSession.questions[kanjiQuizSession.index];
+        if (!q || q.type !== "stroke_order_trace") return;
+        const refs = kanjiQuizTraceGuideStrokes;
+        if (!refs || !refs.length) return;
+        const idx = kanjiQuizParentStrokes.length - 1;
+        if (idx < 0) return;
+        const strokeNo = idx + 1;
+        if (idx >= refs.length) {
+          setKanjiQuizRtOrderFeedback_("✕ " + strokeNo + "画目：お手本（" + refs.length + "画）より多いよ", "ng");
+          return;
+        }
+        const ev = kjOrderEvaluateStrokePair_(
+          kanjiQuizParentStrokes[idx].points,
+          refs[idx].points,
+          kanjiQuizWriteLogicalSize
+        );
+        if (ev.pass) {
+          setKanjiQuizRtOrderFeedback_("○ " + strokeNo + "画目まで正しいかきじゅん！", "ok");
+        } else {
+          setKanjiQuizRtOrderFeedback_("✕ いま " + strokeNo + "画目をまちがえたよ", "ng");
+        }
+      } catch (_eRt) {}
+    }
     function kanjiQuizMergeKanjiStrokeParams(partial) {
       const def = {
         baseWidth: 11.0,
@@ -8952,6 +9070,9 @@
       try {
         clearKanjiHwScoreStatus_();
       } catch (_eSt) {}
+      try {
+        setKanjiQuizRtOrderFeedback_("");
+      } catch (_eRtFb) {}
       if (clearIframe) {
         try {
           const frame = document.getElementById("kp-pro-frame");
@@ -10050,6 +10171,13 @@
           "</li>";
       });
       const feedbackHtml = buildKanjiHwScoreFeedbackHtml_(items, rates);
+      /* 書き順判定（点列距離＋方向ペナルティ方式）が返す「最初に間違えた画」 */
+      const firstWrong = bd ? Math.max(0, Math.round(Number(bd.firstWrongStroke) || 0)) : 0;
+      const orderNote = firstWrong
+        ? '<p class="kanji-hw-score-note kanji-hw-score-order-note">かきじゅん：' +
+          firstWrong +
+          "画目でまちがえたよ</p>"
+        : "";
       const sizeNote =
         bd && bd.sizeLabel
           ? '<p class="kanji-hw-score-note">' + escapeHtml(String(bd.sizeLabel)) + "</p>"
@@ -10089,6 +10217,7 @@
         "</ul>" +
         "</div>" +
         feedbackHtml +
+        orderNote +
         sizeNote +
         "</div>";
     }
