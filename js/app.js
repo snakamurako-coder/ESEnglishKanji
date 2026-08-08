@@ -8937,6 +8937,17 @@
         setKanjiQuizRtOrderFeedback_("");
       }
     }
+    /** リアルタイム書き順ON時：自動で「これで採点」と同じ postMessage 採点を1回だけ起動 */
+    function kanjiQuizRtOrderTryAutoHandAnswer_() {
+      if (!kanjiQuizRealtimeOrderEnabled_()) return;
+      if (!kanjiQuizSession) return;
+      if (kanjiQuizHandSubmitBusy || kanjiQuizHwAnswerSubmitted_()) return;
+      if (kanjiQuizSession.rtOrderAutoTriggered) return;
+      const q = kanjiQuizSession.questions[kanjiQuizSession.index];
+      if (!q || q.type !== "stroke_order_trace") return;
+      kanjiQuizSession.rtOrderAutoTriggered = true;
+      kanjiQuizRunHandwritingAnswer({ fromRtOrderAuto: true });
+    }
     /** 直前に書き終えた1画をお手本の同じ画と照合し、間違えた瞬間に何画目かを知らせる */
     function kanjiQuizMaybeRealtimeStrokeOrderJudge_() {
       try {
@@ -8944,6 +8955,7 @@
         if (!kanjiQuizSession) return;
         const q = kanjiQuizSession.questions[kanjiQuizSession.index];
         if (!q || q.type !== "stroke_order_trace") return;
+        if (kanjiQuizHandSubmitBusy || kanjiQuizHwAnswerSubmitted_()) return;
         const refs = kanjiQuizTraceGuideStrokes;
         if (!refs || !refs.length) return;
         const idx = kanjiQuizParentStrokes.length - 1;
@@ -8951,6 +8963,7 @@
         const strokeNo = idx + 1;
         if (idx >= refs.length) {
           setKanjiQuizRtOrderFeedback_("✕ " + strokeNo + "画目：お手本（" + refs.length + "画）より多いよ", "ng");
+          kanjiQuizRtOrderTryAutoHandAnswer_();
           return;
         }
         const ev = kjOrderEvaluateStrokePair(
@@ -8965,12 +8978,16 @@
         );
         if (ev.pass) {
           setKanjiQuizRtOrderFeedback_("○ " + strokeNo + "画目まで正しいかきじゅん！", "ok");
+          if (strokeNo >= refs.length) {
+            kanjiQuizRtOrderTryAutoHandAnswer_();
+          }
         } else {
           var why = "";
           if (ev.details && ev.details.failReason === "direction") why = "（書き方）";
           else if (ev.details && ev.details.failReason === "relStart") why = "（つなぎ）";
           else if (ev.details && ev.details.failReason === "shape") why = "（形）";
           setKanjiQuizRtOrderFeedback_("✕ いま " + strokeNo + "画目をまちがえたよ" + why, "ng");
+          kanjiQuizRtOrderTryAutoHandAnswer_();
         }
         try {
           console.log("[kjOrderEval rt]", strokeNo, ev);
@@ -9268,14 +9285,18 @@
       if (refreshBtn) refreshBtn.disabled = isLocked;
     }
     function resetKanjiQuizHandAnswerState_() {
-      if (kanjiQuizSession) kanjiQuizSession.hwAnswerSubmitted = false;
+      if (kanjiQuizSession) {
+        kanjiQuizSession.hwAnswerSubmitted = false;
+        kanjiQuizSession.rtOrderAutoTriggered = false;
+      }
       setKanjiQuizHwCardControlsLocked(false);
     }
     function markKanjiQuizHandAnswerSubmitted_() {
       if (kanjiQuizSession) kanjiQuizSession.hwAnswerSubmitted = true;
       setKanjiQuizHandSubmitBusy(false);
     }
-    function setKanjiQuizHandSubmitBusy(isBusy) {
+    function setKanjiQuizHandSubmitBusy(isBusy, opts) {
+      opts = opts || {};
       const qBusy =
         kanjiQuizSession &&
         kanjiQuizSession.questions &&
@@ -9285,6 +9306,10 @@
       const idleLabel = isStrokeBusy ? "これで採点" : "これでかいとう";
       const submitted = kanjiQuizHwAnswerSubmitted_();
       kanjiQuizHandSubmitBusy = !!isBusy;
+      if (opts.silentBusy) {
+        if (btn) btn.disabled = !!isBusy || submitted;
+        return;
+      }
       if (kanjiQuizHandSubmitAnimTimer) {
         clearInterval(kanjiQuizHandSubmitAnimTimer);
         kanjiQuizHandSubmitAnimTimer = null;
@@ -9302,16 +9327,19 @@
         }, 280);
       } else {
         btn.textContent = idleLabel;
+        if (!submitted && kanjiQuizSession) kanjiQuizSession.rtOrderAutoTriggered = false;
       }
     }
-    function kanjiQuizRunHandwritingAnswer() {
+    function kanjiQuizRunHandwritingAnswer(opts) {
+      opts = opts || {};
+      const fromRtOrderAuto = !!opts.fromRtOrderAuto;
       if (kanjiQuizHandSubmitBusy || kanjiQuizHwAnswerSubmitted_()) return;
       if (!kanjiQuizParentStrokes.length) {
-        alert("かんじを かいてください。");
+        if (!fromRtOrderAuto) alert("かんじを かいてください。");
         return;
       }
       if (!kanjiQuizSession) return;
-      setKanjiQuizHandSubmitBusy(true);
+      setKanjiQuizHandSubmitBusy(true, fromRtOrderAuto ? { silentBusy: true } : null);
       function postEvalToFrame() {
         return (function () {
           const frame = document.getElementById("kp-pro-frame");
@@ -9379,6 +9407,7 @@
         q.type === "stroke_order_trace" &&
         (kanjiQuizSession.rubyHandComplete || kanjiQuizSession.strokeOrderPendingAdvance)
       ) {
+        setKanjiQuizHandSubmitBusy(false);
         return;
       }
       /* 書いて答える：合格待機中の再採点は無視 */
@@ -10240,7 +10269,11 @@
               kanjiQuizResetHwViewportScroll_();
             } catch (_eScr) {}
           } catch (_eBd) {}
-          kanjiQuizOnHandwritingScored(ev.data.score);
+          try {
+            kanjiQuizOnHandwritingScored(ev.data.score);
+          } finally {
+            setKanjiQuizHandSubmitBusy(false);
+          }
           return;
         }
 
@@ -11380,6 +11413,7 @@
       kanjiQuizSession.strokeOrderPendingAdvance = null;
       kanjiQuizSession.hwPassPendingAdvance = null;
       kanjiQuizSession.strokeOrderFailedOnce = false;
+      kanjiQuizSession.rtOrderAutoTriggered = false;
       updateStrokeOrderDemoButton_();
       resetKanjiQuizDrillPlayShell();
       const secPlay = document.getElementById("section-kanji-quiz-play");
