@@ -9504,6 +9504,11 @@
       if (!kanjiQuizSession) return;
       const secHand = document.getElementById("section-kanji-quiz-play");
       if (!secHand || !secHand.classList.contains("active")) return;
+      /* 書き順：採点済み待機中の「次へ（ふせいかい）」で次問題へ */
+      if (typeof kanjiQuizSession.strokeOrderPendingAdvance === "function") {
+        kanjiQuizSession.strokeOrderPendingAdvance();
+        return;
+      }
       /* 合格待機中の「次へ」はスキップ（不正解確定）ではなく進行 */
       if (typeof kanjiQuizSession.hwPassPendingAdvance === "function") {
         kanjiQuizSession.hwPassPendingAdvance();
@@ -9527,6 +9532,12 @@
       kanjiQuizSession.rubyHandMinScore = 0;
       kanjiQuizHideWrongFeedback();
       submitKanjiQuizScore();
+      if (
+        kanjiQuizSession &&
+        typeof kanjiQuizSession.strokeOrderPendingAdvance === "function"
+      ) {
+        kanjiQuizSession.strokeOrderPendingAdvance();
+      }
     }
     function isKanjiQuizHanChar(ch) {
       if (!ch || ch.length === 0) return false;
@@ -9805,7 +9816,7 @@
         return;
       }
       if (mode === "pass") {
-        hint.textContent = "せいかい！ 次の漢字へ自動でうつります…";
+        hint.textContent = "せいかい！「次へ（ふせいかい）」を おして つぎへ";
         return;
       }
       hint.textContent = "うすい線をなぞって書いて、60点以上をめざそう。";
@@ -12321,7 +12332,7 @@
         kanjiStrokeOrderAutoNextTimer_ = null;
       }
     }
-    function showStrokeOrderAutoNext_(advanceFn) {
+    function showStrokeOrderManualNext_(advanceFn) {
       if (!kanjiQuizSession) return;
       clearKanjiStrokeOrderAutoNext_();
       var advanced = false;
@@ -12333,7 +12344,12 @@
         advanceFn();
       }
       kanjiQuizSession.strokeOrderPendingAdvance = goNext;
-      kanjiStrokeOrderAutoNextTimer_ = setTimeout(goNext, 1500);
+      const skipBtn = document.getElementById("kanji-quiz-skip-hw-btn");
+      if (skipBtn) {
+        skipBtn.textContent = "次へ（ふせいかい）";
+        skipBtn.disabled = false;
+        stopKanjiActionBusy(skipBtn);
+      }
     }
     function applyJukugoYomiChoiceFeedback_(q, selected, isCorrect) {
       const box = document.getElementById("kanji-play-choices");
@@ -12879,7 +12895,7 @@
         if (useVerdictRail) {
           showKanjiQuizVerdictNextControls_(runAdvanceAfterScore_, 4000);
         } else if (q.type === "stroke_order_trace") {
-          showStrokeOrderAutoNext_(runAdvanceAfterScore_);
+          showStrokeOrderManualNext_(runAdvanceAfterScore_);
         } else {
           runAdvanceAfterScore_();
         }
