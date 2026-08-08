@@ -2221,6 +2221,7 @@
 
     const LS_KBD_SCALE = 'vk_scale_pct';
     const LS_KBD_FONT = 'vk_key_font_px';
+    const LS_KANJI_YOMI_KBD_LAYOUT = 'kanji_yomi_kbd_layout';
     const LS_ANSWER_SOUND = 'answer_sound_enabled';
     const LS_IPAD_STYLUS_OPT = 'ipad_stylus_opt_enabled';
     const LS_PEN_ADVANCED_VISIBLE = 'pen_advanced_visible';
@@ -5808,7 +5809,7 @@
         try { alert("高機能モードの読み込みに失敗しました。"); } catch (_e) {}
         return;
       }
-      const KP_EMBED_VER = "12";
+      const KP_EMBED_VER = "13";
       const KP_SRC = "assets/kp-practice.html";
       if (frame.dataset.kpEmbedVer !== KP_EMBED_VER) {
         frame.dataset.kpLoaded = "";
@@ -5881,8 +5882,8 @@
     }
     /** お手本覗き窓の目標高さ（潰れた clientHeight を信じない） */
     function kpWrongModelWrapTargetHeight_(wrap) {
-      var minH = Math.max(340, Math.min(420, Math.floor(window.innerHeight * 0.48)));
-      var maxH = Math.max(minH, Math.floor(window.innerHeight * 0.62));
+      var minH = Math.max(400, Math.min(500, Math.floor(window.innerHeight * 0.52)));
+      var maxH = Math.max(minH, Math.floor(window.innerHeight * 0.68));
       var w = 0;
       var measured = 0;
       try {
@@ -5892,7 +5893,7 @@
         }
       } catch (_e) {}
       /* 幅＋ボタン帯を見込んだ高さ。計測値が下限未満なら無視（2問目以降の潰れた値対策） */
-      var byWidth = w > 40 ? Math.max(minH, Math.min(maxH, w + 96)) : minH;
+      var byWidth = w > 40 ? Math.max(minH, Math.min(maxH, w + 210)) : minH;
       var byMeasured = measured >= minH ? Math.min(maxH, measured) : 0;
       return Math.max(minH, byWidth, byMeasured);
     }
@@ -6098,13 +6099,14 @@
         if (!frame) return false;
         const doc = frame.contentDocument;
         if (!doc || !doc.body) return false;
-        const btn =
+        const anchor =
+          doc.getElementById("mode-msg") ||
           doc.querySelector('button[onclick*="switchMode(\'demo\')"]') ||
           doc.querySelector('button[onclick*="switchMode"]') ||
           null;
-        if (!btn) return false;
+        if (!anchor) return false;
         const wrap = frame.parentElement;
-        const pad = 7;
+        const pad = 4;
         doc.documentElement.style.scrollBehavior = "auto";
         doc.body.style.scrollBehavior = "auto";
         doc.body.style.transition = "none";
@@ -6116,7 +6118,7 @@
           wrap.scrollTop = 0;
         }
         void doc.body.offsetHeight;
-        const y = btn.getBoundingClientRect().top - doc.body.getBoundingClientRect().top;
+        const y = anchor.getBoundingClientRect().top - doc.body.getBoundingClientRect().top;
         const shift = Math.max(0, Math.round(y - pad));
         doc.body.style.marginTop = "-" + shift + "px";
         doc.documentElement.scrollTop = 0;
@@ -6133,6 +6135,25 @@
         if (wrap && wrap.id === "kanji-quiz-wrong-model-wrap") {
           wrap.classList.remove("is-kp-view-pending");
         }
+      } catch (_e) {}
+    }
+    /** お手本 iframe 内でモード切替後、なぞり練習・採点ボタンが見えるよう再レイアウト */
+    function kpRefreshWrongPanelLayout_(frame) {
+      try {
+        if (!frame || !kpFrameInWrongModelWrap_(frame)) return;
+        const wrap = frame.parentElement;
+        applyKpQuizWrongPanelCompactMode(frame, true);
+        kpForceWrongPanelCanvasSquare_(frame);
+        var targetH = kpWrongModelWrapTargetHeight_(wrap);
+        try {
+          wrap.style.minHeight = targetH + "px";
+          wrap.style.height = targetH + "px";
+        } catch (_eW) {}
+        frame.style.minHeight = targetH + "px";
+        frame.style.height = targetH + "px";
+        kpPinWrongPanelViewToModeButtons_(frame);
+        kpResizeFrameToContent();
+        kpForceWrongPanelCanvasSquare_(frame);
       } catch (_e) {}
     }
     function applyKpQuizWrongPanelCompactMode(frame, isOn) {
@@ -6160,20 +6181,30 @@
           "body[data-kp-quiz-wrong='1'] #kanji-selector-area{display:none!important;}" +
           "body[data-kp-quiz-wrong='1'] [data-kp-section='tools']{display:none!important;}" +
           "body[data-kp-quiz-wrong='1'] [data-kp-section='strict']{display:none!important;}" +
+          "body[data-kp-quiz-wrong='1'] .controls:not(#score-controls):not(#trace-controls):not(#demo-controls){display:none!important;}" +
           "body[data-kp-quiz-wrong='1'] .controls{pointer-events:auto!important;}" +
           "body[data-kp-quiz-wrong='1'] .controls button{pointer-events:auto!important;cursor:pointer!important;}" +
           "body[data-kp-quiz-wrong='1'] #mode-msg{margin:4px 0 6px!important;font-size:12px!important;line-height:1.35!important;}" +
           "body[data-kp-quiz-wrong='1'] #canvas{" +
-          "display:block!important;margin:6px auto!important;" +
-          "width:min(240px,82%)!important;height:min(240px,82%)!important;" +
-          "max-width:min(240px,82%)!important;max-height:min(240px,82%)!important;" +
-          "min-width:min(180px,70%)!important;min-height:min(180px,70%)!important;" +
+          "display:block!important;margin:4px auto!important;" +
+          "width:min(200px,78%)!important;height:min(200px,78%)!important;" +
+          "max-width:min(200px,78%)!important;max-height:min(200px,78%)!important;" +
+          "min-width:min(160px,65%)!important;min-height:min(160px,65%)!important;" +
           "aspect-ratio:1/1!important;box-sizing:border-box!important;" +
           "object-fit:contain!important;" +
           "}" +
-          "body[data-kp-quiz-wrong='1'] #score-controls," +
-          "body[data-kp-quiz-wrong='1'] #trace-controls{display:none!important;}" +
-          "body[data-kp-quiz-wrong='1'] #result-box{margin-top:8px!important;padding:8px 12px!important;}" +
+          "body[data-kp-quiz-wrong='1'] #score-controls{display:none!important;}" +
+          "body[data-kp-quiz-wrong='1'] #trace-controls.hidden{display:none!important;}" +
+          "body[data-kp-quiz-wrong='1'] #trace-controls:not(.hidden){" +
+          "display:flex!important;flex-wrap:wrap!important;gap:6px!important;" +
+          "justify-content:center!important;margin:6px 0!important;" +
+          "visibility:visible!important;pointer-events:auto!important;opacity:1!important;}" +
+          "body[data-kp-quiz-wrong='1'] #demo-controls.hidden{display:none!important;}" +
+          "body[data-kp-quiz-wrong='1'] #demo-controls:not(.hidden){" +
+          "display:flex!important;flex-wrap:wrap!important;gap:6px!important;" +
+          "justify-content:center!important;margin:6px 0!important;" +
+          "visibility:visible!important;pointer-events:auto!important;opacity:1!important;}" +
+          "body[data-kp-quiz-wrong='1'] #result-box{margin-top:6px!important;padding:8px 12px!important;}" +
           "body[data-kp-quiz-wrong='1'] #result-box .score{font-size:32px!important;line-height:1.1!important;}" +
           "body[data-kp-quiz-wrong='1'] #result-box .msg{font-size:12px!important;margin-top:6px!important;line-height:1.4!important;}";
         let style = doc.getElementById("kp-wrong-panel-compact-style");
@@ -6186,6 +6217,10 @@
         const wrap = frame.parentElement;
         if (isOn) {
           doc.body.setAttribute("data-kp-quiz-wrong", "1");
+          try {
+            const win = frame.contentWindow;
+            if (win && typeof win.switchMode === "function") win.switchMode("demo");
+          } catch (_eDemo) {}
           if (wrap && wrap.id === "kanji-quiz-wrong-model-wrap") {
             wrap.classList.add("is-kp-view-pending");
           }
@@ -9484,8 +9519,8 @@
         const doc = frame.contentDocument;
         if (!doc || !doc.documentElement) return;
         const hookVer = String(doc.documentElement.dataset.kanjiQuizParentHook || "");
-        if (hookVer === "4") return;
-        // v4: 採点内訳 breakdown を kanjiQuizScored に同梱
+        if (hookVer === "5") return;
+        // v5: switchMode 後に親へレイアウト更新通知（誤答お手本のなぞりボタン表示）
         try {
           win.__kjQPatchInner = false;
           win.__kjEvalWrapped = false;
@@ -9496,7 +9531,8 @@
         const s = doc.createElement("script");
         s.textContent =
           "(function(){" +
-          "if(window.__kjQPatchInnerV4)return;" +
+          "if(window.__kjQPatchInnerV5)return;" +
+          "window.__kjQPatchInnerV5=true;" +
           "window.__kjQPatchInnerV4=true;" +
           "window.__kjQPatchInnerV3=true;" +
           "window.__kjQPatchInnerV2=true;" +
@@ -9532,6 +9568,17 @@
           "}" +
           "}catch(e){}" +
           "});" +
+          "function _kjWrapSwitchMode(){" +
+          "if(typeof switchMode!==\"function\"||window.__kjSwitchModeWrappedV5)return;" +
+          "window.__kjSwitchModeWrappedV5=true;" +
+          "var _sm=switchMode;" +
+          "switchMode=function(m){" +
+          "var r=_sm.apply(this,arguments);" +
+          "try{if(window.parent)window.parent.postMessage({type:\"kpWrongPanelModeChanged\",mode:m},\"*\");}catch(e){}" +
+          "return r;" +
+          "};" +
+          "}" +
+          "_kjWrapSwitchMode();" +
           "function _kjWrapEval(){" +
           "if(typeof window.evaluateKanji!==\"function\"){requestAnimationFrame(_kjWrapEval);return;}" +
           "if(window.__kjEvalWrappedV4)return;" +
@@ -9546,7 +9593,7 @@
           "_kjWrapEval();" +
           "})();";
         doc.documentElement.appendChild(s);
-        doc.documentElement.dataset.kanjiQuizParentHook = "4";
+        doc.documentElement.dataset.kanjiQuizParentHook = "5";
       } catch (e) {}
     }
     function ensureKanjiPracticeFrameReady() {
@@ -10268,6 +10315,19 @@
       initKanjiParentKanjiQuizScoredBridge();
       initKanjiHandAnalyticsBridge();
       initKanjiQuizWrongModelKpReselectBridge();
+      initKanjiQuizWrongPanelLayoutBridge_();
+    }
+    function initKanjiQuizWrongPanelLayoutBridge_() {
+      if (window.__kanjiQuizWrongPanelLayoutBound) return;
+      window.__kanjiQuizWrongPanelLayoutBound = true;
+      window.addEventListener("message", function (ev) {
+        if (!ev || !ev.data || ev.data.type !== "kpWrongPanelModeChanged") return;
+        const frame = document.getElementById("kp-pro-frame");
+        if (!frame || ev.source !== frame.contentWindow) return;
+        setTimeout(function () {
+          kpRefreshWrongPanelLayout_(frame);
+        }, 40);
+      });
     }
     /** KanjiVG 再読込で target-kanji が先頭に戻る場合に、不正解モデル用の字を取り直す */
     function initKanjiQuizWrongModelKpReselectBridge() {
@@ -13106,12 +13166,82 @@
         })
         .join("");
     }
+    function kanjiYomiKbdLayout_() {
+      return getUserPref(LS_KANJI_YOMI_KBD_LAYOUT, "qwerty") === "jis" ? "jis" : "qwerty";
+    }
+    function kanjiYomiQwertyKbdRows_() {
+      return [
+        ["q", "w", "e", "r", "t", "y", "u", "i", "o", "p"],
+        ["a", "s", "d", "f", "g", "h", "j", "k", "l"],
+        ["z", "x", "c", "v", "b", "n", "m", "-"]
+      ];
+    }
+    /**
+     * JIS かな配列（106/109 キーボード準拠・QWERTY 行とは独立）
+     * sub: 同位置の英数・記号（薄字表示）。kana: タップで入力するひらがな
+     */
+    function kanjiYomiJisKbdLayout_() {
+      return [
+        [
+          { kana: "ぬ", sub: "1" }, { kana: "ふ", sub: "2" }, { kana: "あ", sub: "3" },
+          { kana: "う", sub: "4" }, { kana: "え", sub: "5" }, { kana: "お", sub: "6" },
+          { kana: "や", sub: "7" }, { kana: "ゆ", sub: "8" }, { kana: "よ", sub: "9" },
+          { kana: "わ", sub: "0" }, { kana: "ほ", sub: "-" }, { kana: "へ", sub: "^" }
+        ],
+        [
+          { kana: "た", sub: "Q" }, { kana: "て", sub: "W" }, { kana: "い", sub: "E" },
+          { kana: "す", sub: "R" }, { kana: "か", sub: "T" }, { kana: "ん", sub: "Y" },
+          { kana: "な", sub: "U" }, { kana: "に", sub: "I" }, { kana: "ら", sub: "O" },
+          { kana: "せ", sub: "P" }
+        ],
+        [
+          { kana: "ち", sub: "A" }, { kana: "と", sub: "S" }, { kana: "し", sub: "D" },
+          { kana: "は", sub: "F" }, { kana: "き", sub: "G" }, { kana: "く", sub: "H" },
+          { kana: "ま", sub: "J" }, { kana: "の", sub: "K" }, { kana: "り", sub: "L" },
+          { kana: "れ", sub: ";" }
+        ],
+        [
+          { kana: "つ", sub: "Z" }, { kana: "さ", sub: "X" }, { kana: "そ", sub: "C" },
+          { kana: "ひ", sub: "V" }, { kana: "こ", sub: "B" }, { kana: "み", sub: "N" },
+          { kana: "も", sub: "M" }, { kana: "ね", sub: "," }, { kana: "る", sub: "." },
+          { kana: "め", sub: "/" }
+        ],
+        [
+          { kana: "ろ", sub: "\\" }, { kana: "ゃ", sub: "" }, { kana: "ゅ", sub: "" },
+          { kana: "ょ", sub: "" }, { kana: "っ", sub: "" }, { kana: "゛", sub: "@" },
+          { kana: "゜", sub: "[" }, { kana: "ー", sub: "−" }, { kana: "、", sub: "、" },
+          { kana: "。", sub: "。" }
+        ]
+      ];
+    }
+    function kanjiYomiApplyDakutenToLast_(inp, mark) {
+      if (!inp || !inp.value) return false;
+      const dakuten = {
+        か: "が", き: "ぎ", く: "ぐ", け: "げ", こ: "ご",
+        さ: "ざ", し: "じ", す: "ず", せ: "ぜ", そ: "ぞ",
+        た: "だ", ち: "ぢ", つ: "づ", て: "で", と: "ど",
+        は: "ば", ひ: "び", ふ: "ぶ", へ: "べ", ほ: "ぼ",
+        う: "ゔ"
+      };
+      const handakuten = { は: "ぱ", ひ: "ぴ", ふ: "ぷ", へ: "ぺ", ほ: "ぽ" };
+      const map = mark === "゜" ? handakuten : dakuten;
+      const chars = Array.from(inp.value);
+      const last = chars[chars.length - 1];
+      if (map[last]) {
+        chars[chars.length - 1] = map[last];
+        inp.value = chars.join("");
+        inp.dispatchEvent(new Event("input", { bubbles: true }));
+        return true;
+      }
+      return false;
+    }
     function renderKanjiYomiRomajiKeyboard(containerId, targetInputId, onEnterSubmit) {
       const container = document.getElementById(containerId);
       if (!container) return;
       container.innerHTML = "";
       window.__kanjiYomiRomajiTail = "";
       const pairs = kanjiYomiEnsureRomajiTable();
+      const kbdLayout = kanjiYomiKbdLayout_();
       /**
        * 入力スクリプトの現在状態。常に「ひらがな（kun）」で開始する。
        * 訓読み／音読みに応じた自動的な誘導（kun→ひらがな・on→カタカナ）は意図的に行わない：
@@ -13128,14 +13258,37 @@
       wrap.style.setProperty("--kb-scale", String(Math.max(0.5, Math.min(2.5, scalePct / 100))));
       wrap.style.setProperty("--vk-font-px", String(fontPx));
       wrap.style.setProperty("--vk-pad-px", String(padPx));
+      const layoutRow = document.createElement("div");
+      layoutRow.className = "kanji-yomi-kbd-layout-row";
+      layoutRow.setAttribute("role", "group");
+      layoutRow.setAttribute("aria-label", "キーボード配列");
+      function makeLayoutBtn(label, mode, active) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "kanji-yomi-kbd-layout-btn" + (active ? " is-active" : "");
+        b.textContent = label;
+        b.setAttribute("aria-pressed", active ? "true" : "false");
+        b.addEventListener("click", function (ev) {
+          ev.preventDefault();
+          if (kanjiYomiKbdLayout_() === mode) return;
+          setUserPref(LS_KANJI_YOMI_KBD_LAYOUT, mode);
+          renderKanjiYomiRomajiKeyboard(containerId, targetInputId, onEnterSubmit);
+        });
+        return b;
+      }
+      layoutRow.appendChild(makeLayoutBtn("QWERTY（ローマ字）", "qwerty", kbdLayout === "qwerty"));
+      layoutRow.appendChild(makeLayoutBtn("JIS ひらがな", "jis", kbdLayout === "jis"));
+      wrap.appendChild(layoutRow);
       const hint = document.createElement("div");
-      hint.style.cssText =
-        "font-size:12px;color:#455a64;margin-bottom:6px;text-align:center;font-weight:700;";
-      hint.textContent = "ローマ字 → ひらがな で入力されます。カタカナで答える場合は「かな⇔カナ」ボタンで切替を。";
+      hint.className = "kanji-yomi-kbd-hint";
+      hint.textContent =
+        kbdLayout === "jis"
+          ? "JIS 配列：キーをタップしてひらがなを入力。左上の薄い文字は QWERTY 上の位置です。"
+          : "ローマ字 → ひらがな で入力されます。カタカナで答える場合は「かな⇔カナ」ボタンで切替を。";
       wrap.appendChild(hint);
       const tailHint = document.createElement("div");
-      tailHint.style.cssText =
-        "font-size:12px;color:#3949ab;margin-bottom:8px;text-align:center;font-weight:700;min-height:1.2em;";
+      tailHint.className = "kanji-yomi-kbd-tail-hint";
+      tailHint.style.display = kbdLayout === "jis" ? "none" : "";
       tailHint.innerHTML = '<span style="color:#666;">入力中:</span> <span id="kanji-yomi-romaji-tail-text">―</span>';
       wrap.appendChild(tailHint);
       function updateTailDisplay() {
@@ -13144,12 +13297,7 @@
         if (tEl) tEl.textContent = t ? t : "―";
       }
       const board = document.createElement("div");
-      board.className = "keyboard";
-      const rows = [
-        ["q", "w", "e", "r", "t", "y", "u", "i", "o", "p"],
-        ["a", "s", "d", "f", "g", "h", "j", "k", "l"],
-        ["z", "x", "c", "v", "b", "n", "m", "-"]
-      ];
+      board.className = "keyboard" + (kbdLayout === "jis" ? " kbd-jis" : " kbd-qwerty");
       function applyChar(lower) {
         const inp = document.getElementById(targetInputId);
         if (!inp) return;
@@ -13170,6 +13318,47 @@
         if (piece) inp.value += piece;
         inp.dispatchEvent(new Event("input", { bubbles: true }));
         updateTailDisplay();
+      }
+      function applyJisKana(kana) {
+        const inp = document.getElementById(targetInputId);
+        if (!inp || !kana) return;
+        inp.value += kanjiYomiHiraganaToAnswerScript(kana, currentScriptKind);
+        inp.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+      function applyJisKey_(keyDef) {
+        const inp = document.getElementById(targetInputId);
+        if (!inp || !keyDef) return;
+        const kana = String(keyDef.kana || "");
+        if (kana === "゛") {
+          if (!kanjiYomiApplyDakutenToLast_(inp, "゛")) applyJisKana("゛");
+          return;
+        }
+        if (kana === "゜") {
+          if (!kanjiYomiApplyDakutenToLast_(inp, "゜")) applyJisKana("゜");
+          return;
+        }
+        applyJisKana(kana);
+      }
+      function appendJisKeyBtn_(rowDiv, keyDef) {
+        const keyBtn = document.createElement("button");
+        keyBtn.type = "button";
+        keyBtn.className = "key key-dual-label";
+        const sub = String(keyDef.sub || "").trim();
+        if (sub) {
+          keyBtn.innerHTML =
+            '<span class="kj-kbd-sub">' +
+            escapeHtml(sub) +
+            '</span><span class="kj-kbd-main">' +
+            escapeHtml(keyDef.kana) +
+            "</span>";
+        } else {
+          keyBtn.innerHTML =
+            '<span class="kj-kbd-main kj-kbd-main-only">' + escapeHtml(keyDef.kana) + "</span>";
+        }
+        bindKeyHandler(keyBtn, function () {
+          applyJisKey_(keyDef);
+        });
+        rowDiv.appendChild(keyBtn);
       }
       function backspaceKey_() {
         const inp = document.getElementById(targetInputId);
@@ -13222,22 +13411,33 @@
           ev.preventDefault();
         });
       }
-      rows.forEach(function (row) {
-        const rowDiv = document.createElement("div");
-        rowDiv.className = "key-row";
-        row.forEach(function (ch) {
-          const keyBtn = document.createElement("button");
-          keyBtn.type = "button";
-          keyBtn.className = "key";
-          keyBtn.textContent = ch;
-          bindKeyHandler(keyBtn, function () {
-            if (/^[a-z]$/i.test(ch)) applyChar(ch.toLowerCase());
-            else if (ch === "-") applyChar("-");
+      if (kbdLayout === "jis") {
+        kanjiYomiJisKbdLayout_().forEach(function (row, ri) {
+          const rowDiv = document.createElement("div");
+          rowDiv.className = "key-row key-row-jis key-row-jis-" + ri;
+          row.forEach(function (keyDef) {
+            appendJisKeyBtn_(rowDiv, keyDef);
           });
-          rowDiv.appendChild(keyBtn);
+          board.appendChild(rowDiv);
         });
-        board.appendChild(rowDiv);
-      });
+      } else {
+        kanjiYomiQwertyKbdRows_().forEach(function (row) {
+          const rowDiv = document.createElement("div");
+          rowDiv.className = "key-row";
+          row.forEach(function (ch) {
+            const keyBtn = document.createElement("button");
+            keyBtn.type = "button";
+            keyBtn.className = "key key-single-label";
+            keyBtn.textContent = ch;
+            bindKeyHandler(keyBtn, function () {
+              if (/^[a-z]$/i.test(ch)) applyChar(ch.toLowerCase());
+              else if (ch === "-") applyChar("-");
+            });
+            rowDiv.appendChild(keyBtn);
+          });
+          board.appendChild(rowDiv);
+        });
+      }
       const rowBs = document.createElement("div");
       rowBs.className = "key-row";
       /**
