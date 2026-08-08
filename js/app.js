@@ -5808,7 +5808,7 @@
         try { alert("高機能モードの読み込みに失敗しました。"); } catch (_e) {}
         return;
       }
-      const KP_EMBED_VER = "9";
+      const KP_EMBED_VER = "10";
       const KP_SRC = "assets/kp-practice.html";
       if (frame.dataset.kpEmbedVer !== KP_EMBED_VER) {
         frame.dataset.kpLoaded = "";
@@ -8379,6 +8379,17 @@
     function bindKanjiQuizPalmRejectionGuard() {
       if (__kanjiQuizPalmGuardBound) return;
       __kanjiQuizPalmGuardBound = true;
+      const CARD_SEL =
+        "#kanji-quiz-drill-handwriting, .kanji-drill-hw-row, .kanji-drill-hw-canvas-panel, .kanji-quiz-wrong-model-wrap, #kanji-quiz-hw-wrong-panel, .kanji-drill-hw-prefix-col, .kanji-drill-hw-suffix-col, #kanji-play-char-handwriting, #kanji-play-prompt, #kanji-play-progress, .kanji-quiz-title-rail-wrap, #kanji-hw-score-status, #kanji-stroke-order-readings, .kanji-stroke-order-readings";
+      const isInHwCard_ = function (t) {
+        return !!(t && t.closest && t.closest(CARD_SEL));
+      };
+      const clearSel_ = function () {
+        try {
+          const sel = window.getSelection && window.getSelection();
+          if (sel && sel.removeAllRanges) sel.removeAllRanges();
+        } catch (_e) {}
+      };
       const shouldBlock = function (e) {
         if (!isKanjiQuizHandwritingPlayActive_()) return false;
         const t = e && e.target;
@@ -8389,10 +8400,29 @@
       const block = function (e) {
         if (!shouldBlock(e)) return;
         if (e && typeof e.preventDefault === "function") e.preventDefault();
+        clearSel_();
       };
       document.addEventListener("selectstart", block, true);
       document.addEventListener("dragstart", block, true);
       document.addEventListener("contextmenu", block, true);
+      document.addEventListener(
+        "selectionchange",
+        function () {
+          if (!isKanjiQuizHandwritingPlayActive_()) return;
+          clearSel_();
+        },
+        true
+      );
+      /* カード内の pointer 開始で選択を即クリア（掌・ペン先の擦れ対策） */
+      document.addEventListener(
+        "pointerdown",
+        function (e) {
+          if (!isKanjiQuizHandwritingPlayActive_()) return;
+          if (!isInHwCard_(e.target)) return;
+          clearSel_();
+        },
+        true
+      );
       /* iOS 等: 表示文字上の長押しで選択ハンドルが出るのを抑止 */
       document.addEventListener(
         "touchstart",
@@ -8400,18 +8430,52 @@
           if (!shouldBlock(e)) return;
           const t = e.target;
           if (!t || !t.closest) return;
-          if (
-            t.closest(
-              "#kanji-quiz-write-canvas, .kanji-drill-hw-prefix-col, .kanji-drill-hw-suffix-col, #kanji-play-char-handwriting, #kanji-play-prompt, #kanji-quiz-hw-wrong-panel, .kanji-quiz-title-rail-wrap, #kanji-play-progress"
-            )
-          ) {
-            /* canvas 自身の描画は別リスナが preventDefault する。ここでは選択対象外の表示領域のみ */
-            if (t.id === "kanji-quiz-write-canvas" || (t.closest && t.closest("#kanji-quiz-write-canvas"))) return;
-            if (typeof e.preventDefault === "function") e.preventDefault();
+          if (!isInHwCard_(t)) return;
+          /* canvas 自身の描画は別リスナが preventDefault する */
+          if (t.id === "kanji-quiz-write-canvas" || (t.closest && t.closest("#kanji-quiz-write-canvas"))) {
+            clearSel_();
+            return;
           }
+          if (t.closest && t.closest("button, a, input, textarea, select")) return;
+          if (typeof e.preventDefault === "function") e.preventDefault();
+          clearSel_();
         },
         { capture: true, passive: false }
       );
+    }
+    /** お手本 iframe 内でも選択不可にする */
+    function injectKanjiFrameNoSelectStyle_(frame) {
+      try {
+        const doc = frame && frame.contentDocument;
+        if (!doc || !doc.head) return;
+        if (doc.getElementById("kj-embed-no-select")) return;
+        const st = doc.createElement("style");
+        st.id = "kj-embed-no-select";
+        st.textContent =
+          "html,body,body *,body *::before,body *::after{-webkit-user-select:none!important;user-select:none!important;-webkit-touch-callout:none!important;-webkit-tap-highlight-color:transparent;-webkit-user-drag:none!important;}" +
+          "input,textarea,select,[contenteditable='true']{-webkit-user-select:text!important;user-select:text!important;}" +
+          "#canvas{-webkit-user-drag:none;touch-action:none;}";
+        doc.head.appendChild(st);
+        if (!doc.documentElement.dataset.kjNoSelectBound) {
+          doc.documentElement.dataset.kjNoSelectBound = "1";
+          const clear = function () {
+            try {
+              const s = doc.getSelection && doc.getSelection();
+              if (s && s.removeAllRanges) s.removeAllRanges();
+            } catch (_e) {}
+          };
+          const block = function (ev) {
+            const t = ev && ev.target;
+            if (t && t.closest && t.closest("input,textarea,select,button,[contenteditable='true']")) return;
+            if (ev && typeof ev.preventDefault === "function") ev.preventDefault();
+            clear();
+          };
+          doc.addEventListener("selectstart", block, true);
+          doc.addEventListener("dragstart", block, true);
+          doc.addEventListener("contextmenu", block, true);
+          doc.addEventListener("selectionchange", clear, true);
+        }
+      } catch (_eInj) {}
     }
     function bindKanjiQuizScrollGuard() {
       if (__kanjiQuizScrollGuardBound) return;
@@ -9350,6 +9414,7 @@
     }
     function patchKanjiFrameForQuizPostMessage(frame) {
       try {
+        injectKanjiFrameNoSelectStyle_(frame);
         const win = frame.contentWindow;
         if (!win) return;
         syncKanjiHandScoreWeightsToFrame(frame);

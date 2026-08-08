@@ -804,17 +804,36 @@ function ensureTrainingEnglishSampleRoutes_(adminSs) {
   const sampleKeys = {};
   samples.forEach(function (p) { sampleKeys[trainingMenuRouteRowKey_(p)] = true; });
 
-  function looksLikeEnglishSample_(sheet) {
+  function routeKeyFromObj_(r) {
+    return [r.unitName, r.qFormat, r.aFormat].map(function (x) { return String(x || "").trim(); }).join("\t");
+  }
+  function analyzeSheet_(sheet) {
     const routes = readTrainingMenuRoutes_(sheet);
-    if (!routes.length) return false;
     let hits = 0;
     let foreign = 0;
+    const existing = {};
     routes.forEach(function (r) {
-      const key = [r.unitName, r.qFormat, r.aFormat].map(function (x) { return String(x || "").trim(); }).join("\t");
+      const key = routeKeyFromObj_(r);
+      existing[key] = true;
       if (sampleKeys[key]) hits++;
       else foreign++;
     });
-    return foreign === 0 && hits > 0;
+    return { routes: routes, hits: hits, foreign: foreign, existing: existing };
+  }
+  function looksLikeEnglishSample_(sheet) {
+    const a = analyzeSheet_(sheet);
+    return a.routes.length > 0 && a.foreign === 0 && a.hits > 0;
+  }
+  function appendMissingSamples_(sheet, existing) {
+    let n = 0;
+    samples.forEach(function (p) {
+      const key = trainingMenuRouteRowKey_(p);
+      if (existing[key]) return;
+      sheet.appendRow(p);
+      existing[key] = true;
+      n++;
+    });
+    return n;
   }
 
   let menuId = 0;
@@ -834,19 +853,34 @@ function ensureTrainingEnglishSampleRoutes_(adminSs) {
     }
   }
   if (menuId) {
-    const shNamed = getTrainingMenuSheet_(adminSs, menuId);
-    const routesNamed = readTrainingMenuRoutes_(shNamed);
+    let sheetNamed = getTrainingMenuSheet_(adminSs, menuId);
+    if (!sheetNamed) {
+      sheetNamed = adminSs.insertSheet("特訓メニュー" + menuId);
+      sheetNamed.appendRow(["対象ユーザー", "単元", "問題の形式", "こたえ方", "出し方", "隠す文字数"]);
+    }
+    const analyzed = analyzeSheet_(sheetNamed);
     setAppSettingValue_(adminSs, "特訓メニュー" + menuId + "_表示名", sampleName);
     setAppSettingValue_(adminSs, "特訓メニュー" + menuId + "_有効", "1");
     out.menuId = menuId;
-    if (routesNamed.length >= samples.length) {
-      out.skippedReason = "特訓メニュー" + menuId + " に既に英語サンプルが登録済みです。";
+    // 専用サンプル（他用途ルートなし）なら不足分だけ追記。完成済みなら終了。
+    if (analyzed.foreign === 0) {
+      if (analyzed.hits >= samples.length) {
+        out.skippedReason = "特訓メニュー" + menuId + " に既に英語サンプルが登録済みです。";
+        return out;
+      }
+      if (analyzed.routes.length === 0) {
+        writeTrainingMenuRoutesToSheet_(sheetNamed, samples);
+        out.added = samples.length;
+        out.created = true;
+        return out;
+      }
+      out.added = appendMissingSamples_(sheetNamed, analyzed.existing);
+      if (out.added) out.updated = true;
+      else out.skippedReason = "特訓メニュー" + menuId + " に既に英語サンプルが登録済みです。";
       return out;
     }
-    if (routesNamed.length > 0) {
-      out.skippedReason = "特訓メニュー" + menuId + " は既にルートがあるため英語サンプルの上書きをスキップしました。";
-      return out;
-    }
+    // 他用途ルートと混在 → このメニューは触らず、空メニューを探す
+    menuId = 0;
   }
   if (!menuId) {
     for (let m = 1; m <= 12; m++) {
