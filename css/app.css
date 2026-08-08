@@ -4123,14 +4123,14 @@ body { font-family: 'Hiragino Maru Gothic ProN', sans-serif; background-color: #
       width: 100%;
       max-width: min(480px, 100%);
       margin: 0 auto;
-      min-height: 360px;
+      min-height: 400px;
       flex: 0 0 auto;
       flex-shrink: 0;
-      height: min(420px, calc(100dvh - 200px));
-      max-height: min(480px, calc(100dvh - 160px));
+      height: min(500px, calc(100dvh - 180px));
+      max-height: min(520px, calc(100dvh - 140px));
       border: 2px solid #e57373;
       border-radius: 10px;
-      overflow: hidden; /* 覗き窓：スクロールアニメで動かさない */
+      overflow: auto;
       scroll-behavior: auto;
       background: #fff;
       box-sizing: border-box;
@@ -5432,6 +5432,77 @@ body { font-family: 'Hiragino Maru Gothic ProN', sans-serif; background-color: #
     #kanji-yomi-keyboard-container .keyboard {
       min-width: max-content;
       margin: 0 auto;
+    }
+    .kanji-yomi-kbd-layout-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: center;
+      margin: 0 0 8px;
+      direction: ltr;
+    }
+    .kanji-yomi-kbd-layout-btn {
+      border: 2px solid #90a4ae;
+      border-radius: 999px;
+      padding: 6px 12px;
+      font-size: 13px;
+      font-weight: 700;
+      background: #fff;
+      color: #37474f;
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+    .kanji-yomi-kbd-layout-btn.is-active {
+      background: #1a73e8;
+      border-color: #1a73e8;
+      color: #fff;
+    }
+    .kanji-yomi-kbd-hint,
+    .kanji-yomi-kbd-tail-hint {
+      font-size: 12px;
+      color: #455a64;
+      margin-bottom: 6px;
+      text-align: center;
+      font-weight: 700;
+    }
+    .kanji-yomi-kbd-tail-hint {
+      color: #3949ab;
+      min-height: 1.2em;
+      margin-bottom: 8px;
+    }
+    #kanji-yomi-keyboard-container .key.key-dual-label {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 0.12em;
+      padding: calc(var(--vk-pad-px, 12) * 1px * 0.45) calc(var(--vk-pad-px, 12) * 1px * 0.35);
+      line-height: 1.05;
+      min-height: calc(var(--vk-font-px, 18) * 1px * 2.2);
+      text-align: center;
+    }
+    #kanji-yomi-keyboard-container .key.key-dual-label .kj-kbd-sub {
+      font-size: calc(var(--vk-font-px, 18) * 1px * 0.48);
+      color: #aaa;
+      font-weight: 400;
+      text-align: center;
+      width: 100%;
+      letter-spacing: 0.02em;
+    }
+    #kanji-yomi-keyboard-container .key.key-dual-label .kj-kbd-main,
+    #kanji-yomi-keyboard-container .key.key-dual-label .kj-kbd-main-only {
+      font-size: calc(var(--vk-font-px, 18) * 1px * 1.05);
+      font-weight: 700;
+      text-align: center;
+      width: 100%;
+    }
+    #kanji-yomi-keyboard-container .key.key-single-label {
+      text-align: center;
+    }
+    #kanji-yomi-keyboard-container .keyboard.kbd-jis .key-row-jis {
+      width: 100%;
+      justify-content: center;
     }
     #section-kanji-quiz-play.kanji-quiz-drill-section .kanji-quiz-play-footer-btns .kanji-drill-footer-v {
       writing-mode: vertical-rl;
