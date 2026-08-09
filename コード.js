@@ -67,8 +67,6 @@ function getDefaultAppSettingsRows_() {
     ["漢字熟語読み_基礎点", 1],
     ["漢字熟語読み_選択肢倍率", 1],
     ["漢字熟語読み_無し選択肢ボーナス", 2],
-    // 1=有効: setupSystem() 実行時に空の特訓メニューへ漢字サンプルを登録（毎リクエストでは実行しない）
-    ["特訓_漢字サンプル自動入力", "1"],
     ["trajectory", 28],
     ["startEnd", 10],
     ["structure", 14],
@@ -303,80 +301,31 @@ function getTrainingRouteOptionLists_() {
   return {
     qFormats: [
       "日本語→英単語", "日本語→英語（並び替え）", "英単語→日本語", "音声→日本語", "音声→英単語",
-      "疑問文→英語", "英語読み上げ→英語", "英語→英語",
-      "送り仮名選択", "読み仮名タイプ", "書いて問題に回答", "書き順チェック",
-      "漢字→採点チャレンジ", "熟語読み方選択",
-      // 旧名称（互換）
-      "漢字→よみかな選択", "漢字→よみかな入力", "漢字→書いて答える", "漢字→書き順なぞる", "漢字熟語→読み選択"
+      "疑問文→英語", "英語読み上げ→英語", "英語→英語", "漢字→採点チャレンジ"
     ],
     aFormats: [
       "4択", "タイピング", "音声", "穴埋め4択", "穴埋めタイピング",
       "タイピング（イニシャル）", "タイピング（穴埋め）", "音声入力（イニシャル）", "音声入力（穴埋め）",
       "タイピング（フラッシュ）", "音声入力（フラッシュ）",
-      "すべて用いる", "不要語混入", "不足語補足", "採点", "クイズ"
+      "すべて用いる", "不要語混入", "不足語補足", "採点"
     ],
     modes: ["ランダム", "順番"]
   };
 }
 
-function isKanjiJukugoTrainingModeName_(modeName) {
-  const n = String(modeName || "");
-  if (/熟語/.test(n)) return true;
-  try {
-    if (typeof isKanjiJukugoBookFileName_ === "function") return isKanjiJukugoBookFileName_(n);
-  } catch (_e) {}
-  return false;
-}
-
-function isKanjiTrainingQFormat_(qFormat) {
-  const q = String(qFormat || "").trim();
-  if (!q) return false;
-  if (/漢字/.test(q) || /採点/.test(q)) return true;
-  return (
-    q === "送り仮名選択" ||
-    q === "読み仮名タイプ" ||
-    q === "書いて問題に回答" ||
-    q === "書き順チェック" ||
-    q === "熟語読み方選択"
-  );
-}
-
-function isKanjiJukugoTrainingQFormat_(qFormat) {
-  const q = String(qFormat || "").trim();
-  return /漢字熟語/.test(q) || q === "熟語読み方選択";
-}
-
-function findTrainingMaterialForUnit_(unitName, materials, qFormat) {
+function findTrainingMaterialForUnit_(unitName, materials) {
   const unit = String(unitName || "").trim();
   if (!unit) return null;
-  const q = String(qFormat || "");
-  const preferJukugo = isKanjiJukugoTrainingQFormat_(q);
-  const preferStandardKanji = isKanjiTrainingQFormat_(q) && !preferJukugo;
-  let fallback = null;
-  const list = materials || [];
-  for (let i = 0; i < list.length; i++) {
-    const m = list[i];
-    if (!(m.units || []).some(function (u) { return String(u) === unit; })) continue;
-    if (!fallback) fallback = m;
-    const isJuk = isKanjiJukugoTrainingModeName_(m.modeName);
-    if (preferJukugo && isJuk) return m;
-    if (preferStandardKanji && m.category === "kanji" && !isJuk) return m;
+  for (let i = 0; i < materials.length; i++) {
+    const m = materials[i];
+    if ((m.units || []).some(function (u) { return String(u) === unit; })) return m;
   }
-  return fallback;
+  return null;
 }
 
 function getLearnerFormatOptionsForTraining_(modeName, category) {
   if (category === "kanji" || /漢字/.test(String(modeName || ""))) {
-    if (isKanjiJukugoTrainingModeName_(modeName)) {
-      return [{ value: "jukugo_yomi", qFormat: "熟語読み方選択" }];
-    }
-    return [
-      { value: "select_kana", qFormat: "送り仮名選択" },
-      { value: "type_yomi", qFormat: "読み仮名タイプ" },
-      { value: "write_kanji", qFormat: "書いて問題に回答" },
-      { value: "stroke_order", qFormat: "書き順チェック" },
-      { value: "kanji_hand", qFormat: "漢字→採点チャレンジ" }
-    ];
+    return [{ value: "kanji_hand", qFormat: "漢字→採点チャレンジ" }];
   }
   const isWord = String(modeName || "").indexOf("単語") >= 0;
   if (isWord) {
@@ -404,16 +353,6 @@ function getLearnerAnswerOptionsForTraining_(format, modeName) {
   const out = [];
   function add(value, aFormat) { out.push({ value: value, aFormat: aFormat }); }
   if (format === "kanji_hand") { add("hand_grade", "採点"); return out; }
-  if (
-    format === "select_kana" ||
-    format === "type_yomi" ||
-    format === "write_kanji" ||
-    format === "stroke_order" ||
-    format === "jukugo_yomi"
-  ) {
-    add("quiz", "クイズ");
-    return out;
-  }
   if (format === "ja_to_en_sort") {
     add("sort_all", "すべて用いる"); add("sort_dummy", "不要語混入"); add("sort_missing", "不足語補足"); return out;
   }
@@ -449,7 +388,7 @@ function isValidTrainingRouteCombo_(unitName, qFormat, aFormat, materials) {
   const q = String(qFormat || "").trim();
   const a = String(aFormat || "").trim();
   if (!q || !a) return false;
-  const mat = findTrainingMaterialForUnit_(unitName, materials, q);
+  const mat = findTrainingMaterialForUnit_(unitName, materials);
   if (!mat) return false;
   const modeName = String(mat.modeName || "");
   const category = (mat.category === "kanji" || /漢字/.test(modeName)) ? "kanji" : "english";
@@ -652,9 +591,29 @@ function setupSystem() {
   }
 
   // ★ 特訓メニュー1（従来名「特訓メニュー」互換）＋ 特訓メニュー2～12（ヘッダーのみ）
-  // 英語／漢字のサンプル入力は setupSystem() 実行時のみ（毎リクエストでは行わない）
   const trainingHeader = ["対象ユーザー", "単元", "問題の形式", "こたえ方", "出し方", "隠す文字数"];
-  const trainingPatterns = getEnglishTrainingSampleRouteRows_();
+  const trainingPatterns = [
+    ["全員", "", "英単語→日本語", "4択", "ランダム", ""],
+    ["全員", "", "英単語→日本語", "タイピング", "ランダム", ""],
+    ["全員", "", "英単語→日本語", "音声", "ランダム", ""],
+    ["全員", "", "日本語→英単語", "4択", "ランダム", ""],
+    ["全員", "", "日本語→英単語", "タイピング", "ランダム", ""],
+    ["全員", "", "日本語→英単語", "音声", "ランダム", ""],
+    ["全員", "", "日本語→英単語", "穴埋め4択", "ランダム", 1],
+    ["全員", "", "日本語→英単語", "穴埋めタイピング", "ランダム", 1],
+    ["全員", "", "音声→日本語", "4択", "ランダム", ""],
+    ["全員", "", "音声→日本語", "タイピング", "ランダム", ""],
+    ["全員", "", "音声→日本語", "音声", "ランダム", ""],
+    ["全員", "", "音声→英単語", "タイピング", "ランダム", ""],
+    ["全員", "", "音声→英単語", "音声", "ランダム", ""],
+    ["全員", "", "英語→英語", "タイピング", "ランダム", ""],
+    ["全員", "", "英語→英語", "音声", "ランダム", ""],
+    ["全員", "", "英語→英語", "タイピング（イニシャル）", "ランダム", ""],
+    ["全員", "", "英語→英語", "タイピング（穴埋め）", "ランダム", ""],
+    ["全員", "", "英語→英語", "音声入力（イニシャル）", "ランダム", ""],
+    ["全員", "", "英語→英語", "音声入力（穴埋め）", "ランダム", ""],
+    ["全員", "", "漢字→採点チャレンジ", "採点", "ランダム", ""]
+  ];
   let trainingSheet = adminSs.getSheetByName("特訓メニュー");
   if (!trainingSheet) {
     trainingSheet = adminSs.insertSheet("特訓メニュー");
@@ -678,37 +637,10 @@ function setupSystem() {
   for (let m = 2; m <= 12; m++) {
     const nm = "特訓メニュー" + m;
     if (!adminSs.getSheetByName(nm)) {
-      const sm = adminSs.insertSheet(nm);
-      sm.appendRow(trainingHeader);
+      const sh = adminSs.insertSheet(nm);
+      sh.appendRow(trainingHeader);
       logMessage += "✅ 「" + nm + "」を追加しました。\n";
     }
-  }
-  const englishTrainEnsure = ensureTrainingEnglishSampleRoutes_(adminSs);
-  if (englishTrainEnsure.created) {
-    logMessage += "✅ 特訓メニュー" + englishTrainEnsure.menuId + " に【サンプル】英語の特訓を登録しました。\n";
-  } else if (englishTrainEnsure.updated) {
-    logMessage += "✅ 特訓メニュー" + englishTrainEnsure.menuId + " の英語サンプル特訓を更新しました。\n";
-  } else if (englishTrainEnsure.skippedReason) {
-    logMessage += "ℹ️ 英語サンプル特訓: " + englishTrainEnsure.skippedReason + "\n";
-  }
-  const kanjiTrainEnsure = ensureTrainingKanjiSampleRoutes_(adminSs);
-  if (!kanjiTrainEnsure.enabled) {
-    logMessage += "ℹ️ 漢字サンプル特訓の自動入力は無効です（アプリ設定「特訓_漢字サンプル自動入力」）。\n";
-  } else if (kanjiTrainEnsure.created) {
-    logMessage += "✅ 特訓メニュー" + kanjiTrainEnsure.menuId + " に【サンプル】漢字の特訓を登録しました（漢字学習サンプル／漢字熟語ブック）。\n";
-  } else if (kanjiTrainEnsure.updated) {
-    logMessage += "✅ 特訓メニュー" + kanjiTrainEnsure.menuId + " の漢字サンプル特訓を更新しました。\n";
-  } else if (kanjiTrainEnsure.skippedReason) {
-    logMessage += "ℹ️ 漢字サンプル特訓: " + kanjiTrainEnsure.skippedReason + "\n";
-  }
-  let kanjiQRenameTotal = 0;
-  for (let m = 1; m <= 12; m++) {
-    kanjiQRenameTotal += renameKanjiTrainingQFormatsOnSheet_(getTrainingMenuSheet_(adminSs, m));
-  }
-  const legacyTrain = adminSs.getSheetByName("特訓メニュー");
-  if (legacyTrain) kanjiQRenameTotal += renameKanjiTrainingQFormatsOnSheet_(legacyTrain);
-  if (kanjiQRenameTotal) {
-    logMessage += "✅ 特訓メニューの漢字形式名を新名称へ更新しました（" + kanjiQRenameTotal + " 行）。\n";
   }
   const appSettingsTrain = adminSs.getSheetByName("アプリ設定");
   if (appSettingsTrain) {
@@ -759,421 +691,6 @@ function setupSystem() {
 
   console.log(logMessage);
   return logMessage;
-}
-
-function getEnglishTrainingSampleDisplayName_() {
-  return "【サンプル】英語の特訓";
-}
-
-function getEnglishTrainingSampleRouteRows_() {
-  return [
-    ["全員", "", "英単語→日本語", "4択", "ランダム", ""],
-    ["全員", "", "英単語→日本語", "タイピング", "ランダム", ""],
-    ["全員", "", "英単語→日本語", "音声", "ランダム", ""],
-    ["全員", "", "日本語→英単語", "4択", "ランダム", ""],
-    ["全員", "", "日本語→英単語", "タイピング", "ランダム", ""],
-    ["全員", "", "日本語→英単語", "音声", "ランダム", ""],
-    ["全員", "", "日本語→英単語", "穴埋め4択", "ランダム", 1],
-    ["全員", "", "日本語→英単語", "穴埋めタイピング", "ランダム", 1],
-    ["全員", "", "音声→日本語", "4択", "ランダム", ""],
-    ["全員", "", "音声→日本語", "タイピング", "ランダム", ""],
-    ["全員", "", "音声→日本語", "音声", "ランダム", ""],
-    ["全員", "", "音声→英単語", "タイピング", "ランダム", ""],
-    ["全員", "", "音声→英単語", "音声", "ランダム", ""],
-    ["全員", "", "英語→英語", "タイピング", "ランダム", ""],
-    ["全員", "", "英語→英語", "音声", "ランダム", ""],
-    ["全員", "", "英語→英語", "タイピング（イニシャル）", "ランダム", ""],
-    ["全員", "", "英語→英語", "タイピング（穴埋め）", "ランダム", ""],
-    ["全員", "", "英語→英語", "音声入力（イニシャル）", "ランダム", ""],
-    ["全員", "", "英語→英語", "音声入力（穴埋め）", "ランダム", ""]
-  ];
-}
-
-/**
- * setupSystem() 専用: 空の特訓メニュー1（なければ一番若い空き）に英語サンプルルートを入れる。
- * 既に英語サンプル相当が入っているメニューは上書きせず、表示名だけ整える。
- * 毎リクエストでは呼ばない（ロード遅延防止）。
- */
-function ensureTrainingEnglishSampleRoutes_(adminSs) {
-  const out = { added: 0, menuId: 0, created: false, updated: false, skippedReason: "" };
-  if (!adminSs) return out;
-  const samples = getEnglishTrainingSampleRouteRows_();
-  const sampleName = getEnglishTrainingSampleDisplayName_();
-  ensureAppSettingsDefaults_(adminSs);
-  const settings = getAppSettingsMap_(adminSs);
-  const sampleKeys = {};
-  samples.forEach(function (p) { sampleKeys[trainingMenuRouteRowKey_(p)] = true; });
-
-  function routeKeyFromObj_(r) {
-    return [r.unitName, r.qFormat, r.aFormat].map(function (x) { return String(x || "").trim(); }).join("\t");
-  }
-  function analyzeSheet_(sheet) {
-    const routes = readTrainingMenuRoutes_(sheet);
-    let hits = 0;
-    let foreign = 0;
-    const existing = {};
-    routes.forEach(function (r) {
-      const key = routeKeyFromObj_(r);
-      existing[key] = true;
-      if (sampleKeys[key]) hits++;
-      else foreign++;
-    });
-    return { routes: routes, hits: hits, foreign: foreign, existing: existing };
-  }
-  function looksLikeEnglishSample_(sheet) {
-    const a = analyzeSheet_(sheet);
-    return a.routes.length > 0 && a.foreign === 0 && a.hits > 0;
-  }
-  function appendMissingSamples_(sheet, existing) {
-    let n = 0;
-    samples.forEach(function (p) {
-      const key = trainingMenuRouteRowKey_(p);
-      if (existing[key]) return;
-      sheet.appendRow(p);
-      existing[key] = true;
-      n++;
-    });
-    return n;
-  }
-
-  let menuId = 0;
-  for (let m = 1; m <= 12; m++) {
-    if (String(settings["特訓メニュー" + m + "_表示名"] || "").trim() === sampleName) {
-      menuId = m;
-      break;
-    }
-  }
-  if (!menuId) {
-    for (let m = 1; m <= 12; m++) {
-      const sh = getTrainingMenuSheet_(adminSs, m);
-      if (sh && looksLikeEnglishSample_(sh)) {
-        menuId = m;
-        break;
-      }
-    }
-  }
-  if (menuId) {
-    let sheetNamed = getTrainingMenuSheet_(adminSs, menuId);
-    if (!sheetNamed) {
-      sheetNamed = adminSs.insertSheet("特訓メニュー" + menuId);
-      sheetNamed.appendRow(["対象ユーザー", "単元", "問題の形式", "こたえ方", "出し方", "隠す文字数"]);
-    }
-    const analyzed = analyzeSheet_(sheetNamed);
-    setAppSettingValue_(adminSs, "特訓メニュー" + menuId + "_表示名", sampleName);
-    setAppSettingValue_(adminSs, "特訓メニュー" + menuId + "_有効", "1");
-    out.menuId = menuId;
-    // 専用サンプル（他用途ルートなし）なら不足分だけ追記。完成済みなら終了。
-    if (analyzed.foreign === 0) {
-      if (analyzed.hits >= samples.length) {
-        out.skippedReason = "特訓メニュー" + menuId + " に既に英語サンプルが登録済みです。";
-        return out;
-      }
-      if (analyzed.routes.length === 0) {
-        writeTrainingMenuRoutesToSheet_(sheetNamed, samples);
-        out.added = samples.length;
-        out.created = true;
-        return out;
-      }
-      out.added = appendMissingSamples_(sheetNamed, analyzed.existing);
-      if (out.added) out.updated = true;
-      else out.skippedReason = "特訓メニュー" + menuId + " に既に英語サンプルが登録済みです。";
-      return out;
-    }
-    // 他用途ルートと混在 → このメニューは触らず、空メニューを探す
-    menuId = 0;
-  }
-  if (!menuId) {
-    for (let m = 1; m <= 12; m++) {
-      const sh = getTrainingMenuSheet_(adminSs, m);
-      if (!sh) continue;
-      if (isTrainingMenuSheetUnused_(sh)) {
-        menuId = m;
-        break;
-      }
-    }
-  }
-  if (!menuId) {
-    out.skippedReason = "空の特訓メニューが無く、英語サンプルを新規登録できませんでした。";
-    return out;
-  }
-  out.menuId = menuId;
-  let sheet = getTrainingMenuSheet_(adminSs, menuId);
-  if (!sheet) {
-    sheet = adminSs.insertSheet("特訓メニュー" + menuId);
-    sheet.appendRow(["対象ユーザー", "単元", "問題の形式", "こたえ方", "出し方", "隠す文字数"]);
-  }
-  if (!isTrainingMenuSheetUnused_(sheet)) {
-    out.skippedReason = "特訓メニュー" + menuId + " は既に使用中のため英語サンプルをスキップしました。";
-    return out;
-  }
-  writeTrainingMenuRoutesToSheet_(sheet, samples);
-  out.added = samples.length;
-  out.created = true;
-  setAppSettingValue_(adminSs, "特訓メニュー" + menuId + "_表示名", sampleName);
-  setAppSettingValue_(adminSs, "特訓メニュー" + menuId + "_有効", "1");
-  return out;
-}
-
-function getKanjiTrainingSampleDisplayName_() {
-  return "【サンプル】漢字の特訓";
-}
-
-function isKanjiTrainingSampleAutoFillEnabled_(adminSs) {
-  try {
-    ensureAppSettingsDefaults_(adminSs);
-    const settings = getAppSettingsMap_(adminSs);
-    const raw = settings["特訓_漢字サンプル自動入力"];
-    if (raw == null || String(raw).trim() === "") return true;
-    return parseTrainingMenuEnabled_(raw);
-  } catch (_e) {
-    return true;
-  }
-}
-
-/** 教材フォルダ内の漢字学習サンプル／漢字熟語ブックから最初の単元名を取る */
-function resolveKanjiSampleBookUnits_() {
-  const out = {
-    practiceUnit: "小１",
-    jukugoUnit: "小１",
-    practiceBook: "漢字学習サンプル",
-    jukugoBook: "漢字熟語ブック"
-  };
-  const props = PropertiesService.getScriptProperties();
-  const folderId = props.getProperty("KANJI_MATERIALS_FOLDER_ID");
-  if (!folderId) return out;
-  try {
-    const folder = DriveApp.getFolderById(folderId);
-    const files = folder.getFilesByType(MimeType.GOOGLE_SHEETS);
-    while (files.hasNext()) {
-      const f = files.next();
-      const name = String(f.getName() || "");
-      if (name === "漢字学習サンプル" || /^漢字学習サンプル/.test(name)) {
-        out.practiceBook = name;
-        try {
-          const sheets = SpreadsheetApp.open(f).getSheets();
-          if (sheets.length) out.practiceUnit = String(sheets[0].getName() || out.practiceUnit);
-        } catch (_e1) {}
-      }
-      if (typeof isKanjiJukugoBookFileName_ === "function" && isKanjiJukugoBookFileName_(name)) {
-        out.jukugoBook = name;
-        try {
-          const sheets = SpreadsheetApp.open(f).getSheets();
-          if (sheets.length) out.jukugoUnit = String(sheets[0].getName() || out.jukugoUnit);
-        } catch (_e2) {}
-      }
-    }
-  } catch (_e) {}
-  return out;
-}
-
-/**
- * 漢字練習ブックの全形式 ＋ 漢字熟語ブックの読み選択を、サンプル特訓ルートとして返す。
- * （特訓メニューにどう登録すればよいか分かる参考用）
- */
-function getKanjiTrainingSampleRouteRows_() {
-  const units = resolveKanjiSampleBookUnits_();
-  const practiceUnit = units.practiceUnit || "小１";
-  const jukugoUnit = units.jukugoUnit || practiceUnit || "小１";
-  const rows = [
-    ["全員", practiceUnit, "送り仮名選択", "クイズ", "ランダム", ""],
-    ["全員", practiceUnit, "読み仮名タイプ", "クイズ", "ランダム", ""],
-    ["全員", practiceUnit, "書いて問題に回答", "クイズ", "ランダム", ""],
-    ["全員", practiceUnit, "書き順チェック", "クイズ", "ランダム", ""],
-    ["全員", practiceUnit, "漢字→採点チャレンジ", "採点", "ランダム", ""],
-    ["全員", jukugoUnit, "熟語読み方選択", "クイズ", "ランダム", ""]
-  ];
-  return rows;
-}
-
-/** 特訓シート上の旧漢字形式名 → 新名称 */
-function getKanjiTrainingQFormatRenameMap_() {
-  return {
-    "漢字→よみかな選択": "送り仮名選択",
-    "漢字→よみかな入力": "読み仮名タイプ",
-    "漢字→書いて答える": "書いて問題に回答",
-    "漢字→書き順なぞる": "書き順チェック",
-    "漢字熟語→読み選択": "熟語読み方選択"
-  };
-}
-
-function renameKanjiTrainingQFormatsOnSheet_(sheet) {
-  let renamed = 0;
-  if (!sheet) return renamed;
-  const map = getKanjiTrainingQFormatRenameMap_();
-  const data = sheet.getDataRange().getValues();
-  for (let i = 1; i < data.length; i++) {
-    const oldQ = String(data[i][2] || "").trim();
-    if (!map[oldQ]) continue;
-    sheet.getRange(i + 1, 3).setValue(map[oldQ]);
-    renamed++;
-  }
-  return renamed;
-}
-
-function trainingMenuRouteRowKey_(row) {
-  return [row[1], row[2], row[3]].map(function (x) { return String(x || "").trim(); }).join("\t");
-}
-
-/** データ行が1件も無い（ヘッダーのみ／空）なら未使用とみなす */
-function isTrainingMenuSheetUnused_(sheet) {
-  if (!sheet) return false;
-  const routes = readTrainingMenuRoutes_(sheet);
-  return !routes.length;
-}
-
-/**
- * 漢字サンプル特訓メニューの置き場を決める。
- * 優先: 表示名がサンプル名 → サンプル行だけの専用シート → 未使用の一番若い特訓メニューN
- * （英語ルートと混在したシートには新規登録しない）
- */
-function resolveKanjiTrainingSampleMenuId_(adminSs, samples) {
-  const sampleName = getKanjiTrainingSampleDisplayName_();
-  ensureAppSettingsDefaults_(adminSs);
-  const settings = getAppSettingsMap_(adminSs);
-  const sampleKeys = {};
-  (samples || []).forEach(function (p) { sampleKeys[trainingMenuRouteRowKey_(p)] = true; });
-
-  for (let m = 1; m <= 12; m++) {
-    const name = String(settings["特訓メニュー" + m + "_表示名"] || "").trim();
-    if (name === sampleName) return { menuId: m, reason: "named" };
-  }
-
-  let bestPartial = { menuId: 0, hits: 0 };
-  for (let m = 1; m <= 12; m++) {
-    const sheet = getTrainingMenuSheet_(adminSs, m);
-    if (!sheet) continue;
-    const routes = readTrainingMenuRoutes_(sheet);
-    if (!routes.length) continue;
-    let hits = 0;
-    let foreign = 0;
-    routes.forEach(function (r) {
-      const key = [r.unitName, r.qFormat, r.aFormat].map(function (x) { return String(x || "").trim(); }).join("\t");
-      if (sampleKeys[key]) hits++;
-      else foreign++;
-    });
-    if (foreign > 0) continue; // 英語など他ルートと混在 → 専用サンプル対象外
-    if (hits >= samples.length) return { menuId: m, reason: "complete" };
-    if (hits > bestPartial.hits) bestPartial = { menuId: m, hits: hits };
-  }
-  if (bestPartial.menuId) return { menuId: bestPartial.menuId, reason: "partial" };
-
-  for (let m = 1; m <= 12; m++) {
-    const sheet = getTrainingMenuSheet_(adminSs, m);
-    if (!sheet) continue;
-    if (isTrainingMenuSheetUnused_(sheet)) return { menuId: m, reason: "unused" };
-  }
-  return { menuId: 0, reason: "full" };
-}
-
-/**
- * setupSystem() 専用: 管理ブックの空いている特訓メニューに、
- * 漢字練習＋漢字熟語サンプルブックの内容を専用メニューとして登録する。
- * アプリ設定「特訓_漢字サンプル自動入力」が無効なら何もしない。
- * （毎リクエストでは呼ばない。ロード遅延防止）
- */
-function ensureTrainingKanjiSampleRoutes_(adminSs) {
-  const out = { added: 0, menuId: 0, created: false, updated: false, skippedReason: "", enabled: true };
-  if (!adminSs) return out;
-  if (!isKanjiTrainingSampleAutoFillEnabled_(adminSs)) {
-    out.enabled = false;
-    out.skippedReason = "アプリ設定「特訓_漢字サンプル自動入力」が無効のためスキップしました。";
-    return out;
-  }
-  // 既にサンプルメニューがありステップが揃っていれば、教材ブックを開かず終了
-  try {
-    ensureAppSettingsDefaults_(adminSs);
-    const settingsQuick = getAppSettingsMap_(adminSs);
-    const sampleNameQuick = getKanjiTrainingSampleDisplayName_();
-    for (let mq = 1; mq <= 12; mq++) {
-      if (String(settingsQuick["特訓メニュー" + mq + "_表示名"] || "").trim() !== sampleNameQuick) continue;
-      const shQ = getTrainingMenuSheet_(adminSs, mq);
-      const routesQ = readTrainingMenuRoutes_(shQ);
-      if (routesQ.length >= 6) {
-        out.menuId = mq;
-        out.skippedReason = "特訓メニュー" + mq + " に既に漢字サンプルが登録済みです。";
-        return out;
-      }
-      break;
-    }
-  } catch (_eQuick) {}
-  const samples = getKanjiTrainingSampleRouteRows_();
-  const resolved = resolveKanjiTrainingSampleMenuId_(adminSs, samples);
-  if (!resolved.menuId) {
-    out.skippedReason = "特訓メニュー1～12がすべて使用中のため、漢字サンプルを新規登録できませんでした。";
-    return out;
-  }
-  const menuId = resolved.menuId;
-  out.menuId = menuId;
-  let sheet = getTrainingMenuSheet_(adminSs, menuId);
-  if (!sheet) {
-    sheet = adminSs.insertSheet("特訓メニュー" + menuId);
-    sheet.appendRow(["対象ユーザー", "単元", "問題の形式", "こたえ方", "出し方", "隠す文字数"]);
-  }
-  const data = sheet.getDataRange().getValues();
-  if (!data.length) {
-    sheet.appendRow(["対象ユーザー", "単元", "問題の形式", "こたえ方", "出し方", "隠す文字数"]);
-  }
-
-  const existing = {};
-  const rows = sheet.getDataRange().getValues();
-  for (let i = 1; i < rows.length; i++) {
-    existing[trainingMenuRouteRowKey_(rows[i])] = true;
-  }
-  const wasEmpty = Object.keys(existing).length === 0;
-  // 旧形式名を新名称へ寄せる
-  const renamed = renameKanjiTrainingQFormatsOnSheet_(sheet);
-  if (renamed) out.updated = true;
-  // 廃止した「混合クイズ」行があれば削除（下から）
-  const dataRows = sheet.getDataRange().getValues();
-  for (let ri = dataRows.length - 1; ri >= 1; ri--) {
-    if (String(dataRows[ri][2] || "").trim() === "漢字→混合クイズ") {
-      sheet.deleteRow(ri + 1);
-      out.updated = true;
-    }
-  }
-  // ブランクなら一括投入。既存がある場合は不足分だけ追記（余分な有効ルートは消さない）
-  const routesNow = readTrainingMenuRoutes_(sheet);
-  const sampleKeys = {};
-  samples.forEach(function (p) { sampleKeys[trainingMenuRouteRowKey_(p)] = true; });
-  let foreign = 0;
-  routesNow.forEach(function (r) {
-    const key = [r.unitName, r.qFormat, r.aFormat].map(function (x) { return String(x || "").trim(); }).join("\t");
-    if (!sampleKeys[key]) foreign++;
-  });
-  if ((wasEmpty || resolved.reason === "unused") && foreign === 0) {
-    // 空シートへの初回投入のみ全置換
-    writeTrainingMenuRoutesToSheet_(sheet, samples);
-    out.added = samples.length;
-    out.created = true;
-  } else {
-    // 不足分だけ追記（routesNow.length > samples.length の余分行は維持）
-    const existingAfter = {};
-    const rowsAfter = sheet.getDataRange().getValues();
-    for (let i = 1; i < rowsAfter.length; i++) {
-      existingAfter[trainingMenuRouteRowKey_(rowsAfter[i])] = true;
-    }
-    samples.forEach(function (p) {
-      const key = trainingMenuRouteRowKey_(p);
-      if (existingAfter[key]) return;
-      sheet.appendRow(p);
-      existingAfter[key] = true;
-      out.added++;
-    });
-    if (out.added) out.updated = true;
-  }
-
-  setAppSettingValue_(adminSs, "特訓メニュー" + menuId + "_表示名", getKanjiTrainingSampleDisplayName_());
-  setAppSettingValue_(adminSs, "特訓メニュー" + menuId + "_有効", "1");
-  const settingsAfter = getAppSettingsMap_(adminSs);
-  if (!String(settingsAfter["特訓メニュー" + menuId + "_色"] || "").trim()) {
-    const colors = getTrainingMenuDefaultColors_();
-    setAppSettingValue_(adminSs, "特訓メニュー" + menuId + "_色", colors[(menuId - 1) % colors.length]);
-  }
-
-  if (!out.created && !out.updated && !out.added) {
-    out.skippedReason = "特訓メニュー" + menuId + " に既に漢字サンプルが登録済みです。";
-  }
-  return out;
 }
 
 function ensureKanjiSampleBook_(kanjiFolder) {
@@ -1558,9 +1075,7 @@ function handleGetTrainingMenuAdmin(req) {
       displayName: String(settings["特訓メニュー" + m + "_表示名"] || "").trim(),
       enabled: parseTrainingMenuEnabled_(settings["特訓メニュー" + m + "_有効"]),
       color: String(settings["特訓メニュー" + m + "_色"] || "").trim() || defaultColors[(m - 1) % defaultColors.length],
-      routes: readTrainingMenuRoutes_(sheet),
-      isKanjiSample: String(settings["特訓メニュー" + m + "_表示名"] || "").trim() === getKanjiTrainingSampleDisplayName_(),
-      isEnglishSample: String(settings["特訓メニュー" + m + "_表示名"] || "").trim() === getEnglishTrainingSampleDisplayName_()
+      routes: readTrainingMenuRoutes_(sheet)
     });
   }
 
