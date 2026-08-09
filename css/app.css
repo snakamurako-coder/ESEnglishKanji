@@ -1297,7 +1297,15 @@ body { font-family: 'Hiragino Maru Gothic ProN', sans-serif; background-color: #
       border-color: #b7d4c8;
     }
     #kp-pro-frame-quiz-hidden {
-      display: none !important;
+      position: fixed !important;
+      left: -10000px !important;
+      top: 0 !important;
+      width: 1px !important;
+      height: 1px !important;
+      overflow: hidden !important;
+      opacity: 0 !important;
+      pointer-events: none !important;
+      z-index: -1 !important;
     }
     body.kanji-study-mode #section-kanji-practice.active .kp-iframe-wrap,
     body.kanji-study-mode #section-kanji-practice.active #kp-iframe-slot-practice {
@@ -4142,7 +4150,8 @@ body { font-family: 'Hiragino Maru Gothic ProN', sans-serif; background-color: #
       box-sizing: border-box;
     }
     .kanji-quiz-wrong-model-wrap.is-kp-view-pending {
-      visibility: hidden; /* 座標確定まで非表示→ばちっと表示 */
+      opacity: 0; /* 稼働を止めず、座標確定まで見た目だけ隠す */
+      pointer-events: none;
     }
     .kanji-quiz-wrong-model-wrap iframe {
       display: block;
