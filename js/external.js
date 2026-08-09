@@ -126,7 +126,17 @@
       "英語→英語": "en_to_en",
       "英単語→英単語": "en_to_en",
       "英語読み上げ→英語": "en_audio_to_en",
-      "漢字→採点チャレンジ": "kanji_hand"
+      "漢字→よみかな選択": "select_kana",
+      "送り仮名選択": "select_kana",
+      "漢字→よみかな入力": "type_yomi",
+      "読み仮名タイプ": "type_yomi",
+      "漢字→書いて答える": "write_kanji",
+      "書いて問題に回答": "write_kanji",
+      "漢字→書き順なぞる": "stroke_order",
+      "書き順チェック": "stroke_order",
+      "漢字→採点チャレンジ": "kanji_hand",
+      "漢字熟語→読み選択": "jukugo_yomi",
+      "熟語読み方選択": "jukugo_yomi"
     };
     const TRAINING_AFORMAT_TO_INTERNAL = {
       "4択": "4choice",
@@ -143,7 +153,8 @@
       "すべて用いる": "sort_all",
       "不要語混入": "sort_dummy",
       "不足語補足": "sort_missing",
-      "採点": "hand_grade"
+      "採点": "hand_grade",
+      "クイズ": "quiz"
     };
 
     function trainingRouteLabelsToInternal(qFormat, aFormat) {
@@ -153,15 +164,45 @@
       return { format: format, ansType: ansType };
     }
 
-    function findTrainingMaterialForUnit(unitName, materials) {
+    function isKanjiJukugoTrainingModeName(modeName) {
+      return /熟語/.test(String(modeName || ""));
+    }
+
+    function isKanjiTrainingQFormat_(qFormat) {
+      const q = String(qFormat || "").trim();
+      if (!q) return false;
+      if (/漢字/.test(q) || /採点/.test(q)) return true;
+      return (
+        q === "送り仮名選択" ||
+        q === "読み仮名タイプ" ||
+        q === "書いて問題に回答" ||
+        q === "書き順チェック" ||
+        q === "熟語読み方選択"
+      );
+    }
+
+    function isKanjiJukugoTrainingQFormat_(qFormat) {
+      const q = String(qFormat || "").trim();
+      return /漢字熟語/.test(q) || q === "熟語読み方選択";
+    }
+
+    function findTrainingMaterialForUnit(unitName, materials, qFormat) {
       const unit = String(unitName || "").trim();
       if (!unit) return null;
       const mats = materials || (trainingAdminData && trainingAdminData.materials) || materialsData || [];
+      const q = String(qFormat || "");
+      const preferJukugo = isKanjiJukugoTrainingQFormat_(q);
+      const preferStandardKanji = isKanjiTrainingQFormat_(q) && !preferJukugo;
+      let fallback = null;
       for (let i = 0; i < mats.length; i++) {
         const m = mats[i];
-        if ((m.units || []).some(function (u) { return String(u) === unit; })) return m;
+        if (!(m.units || []).some(function (u) { return String(u) === unit; })) continue;
+        if (!fallback) fallback = m;
+        const isJuk = isKanjiJukugoTrainingModeName(m.modeName);
+        if (preferJukugo && isJuk) return m;
+        if (preferStandardKanji && (m.category === "kanji" || /漢字/.test(String(m.modeName || ""))) && !isJuk) return m;
       }
-      return null;
+      return fallback;
     }
 
     function getTrainingModeNameForUnit(unitName, materials) {
@@ -178,7 +219,16 @@
 
     function getLearnerFormatOptions(modeName, category) {
       if (category === "kanji" || /漢字/.test(String(modeName || ""))) {
-        return [{ value: "kanji_hand", label: "漢字 → 採点チャレンジ", qFormat: "漢字→採点チャレンジ" }];
+        if (isKanjiJukugoTrainingModeName(modeName)) {
+          return [{ value: "jukugo_yomi", label: "熟語読み方選択", qFormat: "熟語読み方選択" }];
+        }
+        return [
+          { value: "select_kana", label: "送り仮名選択", qFormat: "送り仮名選択" },
+          { value: "type_yomi", label: "読み仮名タイプ", qFormat: "読み仮名タイプ" },
+          { value: "write_kanji", label: "書いて問題に回答", qFormat: "書いて問題に回答" },
+          { value: "stroke_order", label: "書き順チェック", qFormat: "書き順チェック" },
+          { value: "kanji_hand", label: "漢字 → 採点チャレンジ", qFormat: "漢字→採点チャレンジ" }
+        ];
       }
       const isWord = String(modeName || "").includes("単語");
       if (isWord) {
@@ -207,6 +257,16 @@
       function add(value, label, aFormat) { opts.push({ value: value, label: label, aFormat: aFormat }); }
       if (format === "kanji_hand") {
         add("hand_grade", "採点", "採点");
+        return opts;
+      }
+      if (
+        format === "select_kana" ||
+        format === "type_yomi" ||
+        format === "write_kanji" ||
+        format === "stroke_order" ||
+        format === "jukugo_yomi"
+      ) {
+        add("quiz", "クイズ", "クイズ");
         return opts;
       }
       if (format === "ja_to_en_sort") {
@@ -264,8 +324,11 @@
     function isValidTrainingRouteCombo(unitName, qFormat, aFormat, materials) {
       const parsed = trainingRouteLabelsToInternal(qFormat, aFormat);
       if (!parsed.format || !parsed.ansType) return false;
-      const modeName = getTrainingModeNameForUnit(unitName, materials);
-      const category = getTrainingCategoryForUnit(unitName, materials);
+      const mat = findTrainingMaterialForUnit(unitName, materials, qFormat);
+      const modeName = mat ? String(mat.modeName || "") : getTrainingModeNameForUnit(unitName, materials);
+      const category = mat
+        ? ((mat.category === "kanji" || /漢字/.test(modeName)) ? "kanji" : "english")
+        : getTrainingCategoryForUnit(unitName, materials);
       if (!modeName && category !== "kanji") return false;
       const formats = getLearnerFormatOptions(modeName, category);
       const fmt = formats.find(function (f) { return f.qFormat === String(qFormat || "").trim(); });

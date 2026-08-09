@@ -1,10 +1,10 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>学習アプリ</title>
-  <link rel="stylesheet" href="css/app.css?v=20260808-so-l-and-hw-look">
+  <link rel="stylesheet" href="css/app.css?v=20260809-wrong-panel-mount-fix">
 </head>
 <body>
 <div id="global-header">👤 <span id="header-user-info"></span></div>
@@ -172,12 +172,11 @@
       <p class="kanji-quiz-format-first-lead">もんだいのしかた → 学年 → セット のじゅんにえらべます</p>
       <label class="kanji-quiz-format-first-label" for="kq-ff-format">① もんだいのしかた</label>
       <select id="kq-ff-format" class="large-select kanji-quiz-format-first-select" onchange="onKanjiQuizFormatFirstFormatChange()">
-        <option value="mixed">混合（3しゅるいを まぜる）</option>
-        <option value="select_kana">よみかな・おくりがな（せんたく）</option>
-        <option value="type_yomi">よみかなを タイプして こたえる</option>
-        <option value="write_kanji" selected>かんじを かいて こたえる</option>
-        <option value="stroke_order">書き順クイズ（なぞる）</option>
-        <option value="jukugo_yomi">漢字熟語の読み方（せんたく）</option>
+        <option value="select_kana">送り仮名選択</option>
+        <option value="type_yomi">読み仮名タイプ</option>
+        <option value="write_kanji" selected>書いて問題に回答</option>
+        <option value="stroke_order">書き順チェック</option>
+        <option value="jukugo_yomi">熟語読み方選択</option>
       </select>
       <div id="kq-ff-jukugo-opts" class="kanji-quiz-format-first-jukugo" style="display:none;">
         <label for="kq-ff-jukugo-choice-count">選択肢の数（3〜8）</label>
@@ -224,12 +223,11 @@
     <div id="kanji-quiz-format-wrap" class="kanji-quiz-format-wrap">
       <label for="kanji-quiz-format-select">もんだいのしかた</label>
       <select id="kanji-quiz-format-select" class="large-select" onchange="onKanjiQuizFormatChange()">
-        <option value="mixed">混合（3しゅるいを まぜる）</option>
-        <option value="select_kana">よみかな・おくりがな（せんたく）</option>
-        <option value="type_yomi">よみかなを タイプして こたえる</option>
-        <option value="write_kanji" selected>かんじを かいて こたえる</option>
-        <option value="stroke_order">書き順クイズ（なぞる）</option>
-        <option value="jukugo_yomi">漢字熟語の読み方（せんたく）</option>
+        <option value="select_kana">送り仮名選択</option>
+        <option value="type_yomi">読み仮名タイプ</option>
+        <option value="write_kanji" selected>書いて問題に回答</option>
+        <option value="stroke_order">書き順チェック</option>
+        <option value="jukugo_yomi">熟語読み方選択</option>
       </select>
     </div>
     <div id="kanji-quiz-jukugo-opts" class="kanji-quiz-jukugo-opts" style="display:none;max-width:420px;margin:12px auto 0;text-align:left;">
@@ -278,6 +276,14 @@
           <div id="kanji-quiz-wrong-model-wrap" class="kanji-quiz-wrong-model-wrap"></div>
         </div>
         <div class="kanji-quiz-hw-question-col">
+          <!-- 書き順クイズ専用：リアルタイム書き順判定トグル（デフォルトOFF） -->
+          <div id="kanji-quiz-rt-order-row" class="kanji-quiz-rt-order-row">
+            <label class="kanji-quiz-rt-order-label" for="kanji-quiz-rt-order-toggle">
+              <input type="checkbox" id="kanji-quiz-rt-order-toggle" onchange="kanjiQuizOnRtOrderToggleChanged()">
+              リアルタイム書き順判定をオン
+            </label>
+            <span id="kanji-quiz-rt-order-feedback" class="kanji-quiz-rt-order-feedback" aria-live="polite"></span>
+          </div>
           <div id="kanji-quiz-drill-handwriting" class="kanji-drill-hw-row" style="display:none;">
               <div class="kanji-drill-hw-canvas-panel">
                 <div id="kanji-hw-controls-col" class="kanji-drill-hw-controls-col">
@@ -439,6 +445,7 @@
       </div>
       <div id="training-admin-panel-menus">
       <p style="color:#aaa;font-size:14px;line-height:1.5;">「表示する」にチェックを入れたメニューだけ、子ども画面の特訓メニューに出ます。ボタンの色もここで設定できます。</p>
+      <p style="color:#90CAF9;font-size:13px;line-height:1.55;margin:8px 0 12px;">ヒント: 英語・漢字のサンプル特訓は、GAS の <strong style="color:#CE93D8;">setupSystem()</strong> を実行したときだけ登録されます（毎回の読み込みではチェックしません）。ルート編集で登録例を確認できます。</p>
       <div id="training-admin-menu-grid" class="training-admin-menu-grid"></div>
       <div id="training-admin-route-panel" class="training-admin-route-panel" style="display:none;">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
@@ -570,6 +577,7 @@
   <script src="js/api.js"></script>
   <script src="js/main.js"></script>
   <script src="kanji-vg.js?v=20260807-search-shared"></script>
-  <script src="js/app.js?v=20260808-so-hscroll"></script>
+  <script src="js/kanjiEvaluator.js?v=20260809-wrong-panel-mount-fix"></script>
+  <script src="js/app.js?v=20260809-wrong-panel-mount-fix"></script>
 </body>
 </html>
