@@ -5880,19 +5880,16 @@
     function kpFrameInWrongModelWrap_(frame) {
       return frame && frame.parentElement && frame.parentElement.id === "kanji-quiz-wrong-model-wrap";
     }
-    /** お手本覗き窓：wrap と同じ px 高さで iframe を合わせる（c21f18b 方式） */
-    function kpSyncWrongModelFrameHeight_(frame, h) {
+    /** お手本覗き窓：iframe を wrap 高に固定し、スクロールは iframe 内 document のみ */
+    function kpApplyWrongModelFrameFill_(frame) {
       if (!frame || !kpFrameInWrongModelWrap_(frame)) return;
-      var px = Math.max(180, Number(h) || 0) + "px";
       frame.style.width = "100%";
       frame.style.maxWidth = "100%";
-      frame.style.minHeight = px;
-      frame.style.height = px;
-      frame.style.maxHeight = "";
-      frame.style.overflow = "";
-      try {
-        frame.removeAttribute("scrolling");
-      } catch (_eSc) {}
+      frame.style.height = "100%";
+      frame.style.minHeight = "0";
+      frame.style.maxHeight = "100%";
+      frame.style.overflow = "hidden";
+      frame.setAttribute("scrolling", "no");
     }
     /** お手本覗き窓の目標高さ（潰れた clientHeight を信じない） */
     function kpWrongModelWrapTargetHeight_(wrap) {
@@ -6163,7 +6160,7 @@
           wrap.style.minHeight = targetH + "px";
           wrap.style.height = targetH + "px";
         } catch (_eW) {}
-        kpSyncWrongModelFrameHeight_(frame, targetH);
+        kpApplyWrongModelFrameFill_(frame);
         kpPinWrongPanelViewToModeButtons_(frame);
         kpResizeFrameToContent();
         kpForceWrongPanelCanvasSquare_(frame);
@@ -6188,7 +6185,7 @@
           doc.documentElement.dataset.kpWrongCompactTagged = "1";
         }
         const compactCss =
-          "html,body{scroll-behavior:auto!important;}" +
+          "html,body{scroll-behavior:auto!important;overflow-x:hidden!important;overflow-y:auto!important;-webkit-overflow-scrolling:touch!important;}" +
           "body[data-kp-quiz-wrong='1']{padding:12px 10px 12px!important;transition:none!important;}" +
           "body[data-kp-quiz-wrong='1'] h2{font-size:15px!important;font-weight:700!important;margin:0 0 8px!important;padding:4px 8px!important;color:#1a73e8!important;background:#f0f6ff!important;border-bottom:1px solid #d4e3ff!important;border-radius:6px!important;width:auto!important;text-align:center!important;box-sizing:border-box!important;}" +
           "body[data-kp-quiz-wrong='1'] #kanji-selector-area{display:none!important;}" +
@@ -6230,6 +6227,7 @@
         const wrap = frame.parentElement;
         if (isOn) {
           doc.body.setAttribute("data-kp-quiz-wrong", "1");
+          kpApplyWrongModelFrameFill_(frame);
           try {
             const win = frame.contentWindow;
             if (win && typeof win.switchMode === "function") win.switchMode("demo");
@@ -6271,15 +6269,28 @@
           applyKpStrokeOrderPlayCompactMode_(frame, true);
           return;
         }
+        if (kpFrameInWrongModelWrap_(frame)) {
+          const wrap = frame.parentElement;
+          const targetH = kpWrongModelWrapTargetHeight_(wrap);
+          try {
+            wrap.style.minHeight = targetH + "px";
+            wrap.style.height = targetH + "px";
+          } catch (_eW) {}
+          kpApplyWrongModelFrameFill_(frame);
+          kpForceWrongPanelCanvasSquare_(frame);
+          if (frame.dataset.kpWrongViewPinned !== "1") {
+            if (kpPinWrongPanelViewToModeButtons_(frame)) {
+              frame.dataset.kpWrongViewPinned = "1";
+            }
+            kpRevealWrongModelWrap_(frame);
+          }
+          return;
+        }
         const doc = frame.contentWindow.document;
         const bodyH = doc.body ? doc.body.scrollHeight : 0;
         const htmlH = doc.documentElement ? doc.documentElement.scrollHeight : 0;
         const h = kpComputeFrameHeight_(frame, bodyH, htmlH);
         frame.style.height = `${h}px`;
-        if (kpFrameInWrongModelWrap_(frame)) {
-          frame.style.minHeight = h + "px";
-          kpForceWrongPanelCanvasSquare_(frame);
-        }
         if (kpFrameInPracticeSlot_(frame)) {
           frame.style.maxHeight = Math.max(520, Math.floor(window.innerHeight * 0.88)) + "px";
           frame.style.overflow = "auto";
@@ -6294,12 +6305,13 @@
             }
             const bH = doc.body ? doc.body.scrollHeight : 0;
             const dH = doc.documentElement ? doc.documentElement.scrollHeight : 0;
+            if (kpFrameInWrongModelWrap_(frame)) {
+              kpApplyWrongModelFrameFill_(frame);
+              kpForceWrongPanelCanvasSquare_(frame);
+              return;
+            }
             const nextH = kpComputeFrameHeight_(frame, bH, dH);
             frame.style.height = `${nextH}px`;
-            if (kpFrameInWrongModelWrap_(frame)) {
-              frame.style.minHeight = nextH + "px";
-              kpForceWrongPanelCanvasSquare_(frame);
-            }
             if (kpFrameInPracticeSlot_(frame)) {
               frame.style.maxHeight = Math.max(520, Math.floor(window.innerHeight * 0.88)) + "px";
               frame.style.overflow = "auto";
@@ -6313,8 +6325,8 @@
         if (kpFrameInWrongModelWrap_(frame) && frame.dataset.kpWrongViewPinned !== "1") {
           if (kpPinWrongPanelViewToModeButtons_(frame)) {
             frame.dataset.kpWrongViewPinned = "1";
+            kpRevealWrongModelWrap_(frame);
           }
-          kpRevealWrongModelWrap_(frame);
         }
       } catch (_) {}
     }
@@ -9462,6 +9474,9 @@
         if (q.type === "stroke_order_trace") {
           kanjiQuizSession.strokeOrderFailedOnce = true;
           updateStrokeOrderHint_("practice", sc);
+          kanjiQuizShowHandwritingWrongFeedback(sc, { keepCanvasUnlocked: true });
+          setKanjiQuizHandSubmitBusy(false);
+          return;
         }
         markKanjiQuizHandAnswerSubmitted_();
         kanjiQuizShowHandwritingWrongFeedback(sc);
@@ -9793,7 +9808,19 @@
     function ensureKanjiFrameForQuizEval() {
       const hid = document.getElementById("kp-pro-frame-quiz-hidden");
       const frame = document.getElementById("kp-pro-frame");
-      if (hid && frame && frame.parentElement !== hid) {
+      if (!hid || !frame) return;
+      /* 誤答お手本表示中は iframe を横取りしない（空パネル化・採点迷子を防ぐ） */
+      const wrap = document.getElementById("kanji-quiz-wrong-model-wrap");
+      const sec = document.getElementById("section-kanji-quiz-play");
+      if (
+        wrap &&
+        frame.parentElement === wrap &&
+        sec &&
+        sec.classList.contains("kanji-quiz-wrong-visible")
+      ) {
+        return;
+      }
+      if (frame.parentElement !== hid) {
         hid.appendChild(frame);
       }
     }
@@ -10581,7 +10608,7 @@
           modelWrap.style.minHeight = initH + "px";
           modelWrap.style.height = initH + "px";
         } catch (_eWrap) {}
-        kpSyncWrongModelFrameHeight_(frame, initH);
+        kpApplyWrongModelFrameFill_(frame);
         try { patchKanjiFrameForQuizPostMessage(frame); } catch (_ePatch) {}
         /* 高さ確定→ピン留め→表示（途中のスライドを見せない） */
         setTimeout(function () {
@@ -10592,7 +10619,7 @@
               modelWrap.style.minHeight = targetH + "px";
               modelWrap.style.height = targetH + "px";
             } catch (_eW2) {}
-            kpSyncWrongModelFrameHeight_(frame, targetH);
+            kpApplyWrongModelFrameFill_(frame);
             kpForceWrongPanelCanvasSquare_(frame);
             kpResizeFrameToContent();
             kpForceWrongPanelCanvasSquare_(frame);
@@ -10685,9 +10712,7 @@
         setTimeout(function () {
           try {
             applyKpQuizWrongPanelCompactMode(frame, true);
-            if (wrap && wrap.clientHeight > 0) {
-              kpSyncWrongModelFrameHeight_(frame, wrap.clientHeight);
-            }
+            kpApplyWrongModelFrameFill_(frame);
             kpPinWrongPanelViewToModeButtons_(frame);
           } catch (_e) {}
         }, 80);
@@ -10731,15 +10756,14 @@
         setTimeout(function () {
           try {
             applyKpQuizWrongPanelCompactMode(frame, true);
-            if (wrap && wrap.clientHeight > 0) {
-              kpSyncWrongModelFrameHeight_(frame, wrap.clientHeight);
-            }
+            kpApplyWrongModelFrameFill_(frame);
             kpPinWrongPanelViewToModeButtons_(frame);
           } catch (_e) {}
         }, 120);
       } catch (_e2) {}
     }
-    function kanjiQuizShowHandwritingWrongFeedback(sc) {
+    function kanjiQuizShowHandwritingWrongFeedback(sc, opts) {
+      opts = opts || {};
       const panel = document.getElementById("kanji-quiz-hw-wrong-panel");
       const redWrap = document.getElementById("kanji-quiz-wrong-red-chars");
       if (!kanjiQuizSession || !panel || !redWrap) return;
@@ -10788,7 +10812,9 @@
       panel.style.display = "flex";
       const sec = document.getElementById("section-kanji-quiz-play");
       if (sec) sec.classList.add("kanji-quiz-wrong-visible");
-      setKanjiQuizHwCardControlsLocked(true);
+      if (!opts.keepCanvasUnlocked) {
+        setKanjiQuizHwCardControlsLocked(true);
+      }
       if (ch) kanjiQuizMountWrongModelFrameForChar(ch);
       /* 左右並びのため scrollIntoView はしない（片方だけ見えるのを防ぐ） */
       try {
@@ -11292,7 +11318,7 @@
       const ch = String(q.kanji || "");
       if (!ch) return;
       kanjiQuizSession.wrongModelKanjiChar = ch;
-      kanjiQuizShowHandwritingWrongFeedback(null);
+      kanjiQuizShowHandwritingWrongFeedback(null, { keepCanvasUnlocked: true });
     }
     /** 互換：解答欄お手本を再表示 */
     function kanjiQuizShowStrokeOrderModel() {

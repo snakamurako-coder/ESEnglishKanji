@@ -4135,7 +4135,6 @@ body { font-family: 'Hiragino Maru Gothic ProN', sans-serif; background-color: #
       border: 2px solid #e57373;
       border-radius: 10px;
       overflow: hidden;
-      scroll-behavior: auto;
       background: #fff;
       box-sizing: border-box;
     }
@@ -4145,10 +4144,13 @@ body { font-family: 'Hiragino Maru Gothic ProN', sans-serif; background-color: #
     .kanji-quiz-wrong-model-wrap iframe {
       display: block;
       width: 100% !important;
+      height: 100% !important;
+      min-height: 0 !important;
       max-width: 100% !important;
       max-height: 100% !important;
       border: none !important;
       box-sizing: border-box;
+      overflow: hidden !important;
     }
     .kanji-stroke-order-play-host {
       writing-mode: horizontal-tb;
