@@ -3038,12 +3038,12 @@
       return 1;
     }
     function kanjiQuizTypeBadgeText(type) {
-      if (type === "okurigana_shift") return "問題タイプ: 送り仮名選択";
-      if (type === "ruby_to_kanji") return "問題タイプ: 書いて問題に回答";
-      if (type === "sentence_to_ruby") return "問題タイプ: 読み仮名タイプ";
+      if (type === "okurigana_shift") return "問題タイプ: おくりがな（選択）";
+      if (type === "ruby_to_kanji") return "問題タイプ: よみ→かんじ（しゅどく）";
+      if (type === "sentence_to_ruby") return "問題タイプ: れいぶん→よみ（タイピング）";
       if (type === "stroke_count") return "問題タイプ: かくすう";
-      if (type === "stroke_order_trace") return "問題タイプ: 書き順チェック";
-      if (type === "jukugo_yomi") return "問題タイプ: 熟語読み方選択";
+      if (type === "stroke_order_trace") return "問題タイプ: 書き順（なぞり）";
+      if (type === "jukugo_yomi") return "問題タイプ: 熟語の読み（選択）";
       return "";
     }
     function roundKanjiPtOneDecimal_(n) {
@@ -3707,7 +3707,7 @@
         const filtered = filterKanjiQuizQuestionsByFormat(ctx.allQuestions, mode);
         if (!filtered.length) {
           hideKanjiQuizSetLoadingOverlay_();
-          alert("この しかた では もんだいがありません。\nほかの しかたを えらんでください。");
+          alert("この しかた では もんだいがありません。\nほかの しかたを えらぶか、混合にしてください。");
           return;
         }
         allQuestionsStored = filtered.slice();
@@ -3806,7 +3806,7 @@
           nigateBypassFilter: true,
           nigateTraining: !!ctx.nigateTraining,
           nigateAxis: ctx.nigateAxis,
-          formatMode: ctx.formatMode || "write_kanji"
+          formatMode: ctx.formatMode || "mixed"
         });
         return;
       }
@@ -3829,7 +3829,7 @@
         const filtered = filterKanjiQuizQuestionsByFormat(ctx.allQuestions, mode);
         if (!filtered.length) {
           alert(
-            "この しかた では もんだいがありません。\nほかの しかたを えらんでください。"
+            "この しかた では もんだいがありません。\nほかの しかたを えらぶか、混合にしてください。"
           );
           return;
         }

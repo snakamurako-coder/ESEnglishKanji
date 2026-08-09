@@ -2221,7 +2221,6 @@
 
     const LS_KBD_SCALE = 'vk_scale_pct';
     const LS_KBD_FONT = 'vk_key_font_px';
-    const LS_KANJI_YOMI_KBD_LAYOUT = 'kanji_yomi_kbd_layout';
     const LS_ANSWER_SOUND = 'answer_sound_enabled';
     const LS_IPAD_STYLUS_OPT = 'ipad_stylus_opt_enabled';
     const LS_PEN_ADVANCED_VISIBLE = 'pen_advanced_visible';
@@ -3677,44 +3676,25 @@
             let foundModeId = null;
             let foundModeName = "";
             let resolvedUnitName = "";
-            const isKanjiRoute = isKanjiTrainingQFormat_(route.qFormat) || /採点/.test(String(route.aFormat || ""));
+            const isKanjiRoute = /漢字/.test(String(route.qFormat || "")) || /採点/.test(String(route.aFormat || ""));
             const routeUnitRaw = String(route.unitName || "");
             const routeUnitNorm = normalizeUnitNameForCompare(routeUnitRaw);
-            const preferJukugo = isKanjiJukugoTrainingQFormat_(route.qFormat);
-            const preferStandardKanji = isKanjiRoute && !preferJukugo;
-            let fallbackMat = null;
             for (let m of materialsData) {
                 const units = Array.isArray(m.units) ? m.units : [];
                 const exact = units.find(u => String(u) === routeUnitRaw);
-                const fuzzy = exact || units.find(u => normalizeUnitNameForCompare(u) === routeUnitNorm);
-                if (!fuzzy) continue;
-                if (!fallbackMat) {
-                  fallbackMat = { modeId: m.modeId, modeName: m.modeName, unit: String(fuzzy), category: m.category };
+                if (exact) {
+                  foundModeId = m.modeId;
+                  foundModeName = m.modeName;
+                  resolvedUnitName = String(exact);
+                  break;
                 }
-                const isJuk = /熟語/.test(String(m.modeName || ""));
-                if (preferJukugo && isJuk) {
+                const fuzzy = units.find(u => normalizeUnitNameForCompare(u) === routeUnitNorm);
+                if (fuzzy) {
                   foundModeId = m.modeId;
                   foundModeName = m.modeName;
                   resolvedUnitName = String(fuzzy);
                   break;
                 }
-                if (preferStandardKanji && (m.category === "kanji" || /漢字/.test(String(m.modeName || ""))) && !isJuk) {
-                  foundModeId = m.modeId;
-                  foundModeName = m.modeName;
-                  resolvedUnitName = String(fuzzy);
-                  break;
-                }
-                if (!isKanjiRoute) {
-                  foundModeId = m.modeId;
-                  foundModeName = m.modeName;
-                  resolvedUnitName = String(fuzzy);
-                  break;
-                }
-            }
-            if (!foundModeId && fallbackMat) {
-              foundModeId = fallbackMat.modeId;
-              foundModeName = fallbackMat.modeName;
-              resolvedUnitName = fallbackMat.unit;
             }
             if(!foundModeId) {
                 alert(`「${formatUnitSheetDisplayLabel(route.unitName)}」のデータが見つかりませんでした。`);
@@ -3725,44 +3705,24 @@
             currentModeName = foundModeName;
 
             if (isKanjiRoute) {
-              const mappedKanji = trainingRouteLabelsToInternal(route.qFormat, route.aFormat);
-              let kanjiFormatMode = mappedKanji.format || "write_kanji";
-              if (kanjiFormatMode === "kanji_hand") kanjiFormatMode = "write_kanji";
-              try {
-                if (typeof LS_KANJI_QUIZ_FORMAT !== "undefined") {
-                  localStorage.setItem(LS_KANJI_QUIZ_FORMAT, kanjiFormatMode);
-                } else {
-                  localStorage.setItem("app_kanji_quiz_format_v1", kanjiFormatMode);
-                }
-              } catch (_eFmt) {}
-              const quizFetchBody = {
-                action: "get_kanji_quiz_questions",
-                modeId: foundModeId,
-                unitName: currentUnitName,
-                setId: "",
-                formatMode: kanjiFormatMode,
-                choiceCount: 4,
-                includeNoneOption: false
-              };
               fetch(GAS_API_URL, { method: 'POST', body: JSON.stringify({ action: "get_kanji_quiz_sets", modeId: foundModeId, unitName: currentUnitName }) })
               .then(r => r.json()).then(d => {
                 if (d.status !== "success") throw new Error(d.message || "漢字セット取得失敗");
                 const sets = Array.isArray(d.sets) ? d.sets : [];
                 if (!sets.length) throw new Error("セットが見つかりません");
                 const first = sets[0];
-                quizFetchBody.setId = String(first.setId || "");
-                return fetch(GAS_API_URL, { method: 'POST', body: JSON.stringify(quizFetchBody) });
+                return fetch(GAS_API_URL, { method: 'POST', body: JSON.stringify({ action: "get_kanji_quiz_questions", modeId: foundModeId, unitName: currentUnitName, setId: String(first.setId || "") }) });
               })
               .then(r => r.json()).then(q => {
                 if (q.status !== "success") throw new Error(q.message || "漢字問題取得失敗");
                 var raw = Array.isArray(q.questions) ? q.questions : [];
-                var prep = prepareKanjiQuizQuestionsForPlay(raw, kanjiFormatMode);
+                var prep = prepareKanjiQuizQuestionsForPlay(raw);
                 if (!prep) throw new Error("この形式の問題がありません");
                 startKanjiQuizPlay({
                   modeId: foundModeId,
                   modeName: foundModeName,
                   unitName: currentUnitName,
-                  setId: String((q.setId != null) ? q.setId : quizFetchBody.setId),
+                  setId: String((q.setId != null) ? q.setId : ""),
                   allQuestions: raw,
                   formatMode: prep.formatMode,
                   isTrainingMode: true,
@@ -4149,17 +4109,7 @@
       "英語→英語": "en_to_en",
       "英単語→英単語": "en_to_en",
       "英語読み上げ→英語": "en_audio_to_en",
-      "漢字→よみかな選択": "select_kana",
-      "送り仮名選択": "select_kana",
-      "漢字→よみかな入力": "type_yomi",
-      "読み仮名タイプ": "type_yomi",
-      "漢字→書いて答える": "write_kanji",
-      "書いて問題に回答": "write_kanji",
-      "漢字→書き順なぞる": "stroke_order",
-      "書き順チェック": "stroke_order",
-      "漢字→採点チャレンジ": "kanji_hand",
-      "漢字熟語→読み選択": "jukugo_yomi",
-      "熟語読み方選択": "jukugo_yomi"
+      "漢字→採点チャレンジ": "kanji_hand"
     };
     const TRAINING_AFORMAT_TO_INTERNAL = {
       "4択": "4choice",
@@ -4176,8 +4126,7 @@
       "すべて用いる": "sort_all",
       "不要語混入": "sort_dummy",
       "不足語補足": "sort_missing",
-      "採点": "hand_grade",
-      "クイズ": "quiz"
+      "採点": "hand_grade"
     };
 
     function trainingRouteLabelsToInternal(qFormat, aFormat) {
@@ -4187,45 +4136,15 @@
       return { format: format, ansType: ansType };
     }
 
-    function isKanjiJukugoTrainingModeName(modeName) {
-      return /熟語/.test(String(modeName || ""));
-    }
-
-    function isKanjiTrainingQFormat_(qFormat) {
-      const q = String(qFormat || "").trim();
-      if (!q) return false;
-      if (/漢字/.test(q) || /採点/.test(q)) return true;
-      return (
-        q === "送り仮名選択" ||
-        q === "読み仮名タイプ" ||
-        q === "書いて問題に回答" ||
-        q === "書き順チェック" ||
-        q === "熟語読み方選択"
-      );
-    }
-
-    function isKanjiJukugoTrainingQFormat_(qFormat) {
-      const q = String(qFormat || "").trim();
-      return /漢字熟語/.test(q) || q === "熟語読み方選択";
-    }
-
-    function findTrainingMaterialForUnit(unitName, materials, qFormat) {
+    function findTrainingMaterialForUnit(unitName, materials) {
       const unit = String(unitName || "").trim();
       if (!unit) return null;
       const mats = materials || (trainingAdminData && trainingAdminData.materials) || materialsData || [];
-      const q = String(qFormat || "");
-      const preferJukugo = isKanjiJukugoTrainingQFormat_(q);
-      const preferStandardKanji = isKanjiTrainingQFormat_(q) && !preferJukugo;
-      let fallback = null;
       for (let i = 0; i < mats.length; i++) {
         const m = mats[i];
-        if (!(m.units || []).some(function (u) { return String(u) === unit; })) continue;
-        if (!fallback) fallback = m;
-        const isJuk = isKanjiJukugoTrainingModeName(m.modeName);
-        if (preferJukugo && isJuk) return m;
-        if (preferStandardKanji && (m.category === "kanji" || /漢字/.test(String(m.modeName || ""))) && !isJuk) return m;
+        if ((m.units || []).some(function (u) { return String(u) === unit; })) return m;
       }
-      return fallback;
+      return null;
     }
 
     function getTrainingModeNameForUnit(unitName, materials) {
@@ -4242,16 +4161,7 @@
 
     function getLearnerFormatOptions(modeName, category) {
       if (category === "kanji" || /漢字/.test(String(modeName || ""))) {
-        if (isKanjiJukugoTrainingModeName(modeName)) {
-          return [{ value: "jukugo_yomi", label: "熟語読み方選択", qFormat: "熟語読み方選択" }];
-        }
-        return [
-          { value: "select_kana", label: "送り仮名選択", qFormat: "送り仮名選択" },
-          { value: "type_yomi", label: "読み仮名タイプ", qFormat: "読み仮名タイプ" },
-          { value: "write_kanji", label: "書いて問題に回答", qFormat: "書いて問題に回答" },
-          { value: "stroke_order", label: "書き順チェック", qFormat: "書き順チェック" },
-          { value: "kanji_hand", label: "漢字 → 採点チャレンジ", qFormat: "漢字→採点チャレンジ" }
-        ];
+        return [{ value: "kanji_hand", label: "漢字 → 採点チャレンジ", qFormat: "漢字→採点チャレンジ" }];
       }
       const isWord = String(modeName || "").includes("単語");
       if (isWord) {
@@ -4280,16 +4190,6 @@
       function add(value, label, aFormat) { opts.push({ value: value, label: label, aFormat: aFormat }); }
       if (format === "kanji_hand") {
         add("hand_grade", "採点", "採点");
-        return opts;
-      }
-      if (
-        format === "select_kana" ||
-        format === "type_yomi" ||
-        format === "write_kanji" ||
-        format === "stroke_order" ||
-        format === "jukugo_yomi"
-      ) {
-        add("quiz", "クイズ", "クイズ");
         return opts;
       }
       if (format === "ja_to_en_sort") {
@@ -4347,11 +4247,8 @@
     function isValidTrainingRouteCombo(unitName, qFormat, aFormat, materials) {
       const parsed = trainingRouteLabelsToInternal(qFormat, aFormat);
       if (!parsed.format || !parsed.ansType) return false;
-      const mat = findTrainingMaterialForUnit(unitName, materials, qFormat);
-      const modeName = mat ? String(mat.modeName || "") : getTrainingModeNameForUnit(unitName, materials);
-      const category = mat
-        ? ((mat.category === "kanji" || /漢字/.test(modeName)) ? "kanji" : "english")
-        : getTrainingCategoryForUnit(unitName, materials);
+      const modeName = getTrainingModeNameForUnit(unitName, materials);
+      const category = getTrainingCategoryForUnit(unitName, materials);
       if (!modeName && category !== "kanji") return false;
       const formats = getLearnerFormatOptions(modeName, category);
       const fmt = formats.find(function (f) { return f.qFormat === String(qFormat || "").trim(); });
@@ -4615,15 +4512,10 @@
           return `<option value="${escapeHtml(p.color)}"${sel}>${escapeHtml(p.color)}</option>`;
         }).join("");
         const routeCount = Array.isArray(menu.routes) ? menu.routes.length : 0;
-        const sampleBadge = menu.isKanjiSample
-          ? `<span style="margin-left:6px;font-size:11px;color:#CE93D8;border:1px solid #7B1FA2;border-radius:4px;padding:1px 6px;">漢字サンプル</span>`
-          : (menu.isEnglishSample
-            ? `<span style="margin-left:6px;font-size:11px;color:#90CAF9;border:1px solid #1976D2;border-radius:4px;padding:1px 6px;">英語サンプル</span>`
-            : "");
         return `<div class="training-admin-card" style="border-left:4px solid ${escapeHtml(menu.color)};">
           <div class="training-admin-card-head">
             <span class="training-admin-color-dot" style="background:${escapeHtml(menu.color)};"></span>
-            <span>メニュー ${menu.id}</span>${sampleBadge}
+            <span>メニュー ${menu.id}</span>
             <span style="margin-left:auto;font-size:12px;color:#888;">${routeCount} ステップ</span>
           </div>
           <div class="training-admin-field">
@@ -5809,7 +5701,7 @@
         try { alert("高機能モードの読み込みに失敗しました。"); } catch (_e) {}
         return;
       }
-      const KP_EMBED_VER = "13";
+      const KP_EMBED_VER = "9";
       const KP_SRC = "assets/kp-practice.html";
       if (frame.dataset.kpEmbedVer !== KP_EMBED_VER) {
         frame.dataset.kpLoaded = "";
@@ -5880,21 +5772,10 @@
     function kpFrameInWrongModelWrap_(frame) {
       return frame && frame.parentElement && frame.parentElement.id === "kanji-quiz-wrong-model-wrap";
     }
-    /** お手本覗き窓：iframe を wrap 高に固定し、スクロールは iframe 内 document のみ */
-    function kpApplyWrongModelFrameFill_(frame) {
-      if (!frame || !kpFrameInWrongModelWrap_(frame)) return;
-      frame.style.width = "100%";
-      frame.style.maxWidth = "100%";
-      frame.style.height = "100%";
-      frame.style.minHeight = "0";
-      frame.style.maxHeight = "100%";
-      frame.style.overflow = "hidden";
-      frame.setAttribute("scrolling", "no");
-    }
     /** お手本覗き窓の目標高さ（潰れた clientHeight を信じない） */
     function kpWrongModelWrapTargetHeight_(wrap) {
-      var minH = Math.max(400, Math.min(500, Math.floor(window.innerHeight * 0.52)));
-      var maxH = Math.max(minH, Math.floor(window.innerHeight * 0.68));
+      var minH = Math.max(340, Math.min(420, Math.floor(window.innerHeight * 0.48)));
+      var maxH = Math.max(minH, Math.floor(window.innerHeight * 0.62));
       var w = 0;
       var measured = 0;
       try {
@@ -5904,7 +5785,7 @@
         }
       } catch (_e) {}
       /* 幅＋ボタン帯を見込んだ高さ。計測値が下限未満なら無視（2問目以降の潰れた値対策） */
-      var byWidth = w > 40 ? Math.max(minH, Math.min(maxH, w + 210)) : minH;
+      var byWidth = w > 40 ? Math.max(minH, Math.min(maxH, w + 96)) : minH;
       var byMeasured = measured >= minH ? Math.min(maxH, measured) : 0;
       return Math.max(minH, byWidth, byMeasured);
     }
@@ -6110,14 +5991,13 @@
         if (!frame) return false;
         const doc = frame.contentDocument;
         if (!doc || !doc.body) return false;
-        const anchor =
-          doc.getElementById("mode-msg") ||
+        const btn =
           doc.querySelector('button[onclick*="switchMode(\'demo\')"]') ||
           doc.querySelector('button[onclick*="switchMode"]') ||
           null;
-        if (!anchor) return false;
+        if (!btn) return false;
         const wrap = frame.parentElement;
-        const pad = 4;
+        const pad = 7;
         doc.documentElement.style.scrollBehavior = "auto";
         doc.body.style.scrollBehavior = "auto";
         doc.body.style.transition = "none";
@@ -6129,7 +6009,7 @@
           wrap.scrollTop = 0;
         }
         void doc.body.offsetHeight;
-        const y = anchor.getBoundingClientRect().top - doc.body.getBoundingClientRect().top;
+        const y = btn.getBoundingClientRect().top - doc.body.getBoundingClientRect().top;
         const shift = Math.max(0, Math.round(y - pad));
         doc.body.style.marginTop = "-" + shift + "px";
         doc.documentElement.scrollTop = 0;
@@ -6146,24 +6026,6 @@
         if (wrap && wrap.id === "kanji-quiz-wrong-model-wrap") {
           wrap.classList.remove("is-kp-view-pending");
         }
-      } catch (_e) {}
-    }
-    /** お手本 iframe 内でモード切替後、なぞり練習・採点ボタンが見えるよう再レイアウト */
-    function kpRefreshWrongPanelLayout_(frame) {
-      try {
-        if (!frame || !kpFrameInWrongModelWrap_(frame)) return;
-        const wrap = frame.parentElement;
-        applyKpQuizWrongPanelCompactMode(frame, true);
-        kpForceWrongPanelCanvasSquare_(frame);
-        var targetH = kpWrongModelWrapTargetHeight_(wrap);
-        try {
-          wrap.style.minHeight = targetH + "px";
-          wrap.style.height = targetH + "px";
-        } catch (_eW) {}
-        kpApplyWrongModelFrameFill_(frame);
-        kpPinWrongPanelViewToModeButtons_(frame);
-        kpResizeFrameToContent();
-        kpForceWrongPanelCanvasSquare_(frame);
       } catch (_e) {}
     }
     function applyKpQuizWrongPanelCompactMode(frame, isOn) {
@@ -6185,36 +6047,26 @@
           doc.documentElement.dataset.kpWrongCompactTagged = "1";
         }
         const compactCss =
-          "html,body{scroll-behavior:auto!important;overflow-x:hidden!important;overflow-y:auto!important;-webkit-overflow-scrolling:touch!important;}" +
+          "html,body{scroll-behavior:auto!important;}" +
           "body[data-kp-quiz-wrong='1']{padding:12px 10px 12px!important;transition:none!important;}" +
           "body[data-kp-quiz-wrong='1'] h2{font-size:15px!important;font-weight:700!important;margin:0 0 8px!important;padding:4px 8px!important;color:#1a73e8!important;background:#f0f6ff!important;border-bottom:1px solid #d4e3ff!important;border-radius:6px!important;width:auto!important;text-align:center!important;box-sizing:border-box!important;}" +
           "body[data-kp-quiz-wrong='1'] #kanji-selector-area{display:none!important;}" +
           "body[data-kp-quiz-wrong='1'] [data-kp-section='tools']{display:none!important;}" +
           "body[data-kp-quiz-wrong='1'] [data-kp-section='strict']{display:none!important;}" +
-          "body[data-kp-quiz-wrong='1'] .controls:not(#score-controls):not(#trace-controls):not(#demo-controls){display:none!important;}" +
           "body[data-kp-quiz-wrong='1'] .controls{pointer-events:auto!important;}" +
           "body[data-kp-quiz-wrong='1'] .controls button{pointer-events:auto!important;cursor:pointer!important;}" +
           "body[data-kp-quiz-wrong='1'] #mode-msg{margin:4px 0 6px!important;font-size:12px!important;line-height:1.35!important;}" +
           "body[data-kp-quiz-wrong='1'] #canvas{" +
-          "display:block!important;margin:4px auto!important;" +
-          "width:min(200px,78%)!important;height:min(200px,78%)!important;" +
-          "max-width:min(200px,78%)!important;max-height:min(200px,78%)!important;" +
-          "min-width:min(160px,65%)!important;min-height:min(160px,65%)!important;" +
+          "display:block!important;margin:6px auto!important;" +
+          "width:min(240px,82%)!important;height:min(240px,82%)!important;" +
+          "max-width:min(240px,82%)!important;max-height:min(240px,82%)!important;" +
+          "min-width:min(180px,70%)!important;min-height:min(180px,70%)!important;" +
           "aspect-ratio:1/1!important;box-sizing:border-box!important;" +
           "object-fit:contain!important;" +
           "}" +
-          "body[data-kp-quiz-wrong='1'] #score-controls{display:none!important;}" +
-          "body[data-kp-quiz-wrong='1'] #trace-controls.hidden{display:none!important;}" +
-          "body[data-kp-quiz-wrong='1'] #trace-controls:not(.hidden){" +
-          "display:flex!important;flex-wrap:wrap!important;gap:6px!important;" +
-          "justify-content:center!important;margin:6px 0!important;" +
-          "visibility:visible!important;pointer-events:auto!important;opacity:1!important;}" +
-          "body[data-kp-quiz-wrong='1'] #demo-controls.hidden{display:none!important;}" +
-          "body[data-kp-quiz-wrong='1'] #demo-controls:not(.hidden){" +
-          "display:flex!important;flex-wrap:wrap!important;gap:6px!important;" +
-          "justify-content:center!important;margin:6px 0!important;" +
-          "visibility:visible!important;pointer-events:auto!important;opacity:1!important;}" +
-          "body[data-kp-quiz-wrong='1'] #result-box{margin-top:6px!important;padding:8px 12px!important;}" +
+          "body[data-kp-quiz-wrong='1'] #score-controls," +
+          "body[data-kp-quiz-wrong='1'] #trace-controls{display:none!important;}" +
+          "body[data-kp-quiz-wrong='1'] #result-box{margin-top:8px!important;padding:8px 12px!important;}" +
           "body[data-kp-quiz-wrong='1'] #result-box .score{font-size:32px!important;line-height:1.1!important;}" +
           "body[data-kp-quiz-wrong='1'] #result-box .msg{font-size:12px!important;margin-top:6px!important;line-height:1.4!important;}";
         let style = doc.getElementById("kp-wrong-panel-compact-style");
@@ -6227,11 +6079,6 @@
         const wrap = frame.parentElement;
         if (isOn) {
           doc.body.setAttribute("data-kp-quiz-wrong", "1");
-          kpApplyWrongModelFrameFill_(frame);
-          try {
-            const win = frame.contentWindow;
-            if (win && typeof win.switchMode === "function") win.switchMode("demo");
-          } catch (_eDemo) {}
           if (wrap && wrap.id === "kanji-quiz-wrong-model-wrap") {
             wrap.classList.add("is-kp-view-pending");
           }
@@ -6239,8 +6086,8 @@
           void doc.body.offsetHeight;
           if (kpPinWrongPanelViewToModeButtons_(frame)) {
             frame.dataset.kpWrongViewPinned = "1";
+            kpRevealWrongModelWrap_(frame);
           }
-          kpRevealWrongModelWrap_(frame);
         } else {
           doc.body.removeAttribute("data-kp-quiz-wrong");
           try {
@@ -6269,23 +6116,6 @@
           applyKpStrokeOrderPlayCompactMode_(frame, true);
           return;
         }
-        if (kpFrameInWrongModelWrap_(frame)) {
-          const wrap = frame.parentElement;
-          const targetH = kpWrongModelWrapTargetHeight_(wrap);
-          try {
-            wrap.style.minHeight = targetH + "px";
-            wrap.style.height = targetH + "px";
-          } catch (_eW) {}
-          kpApplyWrongModelFrameFill_(frame);
-          kpForceWrongPanelCanvasSquare_(frame);
-          if (frame.dataset.kpWrongViewPinned !== "1") {
-            if (kpPinWrongPanelViewToModeButtons_(frame)) {
-              frame.dataset.kpWrongViewPinned = "1";
-            }
-            kpRevealWrongModelWrap_(frame);
-          }
-          return;
-        }
         const doc = frame.contentWindow.document;
         const bodyH = doc.body ? doc.body.scrollHeight : 0;
         const htmlH = doc.documentElement ? doc.documentElement.scrollHeight : 0;
@@ -6305,13 +6135,12 @@
             }
             const bH = doc.body ? doc.body.scrollHeight : 0;
             const dH = doc.documentElement ? doc.documentElement.scrollHeight : 0;
-            if (kpFrameInWrongModelWrap_(frame)) {
-              kpApplyWrongModelFrameFill_(frame);
-              kpForceWrongPanelCanvasSquare_(frame);
-              return;
-            }
             const nextH = kpComputeFrameHeight_(frame, bH, dH);
             frame.style.height = `${nextH}px`;
+            if (kpFrameInWrongModelWrap_(frame)) {
+              frame.style.minHeight = nextH + "px";
+              kpForceWrongPanelCanvasSquare_(frame);
+            }
             if (kpFrameInPracticeSlot_(frame)) {
               frame.style.maxHeight = Math.max(520, Math.floor(window.innerHeight * 0.88)) + "px";
               frame.style.overflow = "auto";
@@ -7528,7 +7357,7 @@
       const sel = document.getElementById('kanji-quiz-format-select');
       if (!sel) return;
       // 単漢字ブック向け形式（熟語読み以外）
-      const standardFormats = ['select_kana', 'type_yomi', 'write_kanji', 'stroke_order'];
+      const standardFormats = ['mixed', 'select_kana', 'type_yomi', 'write_kanji', 'stroke_order'];
       if (kanjiQuizCurrentSheetKind_ === 'jukugo') {
         // 熟語ブック → 熟語読みのみ
         Array.from(sel.options).forEach(function (opt) {
@@ -7545,11 +7374,11 @@
           opt.disabled = !on;
           opt.hidden = !on;
         });
-        if (sel.value === 'jukugo_yomi' || sel.value === 'mixed' || !sel.value || (sel.options[sel.selectedIndex] && sel.options[sel.selectedIndex].disabled)) {
+        if (sel.value === 'jukugo_yomi' || !sel.value || (sel.options[sel.selectedIndex] && sel.options[sel.selectedIndex].disabled)) {
           let fallback = 'write_kanji';
           try {
             const v = localStorage.getItem(LS_KANJI_QUIZ_FORMAT);
-            if (v && v !== 'mixed' && standardFormats.indexOf(v) >= 0) fallback = v;
+            if (v && standardFormats.indexOf(v) >= 0) fallback = v;
           } catch (e) {}
           sel.value = fallback;
           try { localStorage.setItem(LS_KANJI_QUIZ_FORMAT, fallback); } catch (e2) {}
@@ -7561,21 +7390,10 @@
     }
     function getKanjiQuizFormatMode() {
       const sel = document.getElementById('kanji-quiz-format-select');
-      if (sel && sel.value) {
-        if (sel.value === 'mixed') {
-          sel.value = 'write_kanji';
-          try { localStorage.setItem(LS_KANJI_QUIZ_FORMAT, 'write_kanji'); } catch (e0) {}
-          return 'write_kanji';
-        }
-        return sel.value;
-      }
+      if (sel && sel.value) return sel.value;
       try {
         const v = localStorage.getItem(LS_KANJI_QUIZ_FORMAT);
-        if (v === 'mixed') {
-          try { localStorage.setItem(LS_KANJI_QUIZ_FORMAT, 'write_kanji'); } catch (e1) {}
-          return 'write_kanji';
-        }
-        if (v && ['write_kanji', 'select_kana', 'type_yomi', 'stroke_order', 'jukugo_yomi'].indexOf(v) >= 0) return v;
+        if (v && ['mixed', 'write_kanji', 'select_kana', 'type_yomi', 'stroke_order', 'jukugo_yomi'].indexOf(v) >= 0) return v;
       } catch (e) {}
       return 'write_kanji';
     }
@@ -7601,8 +7419,7 @@
     }
     function filterKanjiQuizQuestionsByFormat(questions, mode) {
       const arr = Array.isArray(questions) ? questions : [];
-      var m = mode || 'write_kanji';
-      if (m === 'mixed') m = 'write_kanji';
+      if (!mode || mode === 'mixed') return arr.slice();
       var typeMap = {
         write_kanji: 'ruby_to_kanji',
         select_kana: 'okurigana_shift',
@@ -7610,8 +7427,8 @@
         stroke_order: 'stroke_order_trace',
         jukugo_yomi: 'jukugo_yomi'
       };
-      var t = typeMap[m];
-      if (!t) return arr.filter(function (q) { return q.type === 'ruby_to_kanji'; });
+      var t = typeMap[mode];
+      if (!t) return arr.slice();
       return arr.filter(function (q) { return q.type === t; });
     }
     function shuffleKanjiQuizQuestionsArray(arr) {
@@ -7802,15 +7619,15 @@
       if (!readingSent && raw) q.contextSentenceReading = raw;
       return q;
     }
-    function prepareKanjiQuizQuestionsForPlay(rawList, formatModeOverride) {
-      var mode = formatModeOverride || getKanjiQuizFormatMode();
+    function prepareKanjiQuizQuestionsForPlay(rawList) {
+      var mode = getKanjiQuizFormatMode();
       var normalized = (Array.isArray(rawList) ? rawList : []).map(function (q) {
         if (!q || q.type !== "okurigana_shift") return q;
         return rebuildOkuriganaQuestionByAlgorithm_(q);
       });
       var filtered = filterKanjiQuizQuestionsByFormat(normalized, mode);
       if (!filtered.length) {
-        alert('この しかた では もんだいがありません。\nほかの しかたを えらんでください。');
+        alert('この しかた では もんだいがありません。\nほかの しかたを えらぶか、混合にしてください。');
         return null;
       }
       // 出題順のシャッフルは startKanjiQuizPlay 内で1回だけ行う（二重シャッフル防止）
@@ -8443,50 +8260,20 @@
     function bindKanjiQuizPalmRejectionGuard() {
       if (__kanjiQuizPalmGuardBound) return;
       __kanjiQuizPalmGuardBound = true;
-      const CARD_SEL =
-        "#kanji-quiz-drill-handwriting, .kanji-drill-hw-row, .kanji-drill-hw-canvas-panel, .kanji-quiz-wrong-model-wrap, #kanji-quiz-hw-wrong-panel, .kanji-drill-hw-prefix-col, .kanji-drill-hw-suffix-col, #kanji-play-char-handwriting, #kanji-play-prompt, #kanji-play-progress, .kanji-quiz-title-rail-wrap, #kanji-hw-score-status, #kanji-stroke-order-readings, .kanji-stroke-order-readings";
-      const isInHwCard_ = function (t) {
-        return !!(t && t.closest && t.closest(CARD_SEL));
-      };
-      const clearSel_ = function () {
-        try {
-          const sel = window.getSelection && window.getSelection();
-          if (sel && sel.removeAllRanges) sel.removeAllRanges();
-        } catch (_e) {}
-      };
       const shouldBlock = function (e) {
         if (!isKanjiQuizHandwritingPlayActive_()) return false;
         const t = e && e.target;
         if (!t || !t.closest) return true;
-        if (t.closest("button, a, input, textarea, select, label, [contenteditable='true']")) return false;
+        if (t.closest("button, a, input, textarea, select, [contenteditable='true']")) return false;
         return true;
       };
       const block = function (e) {
         if (!shouldBlock(e)) return;
         if (e && typeof e.preventDefault === "function") e.preventDefault();
-        clearSel_();
       };
       document.addEventListener("selectstart", block, true);
       document.addEventListener("dragstart", block, true);
       document.addEventListener("contextmenu", block, true);
-      document.addEventListener(
-        "selectionchange",
-        function () {
-          if (!isKanjiQuizHandwritingPlayActive_()) return;
-          clearSel_();
-        },
-        true
-      );
-      /* カード内の pointer 開始で選択を即クリア（掌・ペン先の擦れ対策） */
-      document.addEventListener(
-        "pointerdown",
-        function (e) {
-          if (!isKanjiQuizHandwritingPlayActive_()) return;
-          if (!isInHwCard_(e.target)) return;
-          clearSel_();
-        },
-        true
-      );
       /* iOS 等: 表示文字上の長押しで選択ハンドルが出るのを抑止 */
       document.addEventListener(
         "touchstart",
@@ -8494,52 +8281,18 @@
           if (!shouldBlock(e)) return;
           const t = e.target;
           if (!t || !t.closest) return;
-          if (!isInHwCard_(t)) return;
-          /* canvas 自身の描画は別リスナが preventDefault する */
-          if (t.id === "kanji-quiz-write-canvas" || (t.closest && t.closest("#kanji-quiz-write-canvas"))) {
-            clearSel_();
-            return;
+          if (
+            t.closest(
+              "#kanji-quiz-write-canvas, .kanji-drill-hw-prefix-col, .kanji-drill-hw-suffix-col, #kanji-play-char-handwriting, #kanji-play-prompt, #kanji-quiz-hw-wrong-panel, .kanji-quiz-title-rail-wrap, #kanji-play-progress"
+            )
+          ) {
+            /* canvas 自身の描画は別リスナが preventDefault する。ここでは選択対象外の表示領域のみ */
+            if (t.id === "kanji-quiz-write-canvas" || (t.closest && t.closest("#kanji-quiz-write-canvas"))) return;
+            if (typeof e.preventDefault === "function") e.preventDefault();
           }
-          if (t.closest && t.closest("button, a, input, textarea, select, label")) return;
-          if (typeof e.preventDefault === "function") e.preventDefault();
-          clearSel_();
         },
         { capture: true, passive: false }
       );
-    }
-    /** お手本 iframe 内でも選択不可にする */
-    function injectKanjiFrameNoSelectStyle_(frame) {
-      try {
-        const doc = frame && frame.contentDocument;
-        if (!doc || !doc.head) return;
-        if (doc.getElementById("kj-embed-no-select")) return;
-        const st = doc.createElement("style");
-        st.id = "kj-embed-no-select";
-        st.textContent =
-          "html,body,body *,body *::before,body *::after{-webkit-user-select:none!important;user-select:none!important;-webkit-touch-callout:none!important;-webkit-tap-highlight-color:transparent;-webkit-user-drag:none!important;}" +
-          "input,textarea,select,[contenteditable='true']{-webkit-user-select:text!important;user-select:text!important;}" +
-          "#canvas{-webkit-user-drag:none;touch-action:none;}";
-        doc.head.appendChild(st);
-        if (!doc.documentElement.dataset.kjNoSelectBound) {
-          doc.documentElement.dataset.kjNoSelectBound = "1";
-          const clear = function () {
-            try {
-              const s = doc.getSelection && doc.getSelection();
-              if (s && s.removeAllRanges) s.removeAllRanges();
-            } catch (_e) {}
-          };
-          const block = function (ev) {
-            const t = ev && ev.target;
-            if (t && t.closest && t.closest("input,textarea,select,button,[contenteditable='true']")) return;
-            if (ev && typeof ev.preventDefault === "function") ev.preventDefault();
-            clear();
-          };
-          doc.addEventListener("selectstart", block, true);
-          doc.addEventListener("dragstart", block, true);
-          doc.addEventListener("contextmenu", block, true);
-          doc.addEventListener("selectionchange", clear, true);
-        }
-      } catch (_eInj) {}
     }
     function bindKanjiQuizScrollGuard() {
       if (__kanjiQuizScrollGuardBound) return;
@@ -8777,7 +8530,6 @@
           if (pts.length) {
             const typ = kanjiQuizClassifyStroke(pts, kanjiQuizStrokeStartTime);
             kanjiQuizParentStrokes.push({ type: typ, points: pts });
-            kanjiQuizMaybeRealtimeStrokeOrderJudge_();
           }
           kanjiQuizCurrentStrokePoints = [];
           kanjiQuizRedrawParentCanvas();
@@ -8947,82 +8699,6 @@
       if (dy < 0 || angleDiff > thr.hookAngleDiff) return "hane";
       return "harai";
     }
-    /* ==== リアルタイム書き順判定（書き順クイズ専用・kanjiEvaluator.js と同一ロジック） ==== */
-    function kanjiQuizRealtimeOrderEnabled_() {
-      const cb = document.getElementById("kanji-quiz-rt-order-toggle");
-      return !!(cb && cb.checked);
-    }
-    function setKanjiQuizRtOrderFeedback_(msg, kind) {
-      const el = document.getElementById("kanji-quiz-rt-order-feedback");
-      if (!el) return;
-      el.textContent = msg || "";
-      el.classList.toggle("is-ok", kind === "ok");
-      el.classList.toggle("is-ng", kind === "ng");
-    }
-    function kanjiQuizOnRtOrderToggleChanged() {
-      if (kanjiQuizRealtimeOrderEnabled_()) {
-        setKanjiQuizRtOrderFeedback_("かきはじめると、1画ごとに判定するよ", "ok");
-      } else {
-        setKanjiQuizRtOrderFeedback_("");
-      }
-    }
-    /** リアルタイム書き順ON時：自動で「これで採点」と同じ postMessage 採点を1回だけ起動 */
-    function kanjiQuizRtOrderTryAutoHandAnswer_() {
-      if (!kanjiQuizRealtimeOrderEnabled_()) return;
-      if (!kanjiQuizSession) return;
-      if (kanjiQuizHandSubmitBusy || kanjiQuizHwAnswerSubmitted_()) return;
-      if (kanjiQuizSession.rtOrderAutoTriggered) return;
-      const q = kanjiQuizSession.questions[kanjiQuizSession.index];
-      if (!q || q.type !== "stroke_order_trace") return;
-      kanjiQuizSession.rtOrderAutoTriggered = true;
-      kanjiQuizRunHandwritingAnswer({ fromRtOrderAuto: true });
-    }
-    /** 直前に書き終えた1画をお手本の同じ画と照合し、間違えた瞬間に何画目かを知らせる */
-    function kanjiQuizMaybeRealtimeStrokeOrderJudge_() {
-      try {
-        if (!kanjiQuizRealtimeOrderEnabled_()) return;
-        if (!kanjiQuizSession) return;
-        const q = kanjiQuizSession.questions[kanjiQuizSession.index];
-        if (!q || q.type !== "stroke_order_trace") return;
-        if (kanjiQuizHandSubmitBusy || kanjiQuizHwAnswerSubmitted_()) return;
-        const refs = kanjiQuizTraceGuideStrokes;
-        if (!refs || !refs.length) return;
-        const idx = kanjiQuizParentStrokes.length - 1;
-        if (idx < 0) return;
-        const strokeNo = idx + 1;
-        if (idx >= refs.length) {
-          setKanjiQuizRtOrderFeedback_("✕ " + strokeNo + "画目：お手本（" + refs.length + "画）より多いよ", "ng");
-          kanjiQuizRtOrderTryAutoHandAnswer_();
-          return;
-        }
-        const ev = kjOrderEvaluateStrokePair(
-          kanjiQuizParentStrokes[idx].points,
-          refs[idx].points,
-          kanjiQuizWriteLogicalSize,
-          {
-            strokeIndex: idx,
-            prevUserPoints: idx > 0 ? kanjiQuizParentStrokes[idx - 1].points : null,
-            prevRefPoints: idx > 0 ? refs[idx - 1].points : null
-          }
-        );
-        if (ev.pass) {
-          setKanjiQuizRtOrderFeedback_("○ " + strokeNo + "画目まで正しいかきじゅん！", "ok");
-          if (strokeNo >= refs.length) {
-            kanjiQuizRtOrderTryAutoHandAnswer_();
-          }
-        } else {
-          var why = "";
-          if (ev.details && ev.details.failReason === "direction") why = "（書き方）";
-          else if (ev.details && ev.details.failReason === "relStart") why = "（つなぎ）";
-          else if (ev.details && ev.details.failReason === "shape") why = "（形）";
-          setKanjiQuizRtOrderFeedback_("✕ いま " + strokeNo + "画目をまちがえたよ" + why, "ng");
-          kanjiQuizRtOrderTryAutoHandAnswer_();
-        }
-        try {
-          console.log("[kjOrderEval rt]", strokeNo, ev);
-        } catch (_eLogRt) {}
-      } catch (_eRt) {}
-    }
     function kanjiQuizMergeKanjiStrokeParams(partial) {
       const def = {
         baseWidth: 11.0,
@@ -9093,9 +8769,6 @@
       try {
         clearKanjiHwScoreStatus_();
       } catch (_eSt) {}
-      try {
-        setKanjiQuizRtOrderFeedback_("");
-      } catch (_eRtFb) {}
       if (clearIframe) {
         try {
           const frame = document.getElementById("kp-pro-frame");
@@ -9286,24 +8959,6 @@
     }
     let kanjiQuizHandSubmitBusy = false;
     let kanjiQuizHandSubmitAnimTimer = null;
-    let kanjiQuizHandEvalWatchdogTimer_ = null;
-    function clearKanjiQuizHandEvalWatchdog_() {
-      if (kanjiQuizHandEvalWatchdogTimer_ != null) {
-        clearTimeout(kanjiQuizHandEvalWatchdogTimer_);
-        kanjiQuizHandEvalWatchdogTimer_ = null;
-      }
-    }
-    function startKanjiQuizHandEvalWatchdog_() {
-      clearKanjiQuizHandEvalWatchdog_();
-      kanjiQuizHandEvalWatchdogTimer_ = setTimeout(function () {
-        kanjiQuizHandEvalWatchdogTimer_ = null;
-        if (!kanjiQuizHandSubmitBusy) return;
-        setKanjiQuizHandSubmitBusy(false);
-        try {
-          alert("さいてんが おわりませんでした。もういちどためしてください。");
-        } catch (_eWd) {}
-      }, 15000);
-    }
     function kanjiQuizHwAnswerSubmitted_() {
       return !!(kanjiQuizSession && kanjiQuizSession.hwAnswerSubmitted);
     }
@@ -9332,18 +8987,14 @@
       if (refreshBtn) refreshBtn.disabled = isLocked;
     }
     function resetKanjiQuizHandAnswerState_() {
-      if (kanjiQuizSession) {
-        kanjiQuizSession.hwAnswerSubmitted = false;
-        kanjiQuizSession.rtOrderAutoTriggered = false;
-      }
+      if (kanjiQuizSession) kanjiQuizSession.hwAnswerSubmitted = false;
       setKanjiQuizHwCardControlsLocked(false);
     }
     function markKanjiQuizHandAnswerSubmitted_() {
       if (kanjiQuizSession) kanjiQuizSession.hwAnswerSubmitted = true;
       setKanjiQuizHandSubmitBusy(false);
     }
-    function setKanjiQuizHandSubmitBusy(isBusy, opts) {
-      opts = opts || {};
+    function setKanjiQuizHandSubmitBusy(isBusy) {
       const qBusy =
         kanjiQuizSession &&
         kanjiQuizSession.questions &&
@@ -9353,14 +9004,9 @@
       const idleLabel = isStrokeBusy ? "これで採点" : "これでかいとう";
       const submitted = kanjiQuizHwAnswerSubmitted_();
       kanjiQuizHandSubmitBusy = !!isBusy;
-      if (!isBusy) clearKanjiQuizHandEvalWatchdog_();
       if (kanjiQuizHandSubmitAnimTimer) {
         clearInterval(kanjiQuizHandSubmitAnimTimer);
         kanjiQuizHandSubmitAnimTimer = null;
-      }
-      if (opts.silentBusy) {
-        if (btn) btn.disabled = !!isBusy || submitted;
-        return;
       }
       if (!btn) return;
       btn.disabled = !!isBusy || submitted;
@@ -9375,20 +9021,16 @@
         }, 280);
       } else {
         btn.textContent = idleLabel;
-        if (!submitted && kanjiQuizSession) kanjiQuizSession.rtOrderAutoTriggered = false;
       }
     }
-    function kanjiQuizRunHandwritingAnswer(opts) {
-      opts = opts || {};
-      const fromRtOrderAuto = !!opts.fromRtOrderAuto;
+    function kanjiQuizRunHandwritingAnswer() {
       if (kanjiQuizHandSubmitBusy || kanjiQuizHwAnswerSubmitted_()) return;
       if (!kanjiQuizParentStrokes.length) {
-        if (!fromRtOrderAuto) alert("かんじを かいてください。");
+        alert("かんじを かいてください。");
         return;
       }
       if (!kanjiQuizSession) return;
-      setKanjiQuizHandSubmitBusy(true, fromRtOrderAuto ? { silentBusy: true } : null);
-      startKanjiQuizHandEvalWatchdog_();
+      setKanjiQuizHandSubmitBusy(true);
       function postEvalToFrame() {
         return (function () {
           const frame = document.getElementById("kp-pro-frame");
@@ -9451,22 +9093,15 @@
       if (!secHand || !secHand.classList.contains("active")) return;
       const q = kanjiQuizSession.questions[kanjiQuizSession.index];
       if (!q || !isKanjiQuizHandwritingQuestionType_(q.type)) return;
-      /* 採点済み後の二重 postMessage は無視（さいてんステータス表示後の再採点ループ防止） */
-      if (kanjiQuizHwAnswerSubmitted_()) {
-        setKanjiQuizHandSubmitBusy(false);
-        return;
-      }
       // 書き順は合格確定後の二重採点を無視（自動で次字へ移るまでの間）
       if (
         q.type === "stroke_order_trace" &&
         (kanjiQuizSession.rubyHandComplete || kanjiQuizSession.strokeOrderPendingAdvance)
       ) {
-        setKanjiQuizHandSubmitBusy(false);
         return;
       }
       /* 書いて答える：合格待機中の再採点は無視 */
       if (q.type === "ruby_to_kanji" && typeof kanjiQuizSession.hwPassPendingAdvance === "function") {
-        setKanjiQuizHandSubmitBusy(false);
         return;
       }
       if (sc == null || sc < KANJI_QUIZ_HAND_PASS) {
@@ -9474,14 +9109,11 @@
         if (q.type === "stroke_order_trace") {
           kanjiQuizSession.strokeOrderFailedOnce = true;
           updateStrokeOrderHint_("practice", sc);
-          kanjiQuizShowHandwritingWrongFeedback(sc, { keepCanvasUnlocked: true });
-          setKanjiQuizHandSubmitBusy(false);
-          return;
         }
+        /* 書き順も「書いて答える」と同じ誤答パネル＋書き順デモ */
         markKanjiQuizHandAnswerSubmitted_();
         kanjiQuizShowHandwritingWrongFeedback(sc);
         setKanjiQuizHwCardControlsLocked(true);
-        setKanjiQuizHandSubmitBusy(false);
         return;
       }
       markKanjiQuizHandAnswerSubmitted_();
@@ -9496,7 +9128,6 @@
         updateStrokeOrderHint_("pass", sc);
         kanjiQuizHideWrongFeedback();
         submitKanjiQuizScore();
-        setKanjiQuizHandSubmitBusy(false);
         return;
       }
       /* 書いて答える：採点ステータスを見せ、「次へ」操作でのみ進行 */
@@ -9552,7 +9183,6 @@
         if (typeof advanceFn === "function") advanceFn();
       }
       kanjiQuizSession.hwPassPendingAdvance = goNext;
-      setKanjiQuizHandSubmitBusy(false);
       const skipBtn = document.getElementById("kanji-quiz-skip-hw-btn");
       if (skipBtn) {
         skipBtn.textContent = "次へ";
@@ -9564,11 +9194,6 @@
       if (!kanjiQuizSession) return;
       const secHand = document.getElementById("section-kanji-quiz-play");
       if (!secHand || !secHand.classList.contains("active")) return;
-      /* 書き順：採点済み待機中の「次へ（ふせいかい）」で次問題へ */
-      if (typeof kanjiQuizSession.strokeOrderPendingAdvance === "function") {
-        kanjiQuizSession.strokeOrderPendingAdvance();
-        return;
-      }
       /* 合格待機中の「次へ」はスキップ（不正解確定）ではなく進行 */
       if (typeof kanjiQuizSession.hwPassPendingAdvance === "function") {
         kanjiQuizSession.hwPassPendingAdvance();
@@ -9592,12 +9217,6 @@
       kanjiQuizSession.rubyHandMinScore = 0;
       kanjiQuizHideWrongFeedback();
       submitKanjiQuizScore();
-      if (
-        kanjiQuizSession &&
-        typeof kanjiQuizSession.strokeOrderPendingAdvance === "function"
-      ) {
-        kanjiQuizSession.strokeOrderPendingAdvance();
-      }
     }
     function isKanjiQuizHanChar(ch) {
       if (!ch || ch.length === 0) return false;
@@ -9612,22 +9231,14 @@
     }
     function patchKanjiFrameForQuizPostMessage(frame) {
       try {
-        injectKanjiFrameNoSelectStyle_(frame);
         const win = frame.contentWindow;
         if (!win) return;
         syncKanjiHandScoreWeightsToFrame(frame);
         const doc = frame.contentDocument;
         if (!doc || !doc.documentElement) return;
         const hookVer = String(doc.documentElement.dataset.kanjiQuizParentHook || "");
-        if (hookVer === "5") {
-          try {
-            if (win.__kjEvalWrappedV4 && win.__kjQPatchInnerV5) return;
-          } catch (_eHookOk) {}
-          try {
-            delete doc.documentElement.dataset.kanjiQuizParentHook;
-          } catch (_eHookClr) {}
-        }
-        // v5: switchMode 後に親へレイアウト更新通知（誤答お手本のなぞりボタン表示）
+        if (hookVer === "4") return;
+        // v4: 採点内訳 breakdown を kanjiQuizScored に同梱
         try {
           win.__kjQPatchInner = false;
           win.__kjEvalWrapped = false;
@@ -9638,8 +9249,7 @@
         const s = doc.createElement("script");
         s.textContent =
           "(function(){" +
-          "if(window.__kjQPatchInnerV5)return;" +
-          "window.__kjQPatchInnerV5=true;" +
+          "if(window.__kjQPatchInnerV4)return;" +
           "window.__kjQPatchInnerV4=true;" +
           "window.__kjQPatchInnerV3=true;" +
           "window.__kjQPatchInnerV2=true;" +
@@ -9675,17 +9285,6 @@
           "}" +
           "}catch(e){}" +
           "});" +
-          "function _kjWrapSwitchMode(){" +
-          "if(typeof switchMode!==\"function\"||window.__kjSwitchModeWrappedV5)return;" +
-          "window.__kjSwitchModeWrappedV5=true;" +
-          "var _sm=switchMode;" +
-          "switchMode=function(m){" +
-          "var r=_sm.apply(this,arguments);" +
-          "try{if(window.parent)window.parent.postMessage({type:\"kpWrongPanelModeChanged\",mode:m},\"*\");}catch(e){}" +
-          "return r;" +
-          "};" +
-          "}" +
-          "_kjWrapSwitchMode();" +
           "function _kjWrapEval(){" +
           "if(typeof window.evaluateKanji!==\"function\"){requestAnimationFrame(_kjWrapEval);return;}" +
           "if(window.__kjEvalWrappedV4)return;" +
@@ -9700,7 +9299,7 @@
           "_kjWrapEval();" +
           "})();";
         doc.documentElement.appendChild(s);
-        doc.documentElement.dataset.kanjiQuizParentHook = "5";
+        doc.documentElement.dataset.kanjiQuizParentHook = "4";
       } catch (e) {}
     }
     function ensureKanjiPracticeFrameReady() {
@@ -9808,19 +9407,7 @@
     function ensureKanjiFrameForQuizEval() {
       const hid = document.getElementById("kp-pro-frame-quiz-hidden");
       const frame = document.getElementById("kp-pro-frame");
-      if (!hid || !frame) return;
-      /* 誤答お手本表示中は iframe を横取りしない（空パネル化・採点迷子を防ぐ） */
-      const wrap = document.getElementById("kanji-quiz-wrong-model-wrap");
-      const sec = document.getElementById("section-kanji-quiz-play");
-      if (
-        wrap &&
-        frame.parentElement === wrap &&
-        sec &&
-        sec.classList.contains("kanji-quiz-wrong-visible")
-      ) {
-        return;
-      }
-      if (frame.parentElement !== hid) {
+      if (hid && frame && frame.parentElement !== hid) {
         hid.appendChild(frame);
       }
     }
@@ -9895,7 +9482,7 @@
         return;
       }
       if (mode === "pass") {
-        hint.textContent = "せいかい！「次へ（ふせいかい）」を おして つぎへ";
+        hint.textContent = "せいかい！ 次の漢字へ自動でうつります…";
         return;
       }
       hint.textContent = "うすい線をなぞって書いて、60点以上をめざそう。";
@@ -10279,24 +9866,6 @@
           "</li>";
       });
       const feedbackHtml = buildKanjiHwScoreFeedbackHtml_(items, rates);
-      /* 書き順判定（点列距離＋方向ペナルティ方式）が返す「最初に間違えた画」 */
-      const firstWrong = bd ? Math.max(0, Math.round(Number(bd.firstWrongStroke) || 0)) : 0;
-      const orderFailHint = (function () {
-        if (!firstWrong || !bd || !Array.isArray(bd.orderEvalDetails)) return "";
-        const row = bd.orderEvalDetails[firstWrong - 1];
-        if (!row || !row.details) return "";
-        if (row.details.failReason === "direction") return "（書き方）";
-        if (row.details.failReason === "relStart") return "（つなぎ）";
-        if (row.details.failReason === "shape") return "（形）";
-        return "";
-      })();
-      const orderNote = firstWrong
-        ? '<p class="kanji-hw-score-note kanji-hw-score-order-note">かきじゅん：' +
-          firstWrong +
-          "画目でまちがえたよ" +
-          escapeHtml(orderFailHint) +
-          "</p>"
-        : "";
       const sizeNote =
         bd && bd.sizeLabel
           ? '<p class="kanji-hw-score-note">' + escapeHtml(String(bd.sizeLabel)) + "</p>"
@@ -10336,7 +9905,6 @@
         "</ul>" +
         "</div>" +
         feedbackHtml +
-        orderNote +
         sizeNote +
         "</div>";
     }
@@ -10349,16 +9917,6 @@
 
         var quizSec = document.getElementById("section-kanji-quiz-play");
         if (quizSec && quizSec.classList.contains("active") && kanjiQuizSession) {
-          var qNow = kanjiQuizSession.questions[kanjiQuizSession.index];
-          if (
-            qNow &&
-            isKanjiQuizHandwritingQuestionType_(qNow.type) &&
-            kanjiQuizHwAnswerSubmitted_()
-          ) {
-            clearKanjiQuizHandEvalWatchdog_();
-            setKanjiQuizHandSubmitBusy(false);
-            return;
-          }
           kanjiQuizSession.lastHandScore = ev.data.score;
           var qNow = kanjiQuizSession.questions[kanjiQuizSession.index];
           var kToast = String(ev.data.kanjiChar || (qNow && qNow.kanji) || "").trim();
@@ -10369,12 +9927,7 @@
               kanjiQuizResetHwViewportScroll_();
             } catch (_eScr) {}
           } catch (_eBd) {}
-          try {
-            kanjiQuizOnHandwritingScored(ev.data.score);
-          } finally {
-            clearKanjiQuizHandEvalWatchdog_();
-            setKanjiQuizHandSubmitBusy(false);
-          }
+          kanjiQuizOnHandwritingScored(ev.data.score);
           return;
         }
 
@@ -10449,19 +10002,6 @@
       initKanjiParentKanjiQuizScoredBridge();
       initKanjiHandAnalyticsBridge();
       initKanjiQuizWrongModelKpReselectBridge();
-      initKanjiQuizWrongPanelLayoutBridge_();
-    }
-    function initKanjiQuizWrongPanelLayoutBridge_() {
-      if (window.__kanjiQuizWrongPanelLayoutBound) return;
-      window.__kanjiQuizWrongPanelLayoutBound = true;
-      window.addEventListener("message", function (ev) {
-        if (!ev || !ev.data || ev.data.type !== "kpWrongPanelModeChanged") return;
-        const frame = document.getElementById("kp-pro-frame");
-        if (!frame || ev.source !== frame.contentWindow) return;
-        setTimeout(function () {
-          kpRefreshWrongPanelLayout_(frame);
-        }, 40);
-      });
     }
     /** KanjiVG 再読込で target-kanji が先頭に戻る場合に、不正解モデル用の字を取り直す */
     function initKanjiQuizWrongModelKpReselectBridge() {
@@ -10568,7 +10108,6 @@
         try {
           wrap.style.minHeight = "";
           wrap.style.height = "";
-          wrap.classList.remove("is-kp-view-pending");
         } catch (_eClrW) {}
         hid.appendChild(frame);
         frame.style.width = "";
@@ -10608,7 +10147,8 @@
           modelWrap.style.minHeight = initH + "px";
           modelWrap.style.height = initH + "px";
         } catch (_eWrap) {}
-        kpApplyWrongModelFrameFill_(frame);
+        frame.style.minHeight = initH + "px";
+        frame.style.height = initH + "px";
         try { patchKanjiFrameForQuizPostMessage(frame); } catch (_ePatch) {}
         /* 高さ確定→ピン留め→表示（途中のスライドを見せない） */
         setTimeout(function () {
@@ -10619,7 +10159,8 @@
               modelWrap.style.minHeight = targetH + "px";
               modelWrap.style.height = targetH + "px";
             } catch (_eW2) {}
-            kpApplyWrongModelFrameFill_(frame);
+            frame.style.minHeight = targetH + "px";
+            frame.style.height = targetH + "px";
             kpForceWrongPanelCanvasSquare_(frame);
             kpResizeFrameToContent();
             kpForceWrongPanelCanvasSquare_(frame);
@@ -10642,41 +10183,17 @@
       }
       function trySelectWithRetry() {
         let mountDone = false;
-        let attempts = 0;
-        const retryDelays = [0, 140, 360, 700, 1200, 2000, 3200];
-        function finishMount() {
+        function trySelectOnce() {
           if (mountDone) return;
+          if (!selectKanjiCharInQuizFrame(ch)) return;
           mountDone = true;
           mountAndPlayDemo();
         }
-        function trySelectOnce() {
-          if (mountDone) return;
-          attempts++;
-          if (selectKanjiCharInQuizFrame(ch)) {
-            finishMount();
-            return;
-          }
-          if (attempts >= retryDelays.length) {
-            /* KanjiVG 再構築直後など：選択失敗でも枠は出す（空パネルよりマシ） */
-            finishMount();
-          }
-        }
-        retryDelays.forEach(function (delayMs) {
-          setTimeout(trySelectOnce, delayMs);
-        });
-        /* データ再読込完了を待ってからもう一度 */
-        function onDataReady(ev) {
-          if (mountDone) return;
-          if (!ev || !ev.data || ev.data.type !== "kpKanjiDataReady") return;
-          const fr = document.getElementById("kp-pro-frame");
-          if (!fr || ev.source !== fr.contentWindow) return;
-          window.removeEventListener("message", onDataReady);
-          setTimeout(trySelectOnce, 40);
-        }
-        window.addEventListener("message", onDataReady);
-        setTimeout(function () {
-          window.removeEventListener("message", onDataReady);
-        }, 5000);
+        trySelectOnce();
+        if (mountDone) return;
+        // iframe側の候補再構築タイミングと競合するため、短い間隔で再試行する。
+        setTimeout(trySelectOnce, 140);
+        setTimeout(trySelectOnce, 360);
       }
       ensureKanjiHwFrameReadyOnce().then(trySelectWithRetry);
     }
@@ -10712,7 +10229,10 @@
         setTimeout(function () {
           try {
             applyKpQuizWrongPanelCompactMode(frame, true);
-            kpApplyWrongModelFrameFill_(frame);
+            if (wrap && wrap.clientHeight > 0) {
+              frame.style.height = wrap.clientHeight + "px";
+              frame.style.minHeight = wrap.clientHeight + "px";
+            }
             kpPinWrongPanelViewToModeButtons_(frame);
           } catch (_e) {}
         }, 80);
@@ -10756,14 +10276,16 @@
         setTimeout(function () {
           try {
             applyKpQuizWrongPanelCompactMode(frame, true);
-            kpApplyWrongModelFrameFill_(frame);
+            if (wrap && wrap.clientHeight > 0) {
+              frame.style.height = wrap.clientHeight + "px";
+              frame.style.minHeight = wrap.clientHeight + "px";
+            }
             kpPinWrongPanelViewToModeButtons_(frame);
           } catch (_e) {}
         }, 120);
       } catch (_e2) {}
     }
-    function kanjiQuizShowHandwritingWrongFeedback(sc, opts) {
-      opts = opts || {};
+    function kanjiQuizShowHandwritingWrongFeedback(sc) {
       const panel = document.getElementById("kanji-quiz-hw-wrong-panel");
       const redWrap = document.getElementById("kanji-quiz-wrong-red-chars");
       if (!kanjiQuizSession || !panel || !redWrap) return;
@@ -10812,9 +10334,7 @@
       panel.style.display = "flex";
       const sec = document.getElementById("section-kanji-quiz-play");
       if (sec) sec.classList.add("kanji-quiz-wrong-visible");
-      if (!opts.keepCanvasUnlocked) {
-        setKanjiQuizHwCardControlsLocked(true);
-      }
+      setKanjiQuizHwCardControlsLocked(true);
       if (ch) kanjiQuizMountWrongModelFrameForChar(ch);
       /* 左右並びのため scrollIntoView はしない（片方だけ見えるのを防ぐ） */
       try {
@@ -11251,12 +10771,12 @@
       return { isCorrect: false, isPartial: false, scriptBonusMult: 0 };
     }
     function kanjiQuizTypeBadgeText(type) {
-      if (type === "okurigana_shift") return "問題タイプ: 送り仮名選択";
-      if (type === "ruby_to_kanji") return "問題タイプ: 書いて問題に回答";
-      if (type === "sentence_to_ruby") return "問題タイプ: 読み仮名タイプ";
+      if (type === "okurigana_shift") return "問題タイプ: おくりがな（選択）";
+      if (type === "ruby_to_kanji") return "問題タイプ: よみ→かんじ（しゅどく）";
+      if (type === "sentence_to_ruby") return "問題タイプ: れいぶん→よみ（タイピング）";
       if (type === "stroke_count") return "問題タイプ: かくすう";
-      if (type === "stroke_order_trace") return "問題タイプ: 書き順チェック";
-      if (type === "jukugo_yomi") return "問題タイプ: 熟語読み方選択";
+      if (type === "stroke_order_trace") return "問題タイプ: 書き順（なぞり）";
+      if (type === "jukugo_yomi") return "問題タイプ: 熟語の読み（選択）";
       return "";
     }
     function roundKanjiPtOneDecimal_(n) {
@@ -11309,16 +10829,6 @@
       /* デモ再生ボタンは廃止。誤答時のみ書いて答えると同じお手本パネルを出す */
       const btn = document.getElementById("kanji-stroke-order-demo-btn");
       if (btn) btn.style.display = "none";
-    }
-    /** 書き順：お手本／書き順確認カードを誤答パネル経由で表示 */
-    function runStrokeOrderOtehonButtonAction_() {
-      if (!kanjiQuizSession) return;
-      const q = kanjiQuizSession.questions[kanjiQuizSession.index];
-      if (!q || q.type !== "stroke_order_trace") return;
-      const ch = String(q.kanji || "");
-      if (!ch) return;
-      kanjiQuizSession.wrongModelKanjiChar = ch;
-      kanjiQuizShowHandwritingWrongFeedback(null, { keepCanvasUnlocked: true });
     }
     /** 互換：解答欄お手本を再表示 */
     function kanjiQuizShowStrokeOrderModel() {
@@ -11544,7 +11054,6 @@
       kanjiQuizSession.strokeOrderPendingAdvance = null;
       kanjiQuizSession.hwPassPendingAdvance = null;
       kanjiQuizSession.strokeOrderFailedOnce = false;
-      kanjiQuizSession.rtOrderAutoTriggered = false;
       updateStrokeOrderDemoButton_();
       resetKanjiQuizDrillPlayShell();
       const secPlay = document.getElementById("section-kanji-quiz-play");
@@ -12019,7 +11528,7 @@
         const filtered = filterKanjiQuizQuestionsByFormat(ctx.allQuestions, mode);
         if (!filtered.length) {
           hideKanjiQuizSetLoadingOverlay_();
-          alert("この しかた では もんだいがありません。\nほかの しかたを えらんでください。");
+          alert("この しかた では もんだいがありません。\nほかの しかたを えらぶか、混合にしてください。");
           return;
         }
         allQuestionsStored = filtered.slice();
@@ -12118,7 +11627,7 @@
           nigateBypassFilter: true,
           nigateTraining: !!ctx.nigateTraining,
           nigateAxis: ctx.nigateAxis,
-          formatMode: ctx.formatMode || "write_kanji"
+          formatMode: ctx.formatMode || "mixed"
         });
         return;
       }
@@ -12141,7 +11650,7 @@
         const filtered = filterKanjiQuizQuestionsByFormat(ctx.allQuestions, mode);
         if (!filtered.length) {
           alert(
-            "この しかた では もんだいがありません。\nほかの しかたを えらんでください。"
+            "この しかた では もんだいがありません。\nほかの しかたを えらぶか、混合にしてください。"
           );
           return;
         }
@@ -12452,7 +11961,7 @@
         kanjiStrokeOrderAutoNextTimer_ = null;
       }
     }
-    function showStrokeOrderManualNext_(advanceFn) {
+    function showStrokeOrderAutoNext_(advanceFn) {
       if (!kanjiQuizSession) return;
       clearKanjiStrokeOrderAutoNext_();
       var advanced = false;
@@ -12464,12 +11973,7 @@
         advanceFn();
       }
       kanjiQuizSession.strokeOrderPendingAdvance = goNext;
-      const skipBtn = document.getElementById("kanji-quiz-skip-hw-btn");
-      if (skipBtn) {
-        skipBtn.textContent = "次へ（ふせいかい）";
-        skipBtn.disabled = false;
-        stopKanjiActionBusy(skipBtn);
-      }
+      kanjiStrokeOrderAutoNextTimer_ = setTimeout(goNext, 1500);
     }
     function applyJukugoYomiChoiceFeedback_(q, selected, isCorrect) {
       const box = document.getElementById("kanji-play-choices");
@@ -13015,7 +12519,7 @@
         if (useVerdictRail) {
           showKanjiQuizVerdictNextControls_(runAdvanceAfterScore_, 4000);
         } else if (q.type === "stroke_order_trace") {
-          showStrokeOrderManualNext_(runAdvanceAfterScore_);
+          showStrokeOrderAutoNext_(runAdvanceAfterScore_);
         } else {
           runAdvanceAfterScore_();
         }
@@ -13336,82 +12840,12 @@
         })
         .join("");
     }
-    function kanjiYomiKbdLayout_() {
-      return getUserPref(LS_KANJI_YOMI_KBD_LAYOUT, "qwerty") === "jis" ? "jis" : "qwerty";
-    }
-    function kanjiYomiQwertyKbdRows_() {
-      return [
-        ["q", "w", "e", "r", "t", "y", "u", "i", "o", "p"],
-        ["a", "s", "d", "f", "g", "h", "j", "k", "l"],
-        ["z", "x", "c", "v", "b", "n", "m", "-"]
-      ];
-    }
-    /**
-     * JIS かな配列（106/109 キーボード準拠・QWERTY 行とは独立）
-     * sub: 同位置の英数・記号（薄字表示）。kana: タップで入力するひらがな
-     */
-    function kanjiYomiJisKbdLayout_() {
-      return [
-        [
-          { kana: "ぬ", sub: "1" }, { kana: "ふ", sub: "2" }, { kana: "あ", sub: "3" },
-          { kana: "う", sub: "4" }, { kana: "え", sub: "5" }, { kana: "お", sub: "6" },
-          { kana: "や", sub: "7" }, { kana: "ゆ", sub: "8" }, { kana: "よ", sub: "9" },
-          { kana: "わ", sub: "0" }, { kana: "ほ", sub: "-" }, { kana: "へ", sub: "^" }
-        ],
-        [
-          { kana: "た", sub: "Q" }, { kana: "て", sub: "W" }, { kana: "い", sub: "E" },
-          { kana: "す", sub: "R" }, { kana: "か", sub: "T" }, { kana: "ん", sub: "Y" },
-          { kana: "な", sub: "U" }, { kana: "に", sub: "I" }, { kana: "ら", sub: "O" },
-          { kana: "せ", sub: "P" }
-        ],
-        [
-          { kana: "ち", sub: "A" }, { kana: "と", sub: "S" }, { kana: "し", sub: "D" },
-          { kana: "は", sub: "F" }, { kana: "き", sub: "G" }, { kana: "く", sub: "H" },
-          { kana: "ま", sub: "J" }, { kana: "の", sub: "K" }, { kana: "り", sub: "L" },
-          { kana: "れ", sub: ";" }
-        ],
-        [
-          { kana: "つ", sub: "Z" }, { kana: "さ", sub: "X" }, { kana: "そ", sub: "C" },
-          { kana: "ひ", sub: "V" }, { kana: "こ", sub: "B" }, { kana: "み", sub: "N" },
-          { kana: "も", sub: "M" }, { kana: "ね", sub: "," }, { kana: "る", sub: "." },
-          { kana: "め", sub: "/" }
-        ],
-        [
-          { kana: "ろ", sub: "\\" }, { kana: "ゃ", sub: "" }, { kana: "ゅ", sub: "" },
-          { kana: "ょ", sub: "" }, { kana: "っ", sub: "" }, { kana: "゛", sub: "@" },
-          { kana: "゜", sub: "[" }, { kana: "ー", sub: "−" }, { kana: "、", sub: "、" },
-          { kana: "。", sub: "。" }
-        ]
-      ];
-    }
-    function kanjiYomiApplyDakutenToLast_(inp, mark) {
-      if (!inp || !inp.value) return false;
-      const dakuten = {
-        か: "が", き: "ぎ", く: "ぐ", け: "げ", こ: "ご",
-        さ: "ざ", し: "じ", す: "ず", せ: "ぜ", そ: "ぞ",
-        た: "だ", ち: "ぢ", つ: "づ", て: "で", と: "ど",
-        は: "ば", ひ: "び", ふ: "ぶ", へ: "べ", ほ: "ぼ",
-        う: "ゔ"
-      };
-      const handakuten = { は: "ぱ", ひ: "ぴ", ふ: "ぷ", へ: "ぺ", ほ: "ぽ" };
-      const map = mark === "゜" ? handakuten : dakuten;
-      const chars = Array.from(inp.value);
-      const last = chars[chars.length - 1];
-      if (map[last]) {
-        chars[chars.length - 1] = map[last];
-        inp.value = chars.join("");
-        inp.dispatchEvent(new Event("input", { bubbles: true }));
-        return true;
-      }
-      return false;
-    }
     function renderKanjiYomiRomajiKeyboard(containerId, targetInputId, onEnterSubmit) {
       const container = document.getElementById(containerId);
       if (!container) return;
       container.innerHTML = "";
       window.__kanjiYomiRomajiTail = "";
       const pairs = kanjiYomiEnsureRomajiTable();
-      const kbdLayout = kanjiYomiKbdLayout_();
       /**
        * 入力スクリプトの現在状態。常に「ひらがな（kun）」で開始する。
        * 訓読み／音読みに応じた自動的な誘導（kun→ひらがな・on→カタカナ）は意図的に行わない：
@@ -13428,37 +12862,14 @@
       wrap.style.setProperty("--kb-scale", String(Math.max(0.5, Math.min(2.5, scalePct / 100))));
       wrap.style.setProperty("--vk-font-px", String(fontPx));
       wrap.style.setProperty("--vk-pad-px", String(padPx));
-      const layoutRow = document.createElement("div");
-      layoutRow.className = "kanji-yomi-kbd-layout-row";
-      layoutRow.setAttribute("role", "group");
-      layoutRow.setAttribute("aria-label", "キーボード配列");
-      function makeLayoutBtn(label, mode, active) {
-        const b = document.createElement("button");
-        b.type = "button";
-        b.className = "kanji-yomi-kbd-layout-btn" + (active ? " is-active" : "");
-        b.textContent = label;
-        b.setAttribute("aria-pressed", active ? "true" : "false");
-        b.addEventListener("click", function (ev) {
-          ev.preventDefault();
-          if (kanjiYomiKbdLayout_() === mode) return;
-          setUserPref(LS_KANJI_YOMI_KBD_LAYOUT, mode);
-          renderKanjiYomiRomajiKeyboard(containerId, targetInputId, onEnterSubmit);
-        });
-        return b;
-      }
-      layoutRow.appendChild(makeLayoutBtn("QWERTY（ローマ字）", "qwerty", kbdLayout === "qwerty"));
-      layoutRow.appendChild(makeLayoutBtn("JIS ひらがな", "jis", kbdLayout === "jis"));
-      wrap.appendChild(layoutRow);
       const hint = document.createElement("div");
-      hint.className = "kanji-yomi-kbd-hint";
-      hint.textContent =
-        kbdLayout === "jis"
-          ? "JIS 配列：キーをタップしてひらがなを入力。左上の薄い文字は QWERTY 上の位置です。"
-          : "ローマ字 → ひらがな で入力されます。カタカナで答える場合は「かな⇔カナ」ボタンで切替を。";
+      hint.style.cssText =
+        "font-size:12px;color:#455a64;margin-bottom:6px;text-align:center;font-weight:700;";
+      hint.textContent = "ローマ字 → ひらがな で入力されます。カタカナで答える場合は「かな⇔カナ」ボタンで切替を。";
       wrap.appendChild(hint);
       const tailHint = document.createElement("div");
-      tailHint.className = "kanji-yomi-kbd-tail-hint";
-      tailHint.style.display = kbdLayout === "jis" ? "none" : "";
+      tailHint.style.cssText =
+        "font-size:12px;color:#3949ab;margin-bottom:8px;text-align:center;font-weight:700;min-height:1.2em;";
       tailHint.innerHTML = '<span style="color:#666;">入力中:</span> <span id="kanji-yomi-romaji-tail-text">―</span>';
       wrap.appendChild(tailHint);
       function updateTailDisplay() {
@@ -13467,7 +12878,12 @@
         if (tEl) tEl.textContent = t ? t : "―";
       }
       const board = document.createElement("div");
-      board.className = "keyboard" + (kbdLayout === "jis" ? " kbd-jis" : " kbd-qwerty");
+      board.className = "keyboard";
+      const rows = [
+        ["q", "w", "e", "r", "t", "y", "u", "i", "o", "p"],
+        ["a", "s", "d", "f", "g", "h", "j", "k", "l"],
+        ["z", "x", "c", "v", "b", "n", "m", "-"]
+      ];
       function applyChar(lower) {
         const inp = document.getElementById(targetInputId);
         if (!inp) return;
@@ -13488,47 +12904,6 @@
         if (piece) inp.value += piece;
         inp.dispatchEvent(new Event("input", { bubbles: true }));
         updateTailDisplay();
-      }
-      function applyJisKana(kana) {
-        const inp = document.getElementById(targetInputId);
-        if (!inp || !kana) return;
-        inp.value += kanjiYomiHiraganaToAnswerScript(kana, currentScriptKind);
-        inp.dispatchEvent(new Event("input", { bubbles: true }));
-      }
-      function applyJisKey_(keyDef) {
-        const inp = document.getElementById(targetInputId);
-        if (!inp || !keyDef) return;
-        const kana = String(keyDef.kana || "");
-        if (kana === "゛") {
-          if (!kanjiYomiApplyDakutenToLast_(inp, "゛")) applyJisKana("゛");
-          return;
-        }
-        if (kana === "゜") {
-          if (!kanjiYomiApplyDakutenToLast_(inp, "゜")) applyJisKana("゜");
-          return;
-        }
-        applyJisKana(kana);
-      }
-      function appendJisKeyBtn_(rowDiv, keyDef) {
-        const keyBtn = document.createElement("button");
-        keyBtn.type = "button";
-        keyBtn.className = "key key-dual-label";
-        const sub = String(keyDef.sub || "").trim();
-        if (sub) {
-          keyBtn.innerHTML =
-            '<span class="kj-kbd-sub">' +
-            escapeHtml(sub) +
-            '</span><span class="kj-kbd-main">' +
-            escapeHtml(keyDef.kana) +
-            "</span>";
-        } else {
-          keyBtn.innerHTML =
-            '<span class="kj-kbd-main kj-kbd-main-only">' + escapeHtml(keyDef.kana) + "</span>";
-        }
-        bindKeyHandler(keyBtn, function () {
-          applyJisKey_(keyDef);
-        });
-        rowDiv.appendChild(keyBtn);
       }
       function backspaceKey_() {
         const inp = document.getElementById(targetInputId);
@@ -13581,33 +12956,22 @@
           ev.preventDefault();
         });
       }
-      if (kbdLayout === "jis") {
-        kanjiYomiJisKbdLayout_().forEach(function (row, ri) {
-          const rowDiv = document.createElement("div");
-          rowDiv.className = "key-row key-row-jis key-row-jis-" + ri;
-          row.forEach(function (keyDef) {
-            appendJisKeyBtn_(rowDiv, keyDef);
+      rows.forEach(function (row) {
+        const rowDiv = document.createElement("div");
+        rowDiv.className = "key-row";
+        row.forEach(function (ch) {
+          const keyBtn = document.createElement("button");
+          keyBtn.type = "button";
+          keyBtn.className = "key";
+          keyBtn.textContent = ch;
+          bindKeyHandler(keyBtn, function () {
+            if (/^[a-z]$/i.test(ch)) applyChar(ch.toLowerCase());
+            else if (ch === "-") applyChar("-");
           });
-          board.appendChild(rowDiv);
+          rowDiv.appendChild(keyBtn);
         });
-      } else {
-        kanjiYomiQwertyKbdRows_().forEach(function (row) {
-          const rowDiv = document.createElement("div");
-          rowDiv.className = "key-row";
-          row.forEach(function (ch) {
-            const keyBtn = document.createElement("button");
-            keyBtn.type = "button";
-            keyBtn.className = "key key-single-label";
-            keyBtn.textContent = ch;
-            bindKeyHandler(keyBtn, function () {
-              if (/^[a-z]$/i.test(ch)) applyChar(ch.toLowerCase());
-              else if (ch === "-") applyChar("-");
-            });
-            rowDiv.appendChild(keyBtn);
-          });
-          board.appendChild(rowDiv);
-        });
-      }
+        board.appendChild(rowDiv);
+      });
       const rowBs = document.createElement("div");
       rowBs.className = "key-row";
       /**
