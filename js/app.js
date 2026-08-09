@@ -9808,7 +9808,19 @@
     function ensureKanjiFrameForQuizEval() {
       const hid = document.getElementById("kp-pro-frame-quiz-hidden");
       const frame = document.getElementById("kp-pro-frame");
-      if (hid && frame && frame.parentElement !== hid) {
+      if (!hid || !frame) return;
+      /* 誤答お手本表示中は iframe を横取りしない（空パネル化・採点迷子を防ぐ） */
+      const wrap = document.getElementById("kanji-quiz-wrong-model-wrap");
+      const sec = document.getElementById("section-kanji-quiz-play");
+      if (
+        wrap &&
+        frame.parentElement === wrap &&
+        sec &&
+        sec.classList.contains("kanji-quiz-wrong-visible")
+      ) {
+        return;
+      }
+      if (frame.parentElement !== hid) {
         hid.appendChild(frame);
       }
     }
