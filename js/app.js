@@ -6228,10 +6228,6 @@
         if (isOn) {
           doc.body.setAttribute("data-kp-quiz-wrong", "1");
           kpApplyWrongModelFrameFill_(frame);
-          try {
-            const win = frame.contentWindow;
-            if (win && typeof win.switchMode === "function") win.switchMode("demo");
-          } catch (_eDemo) {}
           if (wrap && wrap.id === "kanji-quiz-wrong-model-wrap") {
             wrap.classList.add("is-kp-view-pending");
           }
@@ -9432,23 +9428,18 @@
           return true;
         })();
       }
-      /* 再挑戦時は誤答パネル表示中でも、採点前に iframe を評価領域へ退避する。
-       * 移動後に iframe が再初期化されるブラウザがあるため、古い準備完了
-       * Promise は使わず、現在の contentWindow を改めて確認してから送信する。 */
-      ensureKanjiFrameForQuizEval({ force: true });
-      setTimeout(function () {
-        ensureKanjiPracticeFrameReady().then(function () {
-          const frame = document.getElementById("kp-pro-frame");
-          if (frame) patchKanjiFrameForQuizPostMessage(frame);
-          if (!postEvalToFrame()) {
-            setKanjiQuizHandSubmitBusy(false);
-            alert("さいてんようのびゅうが みつかりません。");
-          }
-        }).catch(function () {
+      /* iframe は問題間・再採点時に移動させず、同じ contentWindow を使い続ける。 */
+      ensureKanjiHwFrameReadyOnce().then(function () {
+        const frame = document.getElementById("kp-pro-frame");
+        if (frame) patchKanjiFrameForQuizPostMessage(frame);
+        if (!postEvalToFrame()) {
           setKanjiQuizHandSubmitBusy(false);
-          alert("さいてんのじゅんびに しっぱいしました。もういちどためしてください。");
-        });
-      }, 0);
+          alert("さいてんようのびゅうが みつかりません。");
+        }
+      }).catch(function () {
+        setKanjiQuizHandSubmitBusy(false);
+        alert("さいてんのじゅんびに しっぱいしました。もういちどためしてください。");
+      });
     }
     function kanjiQuizOnHandwritingScored(sc) {
       if (!kanjiQuizSession) return;
@@ -9810,34 +9801,11 @@
         startWhenReady();
       });
     }
-    function ensureKanjiFrameForQuizEval(opts) {
-      opts = opts || {};
-      const hid = document.getElementById("kp-pro-frame-quiz-hidden");
+    function ensureKanjiFrameForQuizEval() {
+      /* 採点用iframeは移動しない。
+       * DOMの親変更による再読込・contentWindow再生成を避ける。 */
       const frame = document.getElementById("kp-pro-frame");
-      if (!hid || !frame) return;
-      /* 誤答お手本表示中は iframe を横取りしない（空パネル化・採点迷子を防ぐ） */
-      const wrap = document.getElementById("kanji-quiz-wrong-model-wrap");
-      const sec = document.getElementById("section-kanji-quiz-play");
-      if (
-        !opts.force &&
-        wrap &&
-        frame.parentElement === wrap &&
-        sec &&
-        sec.classList.contains("kanji-quiz-wrong-visible")
-      ) {
-        return;
-      }
-      if (opts.force && wrap && frame.parentElement === wrap) {
-        try {
-          applyKpQuizWrongPanelCompactMode(frame, false);
-          wrap.style.minHeight = "";
-          wrap.style.height = "";
-          wrap.classList.remove("is-kp-view-pending");
-        } catch (_eResetEval) {}
-      }
-      if (frame.parentElement !== hid) {
-        hid.appendChild(frame);
-      }
+      if (frame) patchKanjiFrameForQuizPostMessage(frame);
     }
     function restoreKanjiPracticeFrameIfMoved() {
       const slot = document.getElementById("kp-iframe-slot-practice");
@@ -10491,8 +10459,7 @@
         if (!panel || panel.style.display === "none") return;
         const target = kanjiQuizSession.wrongModelKanjiChar;
         if (!selectKanjiCharInQuizFrame(target)) return;
-        /* データ再読込による score モード化の後、お手本表示へ戻す。
-         * レイアウト通知側では mode を変更しないため再帰しない。 */
+        /* 再選択で score モードになった後、明示的な1回だけdemoを開始する。 */
         setTimeout(function () {
           const frame = document.getElementById("kp-pro-frame");
           const wrap = document.getElementById("kanji-quiz-wrong-model-wrap");
@@ -10507,8 +10474,11 @@
             kanjiQuizSession.wrongModelKanjiChar === target
           ) {
             applyKpQuizWrongPanelCompactMode(frame, true);
+            if (frame.contentWindow) {
+              frame.contentWindow.postMessage({ type: "quizPlayStrokeOrderDemo" }, "*");
+            }
           }
-        }, 40);
+        }, 80);
       });
     }
     function selectKanjiCharInQuizFrame(ch) {
@@ -10596,19 +10566,13 @@
       } catch (eH) {}
       const wrap = document.getElementById("kanji-quiz-wrong-model-wrap");
       const frame = document.getElementById("kp-pro-frame");
-      const hid = document.getElementById("kp-pro-frame-quiz-hidden");
-      if (frame && hid && wrap && frame.parentElement === wrap) {
+      if (frame && wrap && frame.parentElement === wrap) {
         applyKpQuizWrongPanelCompactMode(frame, false);
         try {
           wrap.style.minHeight = "";
           wrap.style.height = "";
           wrap.classList.remove("is-kp-view-pending");
         } catch (_eClrW) {}
-        hid.appendChild(frame);
-        frame.style.width = "";
-        frame.style.maxWidth = "";
-        frame.style.height = "";
-        frame.style.minHeight = "";
       }
       /* 書き順：誤答パネルを閉じたら記述欄のなぞり軌道を描き直す */
       try {
@@ -10621,31 +10585,21 @@
       const modelWrap = document.getElementById("kanji-quiz-wrong-model-wrap");
       const frame = document.getElementById("kp-pro-frame");
       if (!modelWrap || !frame || !ch) return;
-      /* 選択完了を待つ前に表示先へ移す。非表示ホスト内ではブラウザが
-       * iframe のタイマーや描画を抑制する場合があるため、毎回同じ
-       * 「wrap 内で準備→demo 表示」の経路に揃える。 */
-      if (frame.parentElement !== modelWrap) {
-        modelWrap.innerHTML = "";
-        modelWrap.appendChild(frame);
-      }
-      modelWrap.classList.add("is-kp-view-pending");
-      delete frame.dataset.kpWrongViewPinned;
-      frame.style.width = "100%";
-      frame.style.maxWidth = "100%";
-      frame.style.pointerEvents = "auto";
-      var stagedH = kpWrongModelWrapTargetHeight_(modelWrap);
-      try {
-        modelWrap.style.minHeight = stagedH + "px";
-        modelWrap.style.height = stagedH + "px";
-      } catch (_eStageWrap) {}
-      kpApplyWrongModelFrameFill_(frame);
       function mountAndPlayDemo() {
         try {
           /* 書き順プレイ用の「canvas だけ」モードが残っているとボタンが消える */
           applyKpStrokeOrderPlayCompactMode_(frame, false);
         } catch (_eOff) {}
+        if (frame.parentElement !== modelWrap) {
+          modelWrap.innerHTML = "";
+          modelWrap.appendChild(frame);
+        }
+        modelWrap.classList.add("is-kp-view-pending");
         delete frame.dataset.kpWrongViewPinned;
         applyKpQuizWrongPanelCompactMode(frame, true);
+        frame.style.width = "100%";
+        frame.style.maxWidth = "100%";
+        frame.style.pointerEvents = "auto";
         /* ラップが一時的に潰れていても下限高さを確保（2問目以降対策） */
         var initH = kpWrongModelWrapTargetHeight_(modelWrap);
         try {
