@@ -9435,7 +9435,9 @@
       ensureKanjiHwFrameReadyOnce().then(function () {
         const frame = document.getElementById("kp-pro-frame");
         if (frame) patchKanjiFrameForQuizPostMessage(frame);
-        ensureKanjiFrameForQuizEval();
+        /* 再挑戦時は誤答パネル表示中でも、採点前に iframe を評価領域へ退避する。
+         * 通常の画面更新では横取り防止ガードを維持する。 */
+        ensureKanjiFrameForQuizEval({ force: true });
         if (!postEvalToFrame()) {
           setKanjiQuizHandSubmitBusy(false);
           alert("さいてんようのびゅうが みつかりません。");
@@ -9805,7 +9807,8 @@
         startWhenReady();
       });
     }
-    function ensureKanjiFrameForQuizEval() {
+    function ensureKanjiFrameForQuizEval(opts) {
+      opts = opts || {};
       const hid = document.getElementById("kp-pro-frame-quiz-hidden");
       const frame = document.getElementById("kp-pro-frame");
       if (!hid || !frame) return;
@@ -9813,6 +9816,7 @@
       const wrap = document.getElementById("kanji-quiz-wrong-model-wrap");
       const sec = document.getElementById("section-kanji-quiz-play");
       if (
+        !opts.force &&
         wrap &&
         frame.parentElement === wrap &&
         sec &&
