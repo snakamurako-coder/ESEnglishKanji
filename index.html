@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>学習アプリ</title>
-  <link rel="stylesheet" href="css/app.css?v=20260810-stable-frame-lifecycle">
+  <link rel="stylesheet" href="css/app.css?v=20260810-footer-progress">
 </head>
 <body>
 <div id="global-header">👤 <span id="header-user-info"></span></div>
@@ -258,7 +258,6 @@
   <div id="section-kanji-quiz-play" class="section kanji-quiz-drill-section">
     <span id="kanji-play-type-badge" style="display:none;" aria-hidden="true"></span>
     <div class="kanji-quiz-drill-main">
-    <span id="kanji-play-progress">1 / 1</span>
     <div class="kanji-quiz-drill-wrap">
       <!--
         手書きカード列（direction:rtl で右→左）:
@@ -272,7 +271,9 @@
           <p class="kanji-quiz-hw-wrong-label-plain">せいかいのかんじ</p>
           <div id="kanji-quiz-wrong-red-chars" class="kanji-quiz-wrong-red-chars"></div>
           <p class="kanji-quiz-hw-wrong-stroke-label">かきじゅん（みょうじ）</p>
-          <div id="kanji-quiz-wrong-model-wrap" class="kanji-quiz-wrong-model-wrap"></div>
+          <div id="kanji-quiz-wrong-model-wrap" class="kanji-quiz-wrong-model-wrap">
+            <iframe id="kp-pro-frame-wrong" class="kp-pro-frame-wrong" src="about:blank" title="Kanji Quiz Wrong Model" style="width:100%;height:100%;border:none;background:#fff;"></iframe>
+          </div>
         </div>
         <div class="kanji-quiz-hw-question-col">
           <!-- 書き順クイズ専用：リアルタイム書き順判定トグル（デフォルトOFF） -->
@@ -358,6 +359,7 @@
         <button type="button" id="kanji-quiz-layout-refresh-btn" class="kanji-drill-vbtn-small" onclick="kanjiQuizRefreshHandwritingLayout()" title="表示がずれたとき、レイアウトを取り直します">🔄 画面をなおす</button>
         <button type="button" id="kanji-quiz-cancel-btn" class="kanji-drill-vbtn-small" style="background:#f44336;color:#fff;border-color:#d32f2f;">ちゅうだん</button>
         <button type="button" class="kanji-drill-vbtn-small" style="background:#5c6bc0;color:#fff;border-color:#3949ab;" onclick="kanjiQuizPlayGoHome()">🏠 ホームにもどる</button>
+        <span id="kanji-play-progress" class="kanji-quiz-play-progress" aria-live="polite">1 / 1</span>
       </div>
     </div>
   </div>
@@ -577,6 +579,6 @@
   <script src="js/main.js"></script>
   <script src="kanji-vg.js?v=20260807-search-shared"></script>
   <script src="js/kanjiEvaluator.js?v=20260810-stable-frame-lifecycle"></script>
-  <script src="js/app.js?v=20260810-stable-frame-lifecycle"></script>
+  <script src="js/app.js?v=20260810-dual-iframe"></script>
 </body>
 </html>
