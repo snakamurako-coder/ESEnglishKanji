@@ -1296,6 +1296,9 @@ body { font-family: 'Hiragino Maru Gothic ProN', sans-serif; background-color: #
     body.kanji-study-mode #section-kanji-practice.active .kp-search-hit.is-kanjivg {
       border-color: #b7d4c8;
     }
+    #kp-pro-frame-quiz-hidden {
+      display: none !important;
+    }
     body.kanji-study-mode #section-kanji-practice.active .kp-iframe-wrap,
     body.kanji-study-mode #section-kanji-practice.active #kp-iframe-slot-practice {
       width: 96vw !important;

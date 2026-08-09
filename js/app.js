@@ -9824,6 +9824,14 @@
       ) {
         return;
       }
+      if (opts.force && wrap && frame.parentElement === wrap) {
+        try {
+          applyKpQuizWrongPanelCompactMode(frame, false);
+          wrap.style.minHeight = "";
+          wrap.style.height = "";
+          wrap.classList.remove("is-kp-view-pending");
+        } catch (_eResetEval) {}
+      }
       if (frame.parentElement !== hid) {
         hid.appendChild(frame);
       }
@@ -10478,7 +10486,26 @@
         if (!kanjiQuizSession || !kanjiQuizSession.wrongModelKanjiChar) return;
         const panel = document.getElementById("kanji-quiz-hw-wrong-panel");
         if (!panel || panel.style.display === "none") return;
-        selectKanjiCharInQuizFrame(kanjiQuizSession.wrongModelKanjiChar);
+        const target = kanjiQuizSession.wrongModelKanjiChar;
+        if (!selectKanjiCharInQuizFrame(target)) return;
+        /* データ再読込による score モード化の後、お手本表示へ戻す。
+         * レイアウト通知側では mode を変更しないため再帰しない。 */
+        setTimeout(function () {
+          const frame = document.getElementById("kp-pro-frame");
+          const wrap = document.getElementById("kanji-quiz-wrong-model-wrap");
+          const activePanel = document.getElementById("kanji-quiz-hw-wrong-panel");
+          if (
+            frame &&
+            wrap &&
+            frame.parentElement === wrap &&
+            activePanel &&
+            activePanel.style.display !== "none" &&
+            kanjiQuizSession &&
+            kanjiQuizSession.wrongModelKanjiChar === target
+          ) {
+            applyKpQuizWrongPanelCompactMode(frame, true);
+          }
+        }, 40);
       });
     }
     function selectKanjiCharInQuizFrame(ch) {
@@ -11772,6 +11799,8 @@
                   if (!kanjiQuizSession || kanjiQuizSession.index !== idxAtRender) return;
                   const qLate = kanjiQuizSession.questions[kanjiQuizSession.index];
                   if (!qLate || qLate.type !== "ruby_to_kanji") return;
+                  const secLate = document.getElementById("section-kanji-quiz-play");
+                  if (secLate && secLate.classList.contains("kanji-quiz-wrong-visible")) return;
                   const frLate = document.getElementById("kp-pro-frame");
                   if (frLate) patchKanjiFrameForQuizPostMessage(frLate);
                   selectKanjiCharInQuizFrame(reassertCh);
