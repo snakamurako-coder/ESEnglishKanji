@@ -2118,6 +2118,7 @@
       } else if (window.AppNormalizeUser) {
         user = window.AppNormalizeUser.normalizeUser(user);
       }
+      setAppKidUserSession_(user);
       try {
         pruneAppKidUserClient(user);
         localStorage.setItem("app_kid_user", JSON.stringify(user));
@@ -2171,6 +2172,38 @@
     let currentTrainingStepIndex = null;
     let currentTrainingMenuId = 1;
     let isTrainingMode = false;
+    let __appKidUserSession = null;
+
+    function setAppKidUserSession_(user) {
+      if (!user || user.id == null) {
+        __appKidUserSession = null;
+        return null;
+      }
+      __appKidUserSession = user;
+      return user;
+    }
+    function getAppKidUser_() {
+      if (__appKidUserSession && __appKidUserSession.id != null) return __appKidUserSession;
+      try {
+        if (window.AppState && typeof window.AppState.getKidUser === "function") {
+          var fromState = window.AppState.getKidUser();
+          if (fromState && fromState.id != null) {
+            __appKidUserSession = fromState;
+            return fromState;
+          }
+        }
+      } catch (_eSt) {}
+      try {
+        var raw = localStorage.getItem("app_kid_user");
+        if (!raw) return null;
+        var parsed = JSON.parse(raw);
+        if (parsed && parsed.id != null) {
+          __appKidUserSession = parsed;
+          return parsed;
+        }
+      } catch (_eLs) {}
+      return null;
+    }
 
     window.onload = () => { 
         const saved = localStorage.getItem('app_kid_user'); 
@@ -2181,6 +2214,7 @@
         if (saved) {
           try {
             const user = JSON.parse(saved);
+            setAppKidUserSession_(user);
             showHome(user);
           } catch (eSaved) {
             console.error("saved user restore failed:", eSaved);
@@ -3213,7 +3247,12 @@
             throw new Error("サーバー応答が不正です (HTTP " + res.status + ")");
           }
           if (d.status === "success" && d.user) {
-            try { saveAppKidUserToLocal(d.user); } catch (_eSave) {}
+            setAppKidUserSession_(d.user);
+            var __kidSaved = false;
+            try { __kidSaved = saveAppKidUserToLocal(d.user); } catch (_eSave) {}
+            if (!__kidSaved) {
+              console.warn("app_kid_user localStorage save failed; session fallback active");
+            }
             // iPad: ログイン直後の UI 更新を fetch コールバックから切り離す
             setTimeout(function () {
               try { showHome(d.user); } catch (eHome) {
@@ -3264,6 +3303,7 @@
       syncAllStopwatchesToServer(true);
       englishUnitHistoryCache = {};
       kanjiHistoryCache = {};
+      setAppKidUserSession_(null);
       localStorage.removeItem('app_kid_user');
       document.body.classList.remove('kanji-study-mode');
       document.getElementById('global-header').style.display = 'none';
@@ -3294,6 +3334,8 @@
         fetchUsers();
         return;
       }
+      setAppKidUserSession_(user);
+      try { saveAppKidUserToLocal(user); } catch (_eHomeSave) {}
       try {
         cancelTrainingRouteAutoReturn();
         document.body.classList.remove('kanji-study-mode');
@@ -5575,8 +5617,7 @@
       }
       window.addEventListener("message", function (ev) {
         if (!ev || !ev.data || ev.data.type !== "kanjiQuizHandAnalytics") return;
-        var scoreFrame = getKanjiQuizScoreFrame();
-        if (!scoreFrame || !scoreFrame.contentWindow || ev.source !== scoreFrame.contentWindow) return;
+        if (!isKanjiQuizScoreFramePostMessage_(ev)) return;
         var d = ev.data;
         try {
           if (d.breakdown) renderKanjiHwScoreStatus_(d.breakdown, d.handScore);
@@ -5810,6 +5851,14 @@
     }
     function getKanjiQuizWrongModelFrame() {
       return document.getElementById("kp-pro-frame-wrong");
+    }
+    function isKanjiQuizScoreFramePostMessage_(ev) {
+      if (!ev) return false;
+      var wrongFrame = getKanjiQuizWrongModelFrame();
+      if (wrongFrame && wrongFrame.contentWindow && ev.source === wrongFrame.contentWindow) return false;
+      var scoreFrame = getKanjiQuizScoreFrame();
+      if (!scoreFrame || !scoreFrame.contentWindow) return false;
+      return ev.source === scoreFrame.contentWindow;
     }
     function openKanjiKpEmbedFrame_(frame, opts) {
       opts = opts || {};
@@ -10558,8 +10607,7 @@
       window.__kanjiParentKanjiQuizScoredBridgeBound = true;
       window.addEventListener("message", function (ev) {
         if (!ev || !ev.data || ev.data.type !== "kanjiQuizScored") return;
-        var scoreFrame = getKanjiQuizScoreFrame();
-        if (!scoreFrame || !scoreFrame.contentWindow || ev.source !== scoreFrame.contentWindow) return;
+        if (!isKanjiQuizScoreFramePostMessage_(ev)) return;
 
         var quizSec = document.getElementById("section-kanji-quiz-play");
         if (quizSec && quizSec.classList.contains("active") && kanjiQuizSession) {
@@ -12985,7 +13033,7 @@
       return 0;
     }
     function flushKanjiQuizBatchScores_(meta) {
-      const user = JSON.parse(localStorage.getItem("app_kid_user") || "null");
+      const user = getAppKidUser_();
       if (!user || !user.id) {
         return Promise.resolve({ status: "error", message: "ログイン情報が見つかりません。" });
       }
@@ -13150,7 +13198,7 @@
           ? String(userRaw)
           : "";
       kanjiQuizSession.selectedChoice = null;
-      const user = JSON.parse(localStorage.getItem("app_kid_user") || "null");
+      const user = getAppKidUser_();
       if (!user || !user.id) {
         alert("ログイン情報が見つかりません。");
         if (q.type === "jukugo_yomi" || q.type === "okurigana_shift") {
@@ -15555,7 +15603,7 @@
         if (__ko) __ko.style.display = "none";
       })();
 
-      const user = JSON.parse(localStorage.getItem('app_kid_user') || 'null');
+      const user = getAppKidUser_();
       if (!user || !user.id) {
         document.getElementById('result-content').innerHTML = `<h2 style="color:#F44336;">ログイン情報が見つかりません</h2><p>ホームにもどってから再ログインしてください。</p>`;
         bindEnglishResultButtonHandlers();
