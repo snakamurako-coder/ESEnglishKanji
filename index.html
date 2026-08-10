@@ -139,13 +139,14 @@
         <div style="margin-top:10px;">
           <label for="kn-nigate-axis" style="font-weight:bold;font-size:14px;display:block;margin-bottom:4px;">問題のしかた（ふだんのクイズと同じ）</label>
           <select id="kn-nigate-axis" class="large-select" style="width:100%;max-width:420px;">
-            <option value="ruby_to_kanji">かんじをかいて答える（書き取り）</option>
-            <option value="okurigana_shift">送り仮名を選ぶ</option>
-            <option value="sentence_to_ruby">よみをタイピングする</option>
-            <option value="stroke_count">かくすう</option>
+            <option value="select_kana">送り仮名選択</option>
+            <option value="type_yomi">読み仮名タイプ</option>
+            <option value="write_kanji" selected>書いて問題に回答</option>
+            <option value="stroke_order">書き順チェック</option>
+            <option value="jukugo_yomi">熟語読み方選択</option>
           </select>
         </div>
-        <p style="margin-top:8px;font-size:13px;color:#5c5270;">選んだ<strong>同じ問題形式</strong>で、60点未満だった漢字を最大<strong>12問</strong>集めて出題します（通常クイズと同じ画面）。各漢字は<strong>合格（60点以上）を3回</strong>取るまで繰り返し、3回達成でいったんニガテリストから外れます。</p>
+        <p style="margin-top:8px;font-size:13px;color:#5c5270;">選んだ<strong>同じ問題形式</strong>で、間違えた漢字を最大<strong>12問</strong>集めて出題します（通常クイズと同じ画面）。各漢字は<strong>1回合格（60点以上）</strong>で得点を獲得でき、<strong>20時間</strong>は出題候補から外れます。</p>
       </div>
       <button type="button" class="submit-btn btn-purple" style="width:90%;max-width:360px;margin:8px auto;display:block;" onclick="startKanjiNigateReviewFromUi()">この条件で特訓スタート</button>
     </div>
@@ -359,7 +360,7 @@
         <button type="button" id="kanji-quiz-layout-refresh-btn" class="kanji-drill-vbtn-small" onclick="kanjiQuizRefreshHandwritingLayout()" title="表示がずれたとき、レイアウトを取り直します">🔄 画面をなおす</button>
         <button type="button" id="kanji-quiz-cancel-btn" class="kanji-drill-vbtn-small" style="background:#f44336;color:#fff;border-color:#d32f2f;">ちゅうだん</button>
         <button type="button" class="kanji-drill-vbtn-small" style="background:#5c6bc0;color:#fff;border-color:#3949ab;" onclick="kanjiQuizPlayGoHome()">🏠 ホームにもどる</button>
-        <span id="kanji-play-progress" class="kanji-quiz-play-progress" aria-live="polite">1 / 1</span>
+        <span id="kanji-play-progress" class="kanji-quiz-play-progress" aria-live="polite">1 / 1</span><span id="kanji-play-practice-pts" class="kanji-quiz-practice-pts" aria-live="polite" hidden></span>
       </div>
     </div>
   </div>
@@ -579,6 +580,6 @@
   <script src="js/main.js"></script>
   <script src="kanji-vg.js?v=20260807-search-shared"></script>
   <script src="js/kanjiEvaluator.js?v=20260810-stable-frame-lifecycle"></script>
-  <script src="js/app.js?v=20260810-hand-score-authority"></script>
+  <script src="js/app.js?v=20260811-kanji-score-nigate"></script>
 </body>
 </html>

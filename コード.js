@@ -2642,7 +2642,8 @@ function handleSaveLearningSession(req) {
 /** 漢字ニガテ：kanji_history シート __kanjiWeak へ薄いシグナルだけマージ（キー数・recent 上限あり） */
 var KANJI_WEAK_MAX_KEYS_ = 200;
 var KANJI_WEAK_RECENT_MAX_ = 12;
-var KANJI_NIGATE_PASS_REQUIRED_ = 3;
+var KANJI_NIGATE_PASS_REQUIRED_ = 1;
+var KANJI_NIGATE_PASS_COOLDOWN_MS_ = 20 * 60 * 60 * 1000;
 
 function kanjiWeakMakeKey_(modeId, unitName, setId, kanji) {
   return [String(modeId || ""), String(unitName || ""), String(setId || ""), String(kanji || "")].join("\x1f");
@@ -2793,10 +2794,13 @@ function handleAppendKanjiWeakSignals(req) {
 
 function normalizeNigateTrainMode_(trainMode) {
   const s = String(trainMode || "").trim();
-  if (s === "write_kanji" || s === "stroke_order" || s === "brush") return "ruby_to_kanji";
-  if (s === "select_kana") return "okurigana_shift";
-  if (s === "reading" || s === "type_yomi") return "sentence_to_ruby";
-  if (!s) return "ruby_to_kanji";
+  if (s === "write_kanji" || s === "ruby_to_kanji" || s === "brush") return "write_kanji";
+  if (s === "select_kana" || s === "okurigana_shift") return "select_kana";
+  if (s === "reading" || s === "type_yomi" || s === "sentence_to_ruby") return "type_yomi";
+  if (s === "stroke_order" || s === "stroke_order_trace") return "stroke_order";
+  if (s === "jukugo_yomi") return "jukugo_yomi";
+  if (s === "stroke_count") return "stroke_count";
+  if (!s) return "write_kanji";
   return s;
 }
 
@@ -2808,11 +2812,21 @@ function getKanjiNigatePassRecord_(nigateRoot, modeId, unitName, setId, kanji, t
   const root = nigateRoot || {};
   const key = kanjiNigatePassKey_(modeId, unitName, setId, kanji, trainMode);
   const rec = root[key];
-  if (!rec) return { passCount: 0, passes: [] };
+  if (!rec) return { passCount: 0, passes: [], lastPassedAt: null };
+  const passes = Array.isArray(rec.passes) ? rec.passes : [];
+  const lastPassedAt = passes.length ? passes[passes.length - 1] : (rec.lastPassedAt || null);
   return {
     passCount: Number(rec.passCount) || 0,
-    passes: Array.isArray(rec.passes) ? rec.passes : []
+    passes: passes,
+    lastPassedAt: lastPassedAt
   };
+}
+
+function isKanjiNigateInCooldown_(passRec, nowMs) {
+  if (!passRec || !passRec.lastPassedAt) return false;
+  const t = Date.parse(String(passRec.lastPassedAt));
+  if (isNaN(t)) return false;
+  return (nowMs || Date.now()) - t < KANJI_NIGATE_PASS_COOLDOWN_MS_;
 }
 
 function recordKanjiNigatePass_(nigateRoot, modeId, unitName, setId, kanji, trainMode, nowIso, passRequired) {
@@ -2829,6 +2843,7 @@ function recordKanjiNigatePass_(nigateRoot, modeId, unitName, setId, kanji, trai
   rec.passes.push(nowIso);
   while (rec.passes.length > 24) rec.passes.shift();
   rec.updatedAt = nowIso;
+  rec.lastPassedAt = nowIso;
   return {
     passCount: rec.passCount,
     passRequired: need,
@@ -2888,12 +2903,22 @@ function findKanjiItemInGroups_(groups, kanji, preferredSetId) {
       const hit = g0.items.find(function (it) { return String(it.kanji) === k; });
       if (hit) return { item: hit, setId: String(g0.setId) };
     }
+    if (g0 && g0.entries) {
+      const hitE = g0.entries.find(function (it) { return String(it.targetKanji) === k; });
+      if (hitE) return { item: hitE, setId: String(g0.setId), isJukugoEntry: true };
+    }
   }
   for (let i = 0; i < groups.length; i++) {
     const g = groups[i];
-    if (!g || !g.items) continue;
-    const hit = g.items.find(function (it) { return String(it.kanji) === k; });
-    if (hit) return { item: hit, setId: String(g.setId) };
+    if (!g) continue;
+    if (g.items) {
+      const hit = g.items.find(function (it) { return String(it.kanji) === k; });
+      if (hit) return { item: hit, setId: String(g.setId) };
+    }
+    if (g.entries) {
+      const hitE = g.entries.find(function (it) { return String(it.targetKanji) === k; });
+      if (hitE) return { item: hitE, setId: String(g.setId), isJukugoEntry: true };
+    }
   }
   return null;
 }
@@ -2929,28 +2954,51 @@ function buildStrokeCountQuizQuestionForNigate_(kanji, refCount) {
   };
 }
 
-function buildNigateQuestionForWeakRow_(trainMode, item, weakRow, dummyPoolByKanji) {
+function buildNigateQuestionForWeakRow_(trainMode, item, weakRow, dummyPoolByKanji, jukugoPool) {
   if (!item) return null;
   const axis = normalizeNigateTrainMode_(trainMode);
-  if (axis === "sentence_to_ruby") return buildSentenceToRubyQuizQuestion_(item);
+  if (axis === "type_yomi" || axis === "sentence_to_ruby") return buildSentenceToRubyQuizQuestion_(item);
   if (axis === "stroke_count") {
     return buildStrokeCountQuizQuestionForNigate_(weakRow.kanji, weakRow.lastRefStrokeCount);
   }
-  if (axis === "okurigana_shift") {
+  if (axis === "select_kana" || axis === "okurigana_shift") {
     return buildOkuriganaShiftQuizQuestion_(item, dummyPoolByKanji || {});
+  }
+  if (axis === "stroke_order" || axis === "stroke_order_trace") {
+    return buildStrokeOrderTraceQuizQuestion_(item);
+  }
+  if (axis === "jukugo_yomi") {
+    const pool = Array.isArray(jukugoPool) ? jukugoPool : [];
+    if (item && item.targetKanji) {
+      return buildJukugoYomiQuizQuestion_(item, pool, { choiceCount: 4, includeNoneOption: false });
+    }
+    const entry = {
+      targetKanji: String(item.kanji || weakRow.kanji || ""),
+      word: String(item.word || item.kanji || weakRow.kanji || ""),
+      reading: (item.readings && item.readings[0] && item.readings[0].reading) || "",
+      example: String(item.example || item.exampleSentence || ""),
+      category: item.category || ""
+    };
+    return buildJukugoYomiQuizQuestion_(entry, pool, { choiceCount: 4, includeNoneOption: false });
   }
   return buildRubyToKanjiQuizQuestion_(item);
 }
 
 function kanjiWeakAxisWeight_(row, trainMode) {
   const axis = normalizeNigateTrainMode_(trainMode);
-  if (axis === "sentence_to_ruby") return Number(row.readingFails) || 0;
+  if (axis === "type_yomi" || axis === "sentence_to_ruby") return Number(row.readingFails) || 0;
   if (axis === "stroke_count") return Number(row.strokeCountFails) || 0;
-  if (axis === "okurigana_shift") return Number(row.readingFails) || 0;
-  if (axis === "ruby_to_kanji") {
+  if (axis === "select_kana" || axis === "okurigana_shift") return Number(row.readingFails) || 0;
+  if (axis === "stroke_order" || axis === "stroke_order_trace") {
+    const so = Number(row.strokeOrderFails) || 0;
+    const hw = Number(row.handwritingFails) || 0;
+    return so + hw;
+  }
+  if (axis === "jukugo_yomi") return Number(row.readingFails) || 0;
+  if (axis === "write_kanji" || axis === "ruby_to_kanji") {
     const hw = Number(row.handwritingFails) || 0;
     if (hw > 0) return hw;
-    if (row.lastQuestionType === "ruby_to_kanji") return 1;
+    if (row.lastQuestionType === "ruby_to_kanji" || row.lastQuestionType === "write_kanji") return 1;
     return 0;
   }
   return Number(row.handwritingFails) || 0;
@@ -2972,9 +3020,13 @@ function handleGetKanjiWeakReviewPlan(req) {
   const userId = req.userId;
   if (!userId) return sendResponse({ status: "error", message: "userId が必要です" });
   const modeId = String(req.modeId || "").trim();
-  const unitName = String(req.unitName || (Array.isArray(req.unitNames) && req.unitNames[0]) || "").trim();
-  if (!modeId || !unitName) {
-    return sendResponse({ status: "error", message: "modeId / unitName が必要です" });
+  const unitNameRaw = String(req.unitName || (Array.isArray(req.unitNames) && req.unitNames[0]) || "").trim();
+  const allSheets = req.allSheets === true || unitNameRaw === "__ALL__";
+  if (!modeId) {
+    return sendResponse({ status: "error", message: "modeId が必要です" });
+  }
+  if (!allSheets && !unitNameRaw) {
+    return sendResponse({ status: "error", message: "unitName が必要です" });
   }
   const props = PropertiesService.getScriptProperties();
   const adminSs = SpreadsheetApp.openById(props.getProperty("ADMIN_SS_ID"));
@@ -2991,20 +3043,21 @@ function handleGetKanjiWeakReviewPlan(req) {
   const kanjiView = buildKanjiHistoryView_(adminSs, userId);
   const weakRoot = kanjiView.__kanjiWeak || {};
   const setIds = Array.isArray(req.setIds) ? req.setIds.map(function (x) { return String(x); }).filter(Boolean) : [];
-  const trainMode = normalizeNigateTrainMode_(req.nigateAxis || req.trainMode || "ruby_to_kanji");
+  const trainMode = normalizeNigateTrainMode_(req.nigateAxis || req.trainMode || "write_kanji");
   const passRequired = parseInt(req.passRequired, 10) || KANJI_NIGATE_PASS_REQUIRED_;
   const limit = Math.min(12, Math.max(1, parseInt(req.limit, 10) || 12));
+  const nowMs = Date.now();
   const candidateRows = [];
   Object.keys(weakRoot).forEach(function (k) {
     const r = weakRoot[k];
     if (!r || !r.kanji) return;
     if (modeId && String(r.modeId) !== modeId) return;
-    if (unitName && String(r.unitName) !== unitName) return;
+    if (!allSheets && unitNameRaw && String(r.unitName) !== unitNameRaw) return;
     if (setIds.length && setIds.indexOf(String(r.setId)) < 0) return;
     const w = kanjiWeakAxisWeight_(r, trainMode);
     if (w <= 0) return;
     const passRec = getKanjiNigatePassRecord_(kanjiView.__kanjiNigatePass || {}, r.modeId, r.unitName, r.setId, r.kanji, trainMode);
-    if (passRec.passCount >= passRequired) return;
+    if (isKanjiNigateInCooldown_(passRec, nowMs)) return;
     candidateRows.push({
       modeId: r.modeId,
       unitName: r.unitName,
@@ -3026,25 +3079,41 @@ function handleGetKanjiWeakReviewPlan(req) {
       message: "この条件ではもんだいがありません。通常学習でまちがえた漢字がここにのこります。"
     });
   }
-  let groups = [];
-  try {
-    const got = getKanjiQuizParsedFromSpreadsheet_(modeId, unitName);
-    if (got.sheetMissing) return sendResponse({ status: "error", message: "指定シートが見つかりません。" });
-    groups = (got.parsed && got.parsed.groups) ? got.parsed.groups : [];
-  } catch (e) {
-    return sendResponse({ status: "error", message: "教材の読み込みに失敗しました: " + e.message });
+  const groupsCache = {};
+  function getGroupsForUnit_(unit) {
+    const u = String(unit || "");
+    if (!u) return [];
+    if (groupsCache[u]) return groupsCache[u];
+    try {
+      const got = getKanjiQuizParsedFromSpreadsheet_(modeId, u);
+      groupsCache[u] = (got.parsed && got.parsed.groups) ? got.parsed.groups : [];
+    } catch (e) {
+      groupsCache[u] = [];
+    }
+    return groupsCache[u];
   }
-  const allItems = [];
-  groups.forEach(function (g) {
-    if (g && g.items) allItems.push.apply(allItems, g.items);
-  });
-  const dummyPoolByKanji = collectOkuriganaDummyPoolByKanjiKanjiQuiz_(allItems);
   const questions = [];
   const rows = [];
   picked.forEach(function (weakRow) {
+    const groups = getGroupsForUnit_(weakRow.unitName);
+    if (!groups.length) return;
     const found = findKanjiItemInGroups_(groups, weakRow.kanji, weakRow.setId);
     if (!found) return;
-    const q = buildNigateQuestionForWeakRow_(trainMode, found.item, weakRow, dummyPoolByKanji);
+    let jukugoPool = [];
+    if (trainMode === "jukugo_yomi") {
+      const allEntries = [];
+      groups.forEach(function (g) {
+        if (g && g.entries) allEntries.push.apply(allEntries, g.entries);
+      });
+      jukugoPool = collectJukugoReadingPool_(allEntries);
+    }
+    const dummyPoolByKanji = collectOkuriganaDummyPoolByKanjiKanjiQuiz_(
+      groups.reduce(function (acc, g) {
+        if (g && g.items) acc.push.apply(acc, g.items);
+        return acc;
+      }, [])
+    );
+    const q = buildNigateQuestionForWeakRow_(trainMode, found.item, weakRow, dummyPoolByKanji, jukugoPool);
     if (!q) return;
     q.questionId = "NIGATE_" + weakRow.kanji + "_" + trainMode + "_" + found.setId;
     q.nigateSourceSetId = found.setId;

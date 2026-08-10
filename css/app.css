@@ -3077,6 +3077,28 @@ body { font-family: 'Hiragino Maru Gothic ProN', sans-serif; background-color: #
       white-space: nowrap;
       line-height: 1.25;
     }
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-drill-section .kanji-quiz-play-footer-inner #kanji-play-practice-pts {
+      flex: 0 0 auto;
+      margin-left: 6px;
+      font-size: clamp(12px, 2.6vw, 15px);
+      font-weight: 800;
+      color: #2e7d32;
+      background: rgba(232, 245, 233, 0.95);
+      border: 1px solid #a5d6a7;
+      border-radius: 999px;
+      padding: 4px 10px;
+      white-space: nowrap;
+      line-height: 1.25;
+      pointer-events: none;
+      animation: kanji-practice-pts-pop 0.35s ease;
+    }
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-drill-section .kanji-quiz-play-footer-inner #kanji-play-practice-pts[hidden] {
+      display: none !important;
+    }
+    @keyframes kanji-practice-pts-pop {
+      0% { transform: scale(0.85); opacity: 0.4; }
+      100% { transform: scale(1); opacity: 1; }
+    }
     /* フッター内ボタン：横書き・1行・低い高さ（.kanji-drill-vbtn-small の縦書きを上書き） */
     body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-drill-section .kanji-quiz-play-footer-bar .kanji-drill-vbtn-small {
       writing-mode: horizontal-tb;
