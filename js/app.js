@@ -5576,7 +5576,7 @@
       window.addEventListener("message", function (ev) {
         if (!ev || !ev.data || ev.data.type !== "kanjiQuizHandAnalytics") return;
         var scoreFrame = getKanjiQuizScoreFrame();
-        if (scoreFrame && scoreFrame.contentWindow && ev.source !== scoreFrame.contentWindow) return;
+        if (!scoreFrame || !scoreFrame.contentWindow || ev.source !== scoreFrame.contentWindow) return;
         var d = ev.data;
         try {
           if (d.breakdown) renderKanjiHwScoreStatus_(d.breakdown, d.handScore);
@@ -10559,7 +10559,7 @@
       window.addEventListener("message", function (ev) {
         if (!ev || !ev.data || ev.data.type !== "kanjiQuizScored") return;
         var scoreFrame = getKanjiQuizScoreFrame();
-        if (scoreFrame && scoreFrame.contentWindow && ev.source !== scoreFrame.contentWindow) return;
+        if (!scoreFrame || !scoreFrame.contentWindow || ev.source !== scoreFrame.contentWindow) return;
 
         var quizSec = document.getElementById("section-kanji-quiz-play");
         if (quizSec && quizSec.classList.contains("active") && kanjiQuizSession) {
