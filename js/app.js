@@ -1,5 +1,5 @@
 // ▼ GASのURLを貼り付けてください（※前回と同じURLならそのままで大丈夫） ▼
-    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxk-W0MZcZyKx_CMSEFvfojI0RIsTpskrn1j_uiC963AaQPo97oAkAc4mhMb8c36L-DOQ/exec";
+    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzfohGXq5tRclt5dgqAQZ8qsP4Sio8fTjVJyKekOhtTTMmZ0lVAkh4NXJEuBKr0WPM1ug/exec";
     const LS_PENDING_FINISH_SAVE = "app_pending_finish_quiz_save_v1";
     const LS_FLUSHED_SUBMIT_IDS = "app_flushed_submit_ids_v1";
     const PENDING_FINISH_FLUSH_MAX_ATTEMPTS = 5;
@@ -1122,14 +1122,46 @@
       return p;
     }
 
-    /** 漢字セット単位の時間経過倍率（GAS handleSaveLearningSession と同様）。lastStudyJson が無ければ 1。 */
-    function computeKanjiQuizTimeMultiplierClient(modeName, unitName, setId) {
+    /** 時間減衰のキー用：問題形式を正規化（セット＋形式ごとに独立） */
+    function normalizeKanjiQuizFormatModeForScope_(formatMode) {
+      const m = String(formatMode || "").trim();
+      if (m === "stroke_order" || m === "stroke_order_trace") return "stroke_order";
+      if (m === "write_kanji" || m === "ruby_to_kanji" || m === "brush") return "write_kanji";
+      if (m === "select_kana" || m === "okurigana_shift") return "select_kana";
+      if (m === "type_yomi" || m === "sentence_to_ruby" || m === "reading") return "type_yomi";
+      if (m === "jukugo_yomi") return "jukugo_yomi";
+      return m || "write_kanji";
+    }
+    function buildKanjiSetScopeIdLegacy_(modeName, unitName, setId) {
+      return "KANJI_" + String(modeName || "") + "_" + String(unitName || "") + "_SET" + String(setId || "");
+    }
+    function buildKanjiSetScopeId_(modeName, unitName, setId, formatMode) {
+      const fmt = normalizeKanjiQuizFormatModeForScope_(formatMode);
+      return buildKanjiSetScopeIdLegacy_(modeName, unitName, setId) + "_FMT_" + fmt;
+    }
+    /** 形式付きキーを優先。write_kanji のみ旧キー（形式なし）へフォールバック */
+    function readKanjiSetLastStudyAtClient_(lastStudyJson, modeName, unitName, setId, formatMode) {
+      const json = lastStudyJson || {};
+      const fmt = normalizeKanjiQuizFormatModeForScope_(formatMode);
+      const scoped = buildKanjiSetScopeId_(modeName, unitName, setId, fmt);
+      if (json[scoped]) return json[scoped];
+      if (fmt === "write_kanji") {
+        const legacy = buildKanjiSetScopeIdLegacy_(modeName, unitName, setId);
+        if (json[legacy]) return json[legacy];
+      }
+      return null;
+    }
+    /** 漢字セット＋問題形式単位の時間経過倍率（GAS handleSaveLearningSession と同様）。 */
+    function computeKanjiQuizTimeMultiplierClient(modeName, unitName, setId, formatMode) {
       try {
         const user = JSON.parse(localStorage.getItem("app_kid_user") || "{}");
-        const scopeId =
-          "KANJI_" + String(modeName || "") + "_" + String(unitName || "") + "_SET" + String(setId || "");
-        const lastStudyJson = user.lastStudyJson || {};
-        const lastStudyTimeStr = lastStudyJson[scopeId];
+        const lastStudyTimeStr = readKanjiSetLastStudyAtClient_(
+          user.lastStudyJson,
+          modeName,
+          unitName,
+          setId,
+          formatMode
+        );
         if (!lastStudyTimeStr) return 1.0;
         const lastTime = new Date(lastStudyTimeStr);
         if (isNaN(lastTime.getTime())) return 1.0;
@@ -1189,9 +1221,15 @@
      *   × セット時間経過倍率 × 単元シート%
      * タイプ別Pt変更や次の問題以降の lastStudy 更新は反映できないため「およそ」の値。
      */
-    function estimateKanjiQuizPerfectSessionPointsClient(unitName, modeName, setId, questions) {
+    function estimateKanjiQuizPerfectSessionPointsClient(unitName, modeName, setId, questions, formatMode) {
       const sheetPct = parseUnitSheetPointPercentClient(unitName);
-      const timeMult = computeKanjiQuizTimeMultiplierClient(modeName, unitName, setId);
+      const fmt =
+        formatMode != null
+          ? formatMode
+          : kanjiQuizSession && kanjiQuizSession.formatMode
+            ? kanjiQuizSession.formatMode
+            : getKanjiQuizFormatMode();
+      const timeMult = computeKanjiQuizTimeMultiplierClient(modeName, unitName, setId, fmt);
       const list = Array.isArray(questions) ? questions : [];
       if (!list.length) return 0;
       const defaultTopBandPt = 10;
@@ -1211,13 +1249,19 @@
      * もしくは単元シート末尾の得点％ < 100 のいずれかが効いていれば確認ダイアログを出す。
      * キャンセルで false（呼び出し側はそこで開始を中止する）。
      */
-    function confirmKanjiQuizIfReducedSheetPoints(unitName, modeName, setId, questions) {
+    function confirmKanjiQuizIfReducedSheetPoints(unitName, modeName, setId, questions, formatMode) {
       const sheetPct = parseUnitSheetPointPercentClient(unitName);
       const list = Array.isArray(questions) ? questions : [];
       const n = list.length;
       const defaultTopBandPt = 10;
       const idealTotal = n * defaultTopBandPt;
-      const approx = estimateKanjiQuizPerfectSessionPointsClient(unitName, modeName, setId, list);
+      const approx = estimateKanjiQuizPerfectSessionPointsClient(
+        unitName,
+        modeName,
+        setId,
+        list,
+        formatMode
+      );
       // 計算誤差の吸収（おおよそ満額なら確認しない）
       const reduced = sheetPct < 100 || approx + 0.05 < idealTotal;
       if (!reduced) return true;
@@ -1237,6 +1281,11 @@
       if (decayedChars > 0) {
         reasons.push("最近よくできた漢字の回復まちが " + decayedChars + " 字");
       }
+      const fmt = normalizeKanjiQuizFormatModeForScope_(formatMode || getKanjiQuizFormatMode());
+      const timeMult = computeKanjiQuizTimeMultiplierClient(modeName, unitName, setId, fmt);
+      if (timeMult < 0.999) {
+        reasons.push("同じセット・同じ問題形式を20時間以内に再挑戦");
+      }
       const reasonStr = reasons.length ? "（" + reasons.join(" / ") + "）" : "";
       const msg =
         "もらえるポイントが少なくなっています。\n" +
@@ -1247,7 +1296,7 @@
         idealStr +
         " ポイント。\n" +
         reasonStr +
-        "\n※ 日付をまたぐと回復します。\n\n取り組みますか？";
+        "\n※ 別の問題形式なら満額になります。同じ形式は20時間経つと回復します。\n\n取り組みますか？";
       return confirm(msg);
     }
 
@@ -3077,6 +3126,7 @@
           : [],
         nigateTraining: !!kanjiQuizSession.nigateTraining,
         nigateAxis: kanjiQuizSession.nigateAxis || null,
+        formatMode: kanjiQuizSession.formatMode || getKanjiQuizFormatMode(),
         nigateFeedback: kanjiQuizSession.nigateFeedback ? JSON.parse(JSON.stringify(kanjiQuizSession.nigateFeedback)) : null
       };
     }
@@ -3156,6 +3206,7 @@
         selectedChoice: null,
         nigateTraining: !!s.nigateTraining,
         nigateAxis: s.nigateAxis || null,
+        formatMode: s.formatMode || getKanjiQuizFormatMode(),
         nigateFeedback: s.nigateFeedback ? JSON.parse(JSON.stringify(s.nigateFeedback)) : (s.nigateTraining ? { strokeOrderClean: true, brushAllClear: true } : null)
       };
       lastKanjiQuizContext = draft.lastContext && typeof draft.lastContext === "object"
@@ -10387,13 +10438,12 @@
       __kanjiWrongPracticeLastSubmitKey = dedupeKey;
       __kanjiWrongPracticeLastSubmitAt = nowMs;
       const q = kanjiQuizSession.questions[kanjiQuizSession.index];
-      const kanjiSetScopeId =
-        "KANJI_" +
-        kanjiQuizSession.modeName +
-        "_" +
-        kanjiQuizSession.unitName +
-        "_SET" +
-        kanjiQuizSession.setId;
+      const kanjiSetScopeId = buildKanjiSetScopeId_(
+        kanjiQuizSession.modeName,
+        kanjiQuizSession.unitName,
+        kanjiQuizSession.setId,
+        kanjiQuizSession.formatMode || getKanjiQuizFormatMode()
+      );
       const unitId =
         kanjiSetScopeId +
         "_WRONG_PRACTICE_" +
@@ -12560,7 +12610,8 @@
             ctx.unitName,
             ctx.modeName,
             ctx.setId,
-            questions
+            questions,
+            mode
           )
         ) {
           return;
@@ -12591,6 +12642,7 @@
           nigateTraining: !!ctx.nigateTraining,
           nigateAxis: ctx.nigateAxis || null,
           nigatePassRequired: ctx.nigatePassRequired || KANJI_NIGATE_PASS_REQUIRED,
+          formatMode: mode,
           nigateFeedback: ctx.nigateTraining ? { strokeOrderClean: true, brushAllClear: true } : null
         };
         lastKanjiQuizContext = {
@@ -13243,8 +13295,12 @@
       if (!items.length) {
         return Promise.resolve({ status: "success", earnedPoints: 0, newTotal: user.points, itemEarned: [] });
       }
-      const kanjiSetScopeId =
-        "KANJI_" + meta.modeName + "_" + meta.unitName + "_SET" + meta.setId;
+      const kanjiSetScopeId = buildKanjiSetScopeId_(
+        meta.modeName,
+        meta.unitName,
+        meta.setId,
+        meta.formatMode || getKanjiQuizFormatMode()
+      );
       const payload = {
         action: "save_learning_session",
         userId: user.id,
@@ -13497,6 +13553,7 @@
             modeName: kanjiQuizSession.modeName,
             unitName: kanjiQuizSession.unitName,
             setId: kanjiQuizSession.setId,
+            formatMode: kanjiQuizSession.formatMode || getKanjiQuizFormatMode(),
             trainingStepIndex: kanjiQuizSession.trainingStepIndex,
             trainingMenuId: kanjiQuizSession.trainingMenuId
           };

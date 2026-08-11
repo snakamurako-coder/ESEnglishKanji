@@ -2585,7 +2585,7 @@ function handleSaveLearningSession(req) {
   
   userData.dailyPointsJson[todayStr] = (userData.dailyPointsJson[todayStr] || 0) + earnedPoints;
   userData.dailyPointsJson[todayStr] = Math.round(userData.dailyPointsJson[todayStr] * 100) / 100;
-  if (lastStudyKey) userData.lastStudyJson[lastStudyKey] = now.toISOString();
+  if (lastStudyKey && !req.kanjiSetContinuation) userData.lastStudyJson[lastStudyKey] = now.toISOString();
 
   // ★ 特訓ルートのステップをクリアした場合は、今日の進捗にチェックを入れる（メニューID別）
   if (req.trainingStepIndex) {
@@ -2613,7 +2613,7 @@ function handleSaveLearningSession(req) {
     sheetPointPercent: sheetPointPercent
   };
   if (itemEarnedList) resp.itemEarned = itemEarnedList;
-  if (lastStudyKey) {
+  if (lastStudyKey && !req.kanjiSetContinuation) {
     resp.lastStudyKey = lastStudyKey;
     resp.lastStudyAt = now.toISOString();
   }
