@@ -2427,29 +2427,70 @@
       el.innerHTML = "";
       el.classList.remove("is-visible");
       el.style.display = "none";
+      stopStrokeOrderReadingTTS_();
     }
+    function stopStrokeOrderReadingTTS_() {
+      if (window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+      }
+    }
+    
+    function playStrokeOrderReadingTTS_(phrases) {
+      if (!window.speechSynthesis) return;
+      stopStrokeOrderReadingTTS_();
+      
+      const isEnabled = getUserPref("kanji_quiz_stroke_tts_enabled", "1") === "1";
+      if (!isEnabled) return;
+      
+      phrases.forEach(function (text) {
+        if (!text) return;
+        const ut = new SpeechSynthesisUtterance(text);
+        ut.lang = "ja-JP";
+        ut.rate = 1.15; // あまり間をあけずにどんどん読む
+        window.speechSynthesis.speak(ut);
+      });
+    }
+
     function renderStrokeOrderReadings_(q) {
       const el = document.getElementById("kanji-stroke-order-readings");
       if (!el) return;
       if (!q || q.type !== "stroke_order_trace") {
         clearStrokeOrderReadings_();
+        stopStrokeOrderReadingTTS_();
         return;
       }
       const readings = Array.isArray(q.readings) ? q.readings : [];
       if (!readings.length) {
         clearStrokeOrderReadings_();
+        stopStrokeOrderReadingTTS_();
         return;
       }
       let html = "";
+      const ttsPhrases = [];
+
+      // 先頭（右端）にTTSオンオフのチェックボックスを追加
+      const ttsEnabled = getUserPref("kanji_quiz_stroke_tts_enabled", "1") === "1";
+      html += '<label class="kanji-so-reading-group kanji-stroke-tts-area" style="cursor:pointer;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:8px 4px;background:rgba(255,255,255,0.5);border-radius:6px;border:1px dashed #ccc;">';
+      html += '<input type="checkbox" class="kanji-stroke-tts-check" style="transform:scale(1.3);margin:0;" ' + (ttsEnabled ? 'checked' : '') + '>';
+      html += '<span style="writing-mode:vertical-rl;text-orientation:upright;font-size:13px;color:#555;font-weight:bold;letter-spacing:1px;">読み上げ機能をオン</span>';
+      html += '</label>';
+
       readings.forEach(function (r) {
         if (!r || !r.reading) return;
         const kind = r.kind === "on" ? "on" : "kun";
+        const kindLabel = strokeOrderReadingKindLabel_(kind);
         const examples = Array.isArray(r.examples) ? r.examples.filter(Boolean) : [];
+        const readTextForVoice = r.reading; // そのままの読み
+        const readTextForDisplay = strokeOrderReadingDisplayText_(r.reading, kind);
+
+        ttsPhrases.push(kindLabel);
+        ttsPhrases.push(readTextForVoice);
+
         /* DOM順: 種別→スロット→よみ→例文。CSS direction:rtl で右から 訓読み|A|いぬ|例文 */
         html += '<div class="kanji-so-reading-group">';
         html +=
           '<span class="kanji-so-reading-kind">' +
-          escapeHtml(strokeOrderReadingKindLabel_(kind)) +
+          escapeHtml(kindLabel) +
           "</span>";
         html +=
           '<span class="kanji-so-reading-slot">' +
@@ -2457,10 +2498,11 @@
           "</span>";
         html +=
           '<span class="kanji-so-reading-text">' +
-          escapeHtml(strokeOrderReadingDisplayText_(r.reading, kind)) +
+          escapeHtml(readTextForDisplay) +
           "</span>";
         if (examples.length) {
           examples.forEach(function (ex) {
+            ttsPhrases.push(ex);
             html +=
               '<span class="kanji-so-reading-example">' + escapeHtml(String(ex)) + "</span>";
           });
@@ -2469,11 +2511,28 @@
       });
       if (!html) {
         clearStrokeOrderReadings_();
+        stopStrokeOrderReadingTTS_();
         return;
       }
       el.innerHTML = html;
+      
+      const chk = el.querySelector(".kanji-stroke-tts-check");
+      if (chk) {
+        chk.addEventListener("change", function () {
+          setUserPref("kanji_quiz_stroke_tts_enabled", chk.checked ? "1" : "0");
+          if (!chk.checked) {
+            stopStrokeOrderReadingTTS_();
+          } else {
+            playStrokeOrderReadingTTS_(ttsPhrases);
+          }
+        });
+      }
+
       el.classList.add("is-visible");
       el.style.display = "flex";
+
+      // 表示後すぐに読み上げ開始
+      playStrokeOrderReadingTTS_(ttsPhrases);
     }
     var __kanjiHandScoreToastTimer = null;
     var __kanjiEarnedPtsToastTimer = null;
@@ -2545,6 +2604,36 @@
         el.style.opacity = "0";
         __kanjiHandScoreToastTimer = null;
       }, 2000);
+    }
+    var __kanjiDailyLimitToastTimer = null;
+    /**
+     * 1日のポイント取得上限（同一漢字 2 回/日）に達したことを通知するトースト。
+     */
+    function showKanjiDailyLimitToast(kanjiChar) {
+      var ch = kanjiChar ? "「" + String(kanjiChar) + "」" : "この漢字";
+      var el = document.getElementById("kanji-daily-limit-toast");
+      if (!el) {
+        el = document.createElement("div");
+        el.id = "kanji-daily-limit-toast";
+        el.setAttribute("role", "status");
+        el.setAttribute("aria-live", "polite");
+        el.style.cssText =
+          "position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);" +
+          "z-index:10052;padding:14px 22px;border-radius:14px;background:rgba(40,20,10,0.94);color:#FFD54F;" +
+          "font-size:clamp(14px,3.5vw,17px);font-weight:700;box-shadow:0 6px 28px rgba(0,0,0,0.35);" +
+          "pointer-events:none;opacity:0;transition:opacity 0.25s ease;text-align:center;line-height:1.5;" +
+          "max-width:min(90vw,340px);border:1.5px solid rgba(255,213,79,0.5);";
+        document.body.appendChild(el);
+      }
+      el.innerHTML =
+        "📋 " + ch + " は<br>きょうのポイント上限（2 回）に<br>たっしました。" +
+        '<div style="margin-top:6px;font-size:clamp(12px,3vw,14px);color:#FFAB91;">あす 0 じにリセットされます</div>';
+      el.style.opacity = "1";
+      if (__kanjiDailyLimitToastTimer) clearTimeout(__kanjiDailyLimitToastTimer);
+      __kanjiDailyLimitToastTimer = setTimeout(function () {
+        el.style.opacity = "0";
+        __kanjiDailyLimitToastTimer = null;
+      }, 3500);
     }
     /** KP iframe の kanjiQuizScored を1リスナで処理（クイズ優先、その後のみ練習の GAS 保存） */
     function initKanjiParentKanjiQuizScoredBridge() {
@@ -2622,6 +2711,10 @@
             try {
               showKanjiHandScoreToast(score, kanjiChar, d.earnedPoints);
             } catch (ePt) {}
+            // ── 1日の上限に達した場合、追加トーストで通知 ──
+            if (d.dailyLimitChars && d.dailyLimitChars.length > 0) {
+              try { showKanjiDailyLimitToast(kanjiChar); } catch (_dl) {}
+            }
             if (typeof d.newTotal === "number") {
               if (d.kanjiChallengeChar && d.kanjiChallengePatch) {
                 mergeKanjiChallengePatchClient(d.kanjiChallengeChar, d.kanjiChallengePatch);

@@ -5290,15 +5290,31 @@
         return;
       }
       listEl.innerHTML = "";
+      
+      const bulkApproveBtn = document.createElement('button');
+      bulkApproveBtn.type = "button";
+      bulkApproveBtn.className = "submit-btn btn-orange";
+      bulkApproveBtn.style.marginBottom = "12px";
+      bulkApproveBtn.innerText = "☑の申請を一括で承認";
+      bulkApproveBtn.onclick = () => bulkApproveExternalRequests(pin);
+      listEl.appendChild(bulkApproveBtn);
+
       list.forEach(item => {
         const card = document.createElement('div');
-        card.style.cssText = "background:#2a2a2a;border-radius:12px;padding:14px;border:1px solid #444;";
-        card.innerHTML = `<div style="font-weight:bold;margin-bottom:6px;">${item.userName} <span style="font-size:12px;color:#aaa;">(${item.userId})</span></div>
-          <div style="font-size:15px;margin-bottom:4px;">${item.category || ""} / ${item.volume || ""}</div>
-          <div style="color:gold;margin-bottom:8px;">+${item.points} Pt</div>
-          <div style="font-size:12px;color:#888;margin-bottom:6px;">${item.requestedAt}</div>
-          ${item.childMemo ? `<div style="font-size:13px;color:#ddd;margin-bottom:8px;">こどもメモ: ${item.childMemo}</div>` : ""}
-          <textarea class="external-admin-memo" rows="2" placeholder="おとなメモ（任意）" style="width:100%;box-sizing:border-box;border-radius:8px;padding:8px;background:#222;color:#fff;border:1px solid #555;margin-bottom:8px;"></textarea>
+        card.className = "external-admin-card";
+        card.dataset.rowIdx = item.rowIdx;
+        card.style.cssText = "background:#2a2a2a;border-radius:12px;padding:14px;border:1px solid #444;position:relative;";
+        card.innerHTML = `<label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;">
+            <input type="checkbox" class="external-bulk-check" style="transform:scale(1.5);margin-top:4px;" checked>
+            <div style="flex:1;">
+              <div style="font-weight:bold;margin-bottom:6px;">${item.userName} <span style="font-size:12px;color:#aaa;">(${item.userId})</span></div>
+              <div style="font-size:15px;margin-bottom:4px;">${item.category || ""} / ${item.volume || ""}</div>
+              <div style="color:gold;margin-bottom:8px;">+${item.points} Pt</div>
+              <div style="font-size:12px;color:#888;margin-bottom:6px;">${item.requestedAt}</div>
+              ${item.childMemo ? `<div style="font-size:13px;color:#ddd;margin-bottom:8px;">こどもメモ: ${item.childMemo}</div>` : ""}
+            </div>
+          </label>
+          <textarea class="external-admin-memo" rows="2" placeholder="おとなメモ（任意）" style="width:100%;box-sizing:border-box;border-radius:8px;padding:8px;background:#222;color:#fff;border:1px solid #555;margin-bottom:8px;margin-top:8px;"></textarea>
           <div style="display:flex;gap:10px;flex-wrap:wrap;">
             <button type="button" class="submit-btn btn-green" style="flex:1;min-width:100px;">承認する</button>
             <button type="button" class="cancel-btn" style="flex:1;min-width:100px;background:#663333;color:#fcc;">却下</button>
@@ -5331,6 +5347,49 @@
         const user = JSON.parse(localStorage.getItem('app_kid_user') || "{}");
         if (approve && d.userId && user.id === d.userId && typeof d.newTotal === "number") {
           user.points = d.newTotal;
+          saveAppKidUserToLocal(user);
+          const pts = document.getElementById('user-points');
+          if (pts) pts.innerText = user.points;
+        }
+        loadExternalAdminPendingAfterPin(pin);
+      }).catch(() => alert("通信エラーが発生しました。"));
+    }
+
+    function bulkApproveExternalRequests(pin) {
+      const listEl = document.getElementById('external-admin-list');
+      const cards = Array.from(listEl.querySelectorAll('.external-admin-card'));
+      const requestsToApprove = [];
+      
+      cards.forEach(card => {
+        const checkbox = card.querySelector('.external-bulk-check');
+        if (checkbox && checkbox.checked) {
+          const rowIdx = card.dataset.rowIdx;
+          const memoField = card.querySelector('.external-admin-memo');
+          requestsToApprove.push({
+            rowIdx: rowIdx,
+            adminMemo: memoField ? memoField.value : ""
+          });
+        }
+      });
+
+      if (requestsToApprove.length === 0) {
+        alert("選択された申請がありません。");
+        return;
+      }
+
+      if (!confirm(`選択された ${requestsToApprove.length} 件の申請を一括で承認してポイントを付与しますか？`)) return;
+
+      const action = "bulk_approve_external_requests";
+      fetch(GAS_API_URL, { method: 'POST', body: JSON.stringify({ action: action, adminPin: pin, requests: requestsToApprove }) })
+      .then(r=>r.json()).then(d=>{
+        if(d.status !== "success") {
+          alert(d.message || "エラー");
+          return;
+        }
+        alert(d.message);
+        const user = JSON.parse(localStorage.getItem('app_kid_user') || "{}");
+        if (d.userPointsUpdates && user.id && typeof d.userPointsUpdates[user.id] === "number") {
+          user.points = d.userPointsUpdates[user.id];
           saveAppKidUserToLocal(user);
           const pts = document.getElementById('user-points');
           if (pts) pts.innerText = user.points;
@@ -10391,6 +10450,37 @@
         __kanjiHandScoreToastTimer = null;
       }, 2000);
     }
+    var __kanjiDailyLimitToastTimer = null;
+    /**
+     * 1日のポイント取得上限（同一漢字 2 回/日）に達したことを通知するトースト。
+     * 採点自体は引き続きできるが、ポイント加算が翌日 0 時（JST）まで無い旨を表示する。
+     */
+    function showKanjiDailyLimitToast(kanjiChar) {
+      var ch = kanjiChar ? "「" + String(kanjiChar) + "」" : "この漢字";
+      var el = document.getElementById("kanji-daily-limit-toast");
+      if (!el) {
+        el = document.createElement("div");
+        el.id = "kanji-daily-limit-toast";
+        el.setAttribute("role", "status");
+        el.setAttribute("aria-live", "polite");
+        el.style.cssText =
+          "position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);" +
+          "z-index:10052;padding:14px 22px;border-radius:14px;background:rgba(40,20,10,0.94);color:#FFD54F;" +
+          "font-size:clamp(14px,3.5vw,17px);font-weight:700;box-shadow:0 6px 28px rgba(0,0,0,0.35);" +
+          "pointer-events:none;opacity:0;transition:opacity 0.25s ease;text-align:center;line-height:1.5;" +
+          "max-width:min(90vw,340px);border:1.5px solid rgba(255,213,79,0.5);";
+        document.body.appendChild(el);
+      }
+      el.innerHTML =
+        "📋 " + ch + " は<br>きょうのポイント上限（2 回）に<br>たっしました。" +
+        '<div style="margin-top:6px;font-size:clamp(12px,3vw,14px);color:#FFAB91;">あす 0 じにリセットされます</div>';
+      el.style.opacity = "1";
+      if (__kanjiDailyLimitToastTimer) clearTimeout(__kanjiDailyLimitToastTimer);
+      __kanjiDailyLimitToastTimer = setTimeout(function () {
+        el.style.opacity = "0";
+        __kanjiDailyLimitToastTimer = null;
+      }, 3500);
+    }
     var __kanjiWrongPracticeLastSubmitKey = "";
     var __kanjiWrongPracticeLastSubmitAt = 0;
     function isKanjiQuizWrongPanelVisible_() {
@@ -10953,6 +11043,10 @@
             try {
               showKanjiHandScoreToast(score, kanjiChar, d.earnedPoints);
             } catch (ePt) {}
+            // ── 1日の上限に達した場合、追加トーストで通知 ──
+            if (d.dailyLimitChars && d.dailyLimitChars.length > 0) {
+              try { showKanjiDailyLimitToast(kanjiChar); } catch (_dl) {}
+            }
             if (typeof d.newTotal === "number") {
               if (d.kanjiChallengeChar && d.kanjiChallengePatch) {
                 mergeKanjiChallengePatchClient(d.kanjiChallengeChar, d.kanjiChallengePatch);
@@ -12828,11 +12922,16 @@
               }
               return copy;
             });
+            var batchSaveNote = '<p class="kanji-result-save-note" style="color:#2e7d32;">結果を保存しました。</p>';
+            if (d.dailyLimitChars && d.dailyLimitChars.length > 0) {
+              var dlChars = d.dailyLimitChars.map(function (c) { return "「" + escapeHtml(c) + "」"; }).join(" ");
+              batchSaveNote += '<p style="color:#FFD54F;font-size:13px;margin:6px 0;">📋 ' + dlChars + ' は今日のポイント上限（2 回/日）に達しました。あす 0 時にリセットされます。</p>';
+            }
             renderKanjiResultBody_(
               Number(d.earnedPoints || 0),
               nextLogs,
               Number(d.newTotal),
-              '<p class="kanji-result-save-note" style="color:#2e7d32;">結果を保存しました。</p>'
+              batchSaveNote
             );
             if (isTrainingMode) {
               const trainMenuId =
@@ -15955,6 +16054,10 @@
         }
         if (d.alreadyProcessed) {
           bonusMsg += `<p style="color:#FF9800;font-size:13px;margin:6px 0;">※ すでに保存済みの結果を表示しています（ポイントの二重付与はしていません）。</p>`;
+        }
+        if (d.dailyLimitChars && d.dailyLimitChars.length > 0) {
+          var dlChars = d.dailyLimitChars.map(function (c) { return "「" + escapeHtml(c) + "」"; }).join(" ");
+          bonusMsg += `<p style="color:#FFD54F;font-size:13px;margin:6px 0;">📋 ${dlChars} は今日のポイント上限（2 回/日）に達しました。あす 0 時にリセットされます。</p>`;
         }
         const correctCount = resultsToSend.filter(function (r) { return r && r.isCorrect; }).length;
         const totalCount = expectedCount || resultsToSend.length;
