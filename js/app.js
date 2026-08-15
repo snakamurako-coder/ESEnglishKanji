@@ -1,5 +1,5 @@
 // ▼ GASのURLを貼り付けてください（※前回と同じURLならそのままで大丈夫） ▼
-    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzfohGXq5tRclt5dgqAQZ8qsP4Sio8fTjVJyKekOhtTTMmZ0lVAkh4NXJEuBKr0WPM1ug/exec";
+    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzACbx06JMP8NhL1wdOr-lChwuSLKHd1pxVhI3gnO9_dAFMZLQ941ffX6zd3hXJphJoMg/exec";
     const LS_PENDING_FINISH_SAVE = "app_pending_finish_quiz_save_v1";
     const LS_FLUSHED_SUBMIT_IDS = "app_flushed_submit_ids_v1";
     const PENDING_FINISH_FLUSH_MAX_ATTEMPTS = 5;
@@ -10329,29 +10329,61 @@
       el.innerHTML = "";
       el.classList.remove("is-visible");
       el.style.display = "none";
+      stopStrokeOrderReadingTTS_();
+    }
+    function stopStrokeOrderReadingTTS_() {
+      if (window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+      }
+    }
+    function playStrokeOrderReadingTTS_(phrases) {
+      if (!window.speechSynthesis) return;
+      stopStrokeOrderReadingTTS_();
+      const isEnabled = getUserPref("kanji_quiz_stroke_tts_enabled", "1") === "1";
+      if (!isEnabled) return;
+      phrases.forEach(function (text) {
+        if (!text) return;
+        const ut = new SpeechSynthesisUtterance(text);
+        ut.lang = "ja-JP";
+        ut.rate = 1.15;
+        window.speechSynthesis.speak(ut);
+      });
     }
     function renderStrokeOrderReadings_(q) {
       const el = document.getElementById("kanji-stroke-order-readings");
       if (!el) return;
       if (!q || q.type !== "stroke_order_trace") {
         clearStrokeOrderReadings_();
+        stopStrokeOrderReadingTTS_();
         return;
       }
       const readings = Array.isArray(q.readings) ? q.readings : [];
       if (!readings.length) {
         clearStrokeOrderReadings_();
+        stopStrokeOrderReadingTTS_();
         return;
       }
       let html = "";
+      const ttsPhrases = [];
+      const ttsEnabled = getUserPref("kanji_quiz_stroke_tts_enabled", "1") === "1";
+      html += '<label class="kanji-so-reading-group kanji-stroke-tts-area" style="pointer-events:auto;cursor:pointer;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:8px 4px;background:rgba(255,255,255,0.5);border-radius:6px;border:1px dashed #ccc;">';
+      html += '<input type="checkbox" class="kanji-stroke-tts-check" style="pointer-events:auto;transform:scale(1.3);margin:0;" ' + (ttsEnabled ? "checked" : "") + ">";
+      html += '<span style="writing-mode:vertical-rl;text-orientation:upright;font-size:13px;color:#555;font-weight:bold;letter-spacing:1px;pointer-events:auto;">読み上げ機能をオン</span>';
+      html += "</label>";
       readings.forEach(function (r) {
         if (!r || !r.reading) return;
         const kind = r.kind === "on" ? "on" : "kun";
+        const kindLabel = strokeOrderReadingKindLabel_(kind);
         const examples = Array.isArray(r.examples) ? r.examples.filter(Boolean) : [];
+        const readTextForVoice = r.reading;
+        const readTextForDisplay = strokeOrderReadingDisplayText_(r.reading, kind);
+        ttsPhrases.push(kindLabel);
+        ttsPhrases.push(readTextForVoice);
         /* DOM順: 種別→スロット→よみ→例文。CSS direction:rtl で右から 訓読み|A|いぬ|例文 */
         html += '<div class="kanji-so-reading-group">';
         html +=
           '<span class="kanji-so-reading-kind">' +
-          escapeHtml(strokeOrderReadingKindLabel_(kind)) +
+          escapeHtml(kindLabel) +
           "</span>";
         html +=
           '<span class="kanji-so-reading-slot">' +
@@ -10359,12 +10391,13 @@
           "</span>";
         html +=
           '<span class="kanji-so-reading-text">' +
-          escapeHtml(strokeOrderReadingDisplayText_(r.reading, kind)) +
+          escapeHtml(readTextForDisplay) +
           "</span>";
         if (examples.length) {
           examples.forEach(function (ex) {
             const exText = normalizeStrokeOrderExampleText_(ex);
             if (!exText) return;
+            ttsPhrases.push(exText);
             html +=
               '<span class="kanji-so-reading-example">' + escapeHtml(exText) + "</span>";
           });
@@ -10373,11 +10406,24 @@
       });
       if (!html) {
         clearStrokeOrderReadings_();
+        stopStrokeOrderReadingTTS_();
         return;
       }
       el.innerHTML = html;
+      const chk = el.querySelector(".kanji-stroke-tts-check");
+      if (chk) {
+        chk.addEventListener("change", function () {
+          setUserPref("kanji_quiz_stroke_tts_enabled", chk.checked ? "1" : "0");
+          if (!chk.checked) {
+            stopStrokeOrderReadingTTS_();
+          } else {
+            playStrokeOrderReadingTTS_(ttsPhrases);
+          }
+        });
+      }
       el.classList.add("is-visible");
       el.style.display = "flex";
+      playStrokeOrderReadingTTS_(ttsPhrases);
     }
     var __kanjiHandScoreToastTimer = null;
     var __kanjiEarnedPtsToastTimer = null;

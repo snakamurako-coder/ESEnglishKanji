@@ -906,6 +906,7 @@ function doPost(e) {
     else if (action === "submit_external_learning_request") return handleSubmitExternalLearningRequest(requestData);
     else if (action === "get_pending_external_requests") return handleGetPendingExternalRequests(requestData);
     else if (action === "approve_external_request") return handleApproveExternalRequest(requestData);
+    else if (action === "bulk_approve_external_requests") return handleBulkApproveExternalRequests(requestData);
     else if (action === "reject_external_request") return handleRejectExternalRequest(requestData);
     else if (action === "get_my_external_learning_requests") return handleGetMyExternalLearningRequests(requestData);
     else if (action === "recognize_handwriting") return recognizeSentence(requestData.ink || []);
@@ -2469,6 +2470,7 @@ function handleSaveLearningSession(req) {
   const isKanjiScoreSession = req.learningCategory === "kanji" && req.challengeType === "score" && req.kanjiChar && !isKanjiScoreBatch;
   let kanjiView = null;
   let itemEarnedList = null;
+  const dailyLimitChars = [];
   const sheetPointPercent = parseUnitSheetPointPercent_(req.unitSheetName);
 
   if (useEnglishHistorySheet) {
@@ -2502,6 +2504,15 @@ function handleSaveLearningSession(req) {
       earned = Math.round(earned * (sheetPointPercent / 100) * 100) / 100;
     }
     earned = Math.max(0, earned);
+    if (earned > 0) {
+      const dailyCount = syncKanjiCharDailyPtCount_(cHist, todayStr);
+      if (dailyCount >= KANJI_DAILY_POINT_MAX_PER_CHAR_) {
+        earned = 0;
+        if (dailyLimitChars.indexOf(charKey) < 0) dailyLimitChars.push(charKey);
+      } else {
+        cHist.dailyPtCount = dailyCount + 1;
+      }
+    }
     if (score >= 60) cHist.highScoreDates.push(now.toISOString());
     const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     cHist.highScoreDates = cHist.highScoreDates
@@ -2585,7 +2596,7 @@ function handleSaveLearningSession(req) {
   
   userData.dailyPointsJson[todayStr] = (userData.dailyPointsJson[todayStr] || 0) + earnedPoints;
   userData.dailyPointsJson[todayStr] = Math.round(userData.dailyPointsJson[todayStr] * 100) / 100;
-  if (lastStudyKey) userData.lastStudyJson[lastStudyKey] = now.toISOString();
+  if (lastStudyKey && !req.kanjiSetContinuation) userData.lastStudyJson[lastStudyKey] = now.toISOString();
 
   // ★ 特訓ルートのステップをクリアした場合は、今日の進捗にチェックを入れる（メニューID別）
   if (req.trainingStepIndex) {
@@ -2633,6 +2644,7 @@ function handleSaveLearningSession(req) {
       resp.kanjiChallengePatch = kRoot[String(req.kanjiChar)];
     }
   }
+  if (dailyLimitChars.length) resp.dailyLimitChars = dailyLimitChars;
   return sendResponse(resp);
   } catch (err) {
     return sendResponse({ status: "error", message: "保存処理エラー: " + String(err && err.message ? err.message : err) });
@@ -2644,6 +2656,17 @@ var KANJI_WEAK_MAX_KEYS_ = 200;
 var KANJI_WEAK_RECENT_MAX_ = 12;
 var KANJI_NIGATE_PASS_REQUIRED_ = 1;
 var KANJI_NIGATE_PASS_COOLDOWN_MS_ = 20 * 60 * 60 * 1000;
+var KANJI_DAILY_POINT_MAX_PER_CHAR_ = 2;
+
+function syncKanjiCharDailyPtCount_(cHist, todayStr) {
+  if (!cHist || typeof cHist !== "object") return 0;
+  if (String(cHist.dailyPtDate || "") !== String(todayStr || "")) {
+    cHist.dailyPtDate = todayStr;
+    cHist.dailyPtCount = 0;
+  }
+  if (typeof cHist.dailyPtCount !== "number" || isNaN(cHist.dailyPtCount)) cHist.dailyPtCount = 0;
+  return cHist.dailyPtCount;
+}
 
 function kanjiWeakMakeKey_(modeId, unitName, setId, kanji) {
   return [String(modeId || ""), String(unitName || ""), String(setId || ""), String(kanji || "")].join("\x1f");
@@ -3317,6 +3340,68 @@ function handleApproveExternalRequest(req) {
   if (map["おとなメモ"]) sheet.getRange(rowIdx, map["おとなメモ"]).setValue(req.adminMemo || "");
 
   return sendResponse({ status: "success", message: "承認してポイントを付与しました。", newTotal: newTotal, userId: userId, userName: userName, category: menuName, volume: map["分量"] ? String(row[map["分量"] - 1]) : "", points: points });
+}
+
+function handleBulkApproveExternalRequests(req) {
+  const adminSs = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('ADMIN_SS_ID'));
+  const v = verifyExternalAdminPin_(adminSs, req.adminPin);
+  if (!v.ok) return sendResponse({ status: "error", message: v.message });
+
+  const requests = Array.isArray(req.requests) ? req.requests : [];
+  if (!requests.length) return sendResponse({ status: "error", message: "選択された申請がありません" });
+
+  const sheet = ensureExternalLearningRequestSheet_(adminSs);
+  const { ok, map, message } = ensureExternalRequestHeaderMap_(sheet);
+  if (!ok) return sendResponse({ status: "error", message });
+
+  const usersSheet = adminSs.getSheetByName("users");
+  const udata = usersSheet.getDataRange().getValues();
+  const userRowById = {};
+  for (let i = 1; i < udata.length; i++) {
+    userRowById[String(udata[i][0])] = i + 1;
+  }
+
+  const now = new Date();
+  const nowStr = Utilities.formatDate(now, Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm:ss");
+  const userPointsUpdates = {};
+  let approved = 0;
+  let skipped = 0;
+
+  requests.forEach(function (item) {
+    const rowIdx = Number(item && item.rowIdx);
+    const lastRow = sheet.getLastRow();
+    if (rowIdx < 2 || rowIdx > lastRow) {
+      skipped++;
+      return;
+    }
+    const row = sheet.getRange(rowIdx, 1, 1, sheet.getLastColumn()).getValues()[0];
+    if (String(row[map["状態"] - 1]) !== "申請中") {
+      skipped++;
+      return;
+    }
+    const userId = String(row[map["ユーザーID"] - 1]);
+    const points = Number(row[map["ポイント"] - 1]) || 0;
+    const userRow = userRowById[userId];
+    if (!userRow) {
+      skipped++;
+      return;
+    }
+    const curPts = Number(usersSheet.getRange(userRow, 4).getValue()) || 0;
+    const newTotal = Math.round((curPts + points) * 100) / 100;
+    usersSheet.getRange(userRow, 4).setValue(newTotal);
+    userPointsUpdates[userId] = newTotal;
+    sheet.getRange(rowIdx, map["状態"]).setValue("承認済み");
+    if (map["処理日時"]) sheet.getRange(rowIdx, map["処理日時"]).setValue(nowStr);
+    if (map["おとなメモ"]) sheet.getRange(rowIdx, map["おとなメモ"]).setValue((item && item.adminMemo) || "");
+    approved++;
+  });
+
+  if (!approved) {
+    return sendResponse({ status: "error", message: "承認できた申請がありませんでした。" + (skipped ? "（" + skipped + " 件スキップ）" : "") });
+  }
+  let msg = approved + " 件の申請を承認してポイントを付与しました。";
+  if (skipped) msg += "（" + skipped + " 件は処理済みなどでスキップ）";
+  return sendResponse({ status: "success", message: msg, userPointsUpdates: userPointsUpdates, approvedCount: approved, skippedCount: skipped });
 }
 
 function handleRejectExternalRequest(req) {
