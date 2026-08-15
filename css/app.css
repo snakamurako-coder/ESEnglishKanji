@@ -2144,7 +2144,7 @@ body { font-family: 'Hiragino Maru Gothic ProN', sans-serif; background-color: #
       flex-wrap: nowrap !important;
       flex: 1 1 auto !important;
       min-height: 0 !important;
-      /* 右寄せを保ちつつ、カード列が広いときは内容幅まで広げて横スクロール */
+      /* 中央寄せ：カード列が広いときは内容幅まで広げて横スクロール */
       min-width: 100% !important;
       width: max-content !important;
       max-width: none !important;
@@ -2152,17 +2152,20 @@ body { font-family: 'Hiragino Maru Gothic ProN', sans-serif; background-color: #
       max-height: 100% !important;
       align-self: stretch !important;
       align-items: flex-start !important;
-      justify-content: flex-end !important;
+      justify-content: center !important;
       padding-top: clamp(8px, 1.4vh, 14px) !important;
-      /* タイトルレール非表示のため右余白は最小限（書き順と同様に右へ詰める） */
       padding-right: 10px !important;
-      padding-left: 12px !important;
+      padding-left: 10px !important;
       position: relative !important;
       box-sizing: border-box !important;
       writing-mode: horizontal-tb !important;
       text-orientation: mixed !important;
       direction: ltr !important;
       -webkit-overflow-scrolling: touch;
+    }
+    /* 回答後（お手本カード表示時）は左寄せに戻して崩れを防ぐ */
+    body.kanji-study-mode #section-kanji-quiz-play.kanji-quiz-drill-section.active.kanji-quiz-hw-active.kanji-quiz-wrong-visible .kanji-quiz-drill-wrap {
+      justify-content: flex-start !important;
     }
     /**
      * 書き順：上帯＝カード右寄せ／下帯＝よみ・例文（画面約1/3）。
@@ -3468,7 +3471,9 @@ body { font-family: 'Hiragino Maru Gothic ProN', sans-serif; background-color: #
         max-height: var(--kanji-so-cards-max-h, calc(67dvh - 12px)) !important;
         overflow-x: auto !important;
         overflow-y: auto !important;
-        align-self: flex-end !important;
+        align-self: center !important;
+        margin-left: auto !important;
+        margin-right: auto !important;
         flex-direction: row !important;
         direction: rtl !important;
         gap: 12px !important;
@@ -4325,9 +4330,9 @@ body { font-family: 'Hiragino Maru Gothic ProN', sans-serif; background-color: #
       justify-content: flex-start !important;
       width: max-content !important;
       max-width: 100% !important;
-      margin: 0 !important;
-      /* 上帯：右寄せ。見切れ時は帯内で横スクロール */
-      align-self: flex-end !important;
+      margin: 0 auto !important;
+      /* 中央寄せ：問題カードを画面中心に表示 */
+      align-self: center !important;
       flex: 1 1 auto !important;
       min-width: 0 !important;
       min-height: 0 !important;
