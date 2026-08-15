@@ -2470,9 +2470,9 @@
 
       // 先頭（右端）にTTSオンオフのチェックボックスを追加
       const ttsEnabled = getUserPref("kanji_quiz_stroke_tts_enabled", "1") === "1";
-      html += '<label class="kanji-so-reading-group kanji-stroke-tts-area" style="cursor:pointer;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:8px 4px;background:rgba(255,255,255,0.5);border-radius:6px;border:1px dashed #ccc;">';
-      html += '<input type="checkbox" class="kanji-stroke-tts-check" style="transform:scale(1.3);margin:0;" ' + (ttsEnabled ? 'checked' : '') + '>';
-      html += '<span style="writing-mode:vertical-rl;text-orientation:upright;font-size:13px;color:#555;font-weight:bold;letter-spacing:1px;">読み上げ機能をオン</span>';
+      html += '<label class="kanji-so-reading-group kanji-stroke-tts-area" style="pointer-events:auto;cursor:pointer;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:8px 4px;background:rgba(255,255,255,0.5);border-radius:6px;border:1px dashed #ccc;">';
+      html += '<input type="checkbox" class="kanji-stroke-tts-check" style="pointer-events:auto;transform:scale(1.3);margin:0;" ' + (ttsEnabled ? 'checked' : '') + '>';
+      html += '<span style="writing-mode:vertical-rl;text-orientation:upright;font-size:13px;color:#555;font-weight:bold;letter-spacing:1px;pointer-events:auto;">読み上げ機能をオン</span>';
       html += '</label>';
 
       readings.forEach(function (r) {
