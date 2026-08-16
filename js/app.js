@@ -11967,6 +11967,10 @@
       const userSwapped = normalizeKanjiQuizInput(kanjiYomiSwapHiraKataString_(userNorm));
       for (let j = 0; j < exactTargets.length; j++) {
         if (userSwapped === exactTargets[j]) {
+          // 熟語タイプは音訓（カタカナ/ひらがな）を厳密に区別しないため◎扱いにする
+          if (q && q.type === "jukugo_sentence_to_ruby") {
+            return { isCorrect: true, isPartial: false, scriptBonusMult: 1 };
+          }
           return { isCorrect: true, isPartial: true, scriptBonusMult: 0.5 };
         }
       }
@@ -13268,7 +13272,7 @@
       if (q.type === "okurigana_shift") {
         return String(q.correctAnswer || "");
       }
-      if (q.type === "sentence_to_ruby") {
+      if (q.type === "sentence_to_ruby" || q.type === "jukugo_sentence_to_ruby") {
         return String(q.correctAnswer || "");
       }
       if (q.type === "stroke_count") {
@@ -13286,7 +13290,7 @@
     function mountKanjiQuizVerdictNodes_(q, verdict, nextBtn) {
       if (!verdict) return;
       var placed = false;
-      if (q && q.type === "sentence_to_ruby") {
+      if (q && (q.type === "sentence_to_ruby" || q.type === "jukugo_sentence_to_ruby")) {
         var rail = document.getElementById("kanji-yomi-typing-rail");
         var submit = document.getElementById("kanji-play-submit-btn");
         if (rail) {
@@ -14376,7 +14380,7 @@
        */
       scriptBtn.style.fontSize = "calc(var(--vk-font-px, 16) * 1px * 0.9)";
       scriptBtn.style.lineHeight = "1.15";
-      scriptBtn.style.padding = "calc(var(--vk-pad-px, 12) * 1px * 0.75) 6px";
+      scriptBtn.style.padding = "calc(var(--vk-pad-px, 12) * 1px * 2.5) 6px";
       function refreshScriptBtnLabel() {
         if (currentScriptKind === "on") {
           scriptBtn.innerHTML = '<span style="font-size:0.85em;color:#fff;opacity:0.95;">いま:カナ</span><br>かな ⇔ カナ';
@@ -14396,6 +14400,7 @@
       const bsBtn = document.createElement("button");
       bsBtn.type = "button";
       bsBtn.className = "key key-wide";
+      bsBtn.style.padding = "calc(var(--vk-pad-px, 14) * 1px * 2.5) 0";
       bsBtn.textContent = "⌫";
       bindKeyHandler(bsBtn, backspaceKey_);
       rowBs.appendChild(bsBtn);
@@ -14406,6 +14411,7 @@
       enterBtn.type = "button";
       enterBtn.className = "key key-action";
       enterBtn.style.flex = "1";
+      enterBtn.style.padding = "calc(var(--vk-pad-px, 14) * 1px * 2.5) 0";
       enterBtn.textContent = "けってい";
       bindKeyHandler(enterBtn, enterKey_);
       bottomRow.appendChild(enterBtn);
