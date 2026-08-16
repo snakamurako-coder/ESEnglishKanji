@@ -67,6 +67,7 @@ function getDefaultAppSettingsRows_() {
     ["漢字熟語読み_基礎点", 1],
     ["漢字熟語読み_選択肢倍率", 1],
     ["漢字熟語読み_無し選択肢ボーナス", 2],
+    ["漢字熟語読みタイプ_基礎点", 15],
     ["trajectory", 28],
     ["startEnd", 10],
     ["structure", 14],
@@ -2822,6 +2823,7 @@ function normalizeNigateTrainMode_(trainMode) {
   if (s === "reading" || s === "type_yomi" || s === "sentence_to_ruby") return "type_yomi";
   if (s === "stroke_order" || s === "stroke_order_trace") return "stroke_order";
   if (s === "jukugo_yomi") return "jukugo_yomi";
+  if (s === "jukugo_type_yomi" || s === "jukugo_sentence_to_ruby") return "jukugo_type_yomi";
   if (s === "stroke_count") return "stroke_count";
   if (!s) return "write_kanji";
   return s;
@@ -4427,6 +4429,76 @@ function buildJukugoQuizProblemList_(group, opts) {
   });
 }
 
+/**
+ * 熟語シート版「読み仮名タイプ」問題を1エントリから生成する。
+ * 例文中の熟語（entry.word）をマスクし、読み仮名のタイピングで答えさせる。
+ */
+function buildJukugoSentenceToRubyQuizQuestion_(entry) {
+  if (!entry) return null;
+  const word = String(entry.word || "").trim();
+  const example = String(entry.example || "").trim();
+  const reading = String(entry.reading || "").trim();
+  if (!word || !example || !reading) return null;
+  // 例文中の熟語を1度だけマスク（通常漢字の maskKanjiInExampleOnce_ と同じロジック）
+  const idx = example.indexOf(word);
+  if (idx < 0) return null;
+  const maskedSentence = example.slice(0, idx) + "＿＿＿" + example.slice(idx + word.length);
+  // 正解は読みの第1候補
+  const correctReadings = splitJukugoReadings_(reading);
+  const correctAnswer = correctReadings[0] || "";
+  if (!correctAnswer) return null;
+  return {
+    type: "jukugo_sentence_to_ruby",
+    kanji: entry.targetKanji,
+    rowIndex: entry.rowIndex,
+    slot: entry.slot || "",
+    jukugoWord: word,
+    jukugoReading: correctAnswer,
+    correctReadings: correctReadings,
+    fullExample: example,
+    sentence: maskedSentence,
+    prompt: "赤字の熟語のよみを 入力しましょう。（ひらがな）",
+    correctAnswer: correctAnswer,
+    searchText: [entry.targetKanji, word, correctAnswer, example].join(" ")
+  };
+}
+
+/**
+ * 熟語グループ内のエントリを「読み仮名タイプ」問題リストに変換する。
+ * 同行の熟語ABCのうちランダムに1つを選ぶ（jukugo_yomi と同じ規則）。
+ */
+function buildJukugoSentenceToRubyProblemList_(group) {
+  const entries = group.entries || [];
+  if (!entries.length) return [];
+  // 同じ行の熟語ABCのうち、1回のセット取り組みではいずれか1つだけ出題する
+  const byRow = {};
+  const rowOrder = [];
+  entries.forEach(function (entry) {
+    const key = String(entry.rowIndex);
+    if (!byRow[key]) {
+      byRow[key] = [];
+      rowOrder.push(key);
+    }
+    byRow[key].push(entry);
+  });
+  const list = [];
+  rowOrder.forEach(function (key) {
+    const candidates = byRow[key];
+    if (!candidates || !candidates.length) return;
+    const pick = candidates[Math.floor(Math.random() * candidates.length)];
+    const q = buildJukugoSentenceToRubyQuizQuestion_(pick);
+    if (q) list.push(q);
+  });
+  const shuffled = shuffleKanjiQuizArray_(list);
+  return shuffled.map(function (q, i) {
+    const base = Object.assign({}, q);
+    base.questionIndex = i;
+    base.questionId =
+      "JUKUGO_TR_Q_" + String(group.setId) + "_" + q.rowIndex + "_" + (q.slot || "") + "_" + q.type + "_" + i;
+    return base;
+  });
+}
+
 /** 同一シートの解析結果を短時間キャッシュし、get_kanji_quiz_sets → get_kanji_quiz_questions の連続で Spreadsheet 再読みを避ける */
 function kanjiQuizSheetParsedCacheKey_(modeId, unitName) {
   const digest = Utilities.computeDigest(
@@ -4613,10 +4685,17 @@ function handleGetKanjiQuizQuestions(req) {
     if (!group) return sendResponse({ status: "error", message: "指定セットが見つかりません。" });
     let questions;
     if (sheetKind === "jukugo") {
-      questions = buildJukugoQuizProblemList_(group, {
-        choiceCount: req.choiceCount,
-        includeNoneOption: !!req.includeNoneOption
-      });
+      const fmt = String(req.formatMode || "");
+      if (fmt === "jukugo_type_yomi") {
+        // 熟語読みタイプ（タイピング入力）
+        questions = buildJukugoSentenceToRubyProblemList_(group);
+      } else {
+        // デフォルト：熟語読み方選択
+        questions = buildJukugoQuizProblemList_(group, {
+          choiceCount: req.choiceCount,
+          includeNoneOption: !!req.includeNoneOption
+        });
+      }
     } else if (String(req.formatMode || "") === "stroke_order") {
       questions = buildStrokeOrderQuizProblemList_(group);
     } else {

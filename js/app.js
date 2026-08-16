@@ -1,5 +1,5 @@
 // ▼ GASのURLを貼り付けてください（※前回と同じURLならそのままで大丈夫） ▼
-    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzACbx06JMP8NhL1wdOr-lChwuSLKHd1pxVhI3gnO9_dAFMZLQ941ffX6zd3hXJphJoMg/exec";
+    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbwzthKF9ZpIXPzaIY6rSXyoSN9XVrPml05KP-f-rTfYnxRqsBBzMpBxYe6NEoNcxdTA_A/exec";
     const LS_PENDING_FINISH_SAVE = "app_pending_finish_quiz_save_v1";
     const LS_FLUSHED_SUBMIT_IDS = "app_flushed_submit_ids_v1";
     const PENDING_FINISH_FLUSH_MAX_ATTEMPTS = 5;
@@ -4293,13 +4293,14 @@
         q === "読み仮名タイプ" ||
         q === "書いて問題に回答" ||
         q === "書き順チェック" ||
-        q === "熟語読み方選択"
+        q === "熟語読み方選択" ||
+        q === "熟語読みタイプ"
       );
     }
 
     function isKanjiJukugoTrainingQFormat_(qFormat) {
       const q = String(qFormat || "").trim();
-      return /漢字熟語/.test(q) || q === "熟語読み方選択";
+      return /漢字熟語/.test(q) || q === "熟語読み方選択" || q === "熟語読みタイプ";
     }
 
     function findTrainingMaterialForUnit(unitName, materials, qFormat) {
@@ -4336,7 +4337,10 @@
     function getLearnerFormatOptions(modeName, category) {
       if (category === "kanji" || /漢字/.test(String(modeName || ""))) {
         if (isKanjiJukugoTrainingModeName(modeName)) {
-          return [{ value: "jukugo_yomi", label: "熟語読み方選択", qFormat: "熟語読み方選択" }];
+          return [
+            { value: "jukugo_yomi", label: "熟語読み方選択", qFormat: "熟語読み方選択" },
+            { value: "jukugo_type_yomi", label: "読み仮名タイプ", qFormat: "熟語読みタイプ" }
+          ];
         }
         return [
           { value: "select_kana", label: "送り仮名選択", qFormat: "送り仮名選択" },
@@ -4380,7 +4384,8 @@
         format === "type_yomi" ||
         format === "write_kanji" ||
         format === "stroke_order" ||
-        format === "jukugo_yomi"
+        format === "jukugo_yomi" ||
+        format === "jukugo_type_yomi"
       ) {
         add("quiz", "クイズ", "クイズ");
         return opts;
@@ -7737,14 +7742,18 @@
       // 単漢字ブック向け形式（熟語読み以外）
       const standardFormats = ['select_kana', 'type_yomi', 'write_kanji', 'stroke_order'];
       if (kanjiQuizCurrentSheetKind_ === 'jukugo') {
-        // 熟語ブック → 熟語読みのみ
+        // 熟語ブック → 熟語読みモードのみ
+        const jukugoFormats = ['jukugo_yomi', 'jukugo_type_yomi'];
         Array.from(sel.options).forEach(function (opt) {
-          const on = opt.value === 'jukugo_yomi';
+          const on = jukugoFormats.indexOf(opt.value) >= 0;
           opt.disabled = !on;
           opt.hidden = !on;
         });
-        sel.value = 'jukugo_yomi';
-        try { localStorage.setItem(LS_KANJI_QUIZ_FORMAT, 'jukugo_yomi'); } catch (e) {}
+        // 現在選択値が熟語系でなければ jukugo_yomi に戻す
+        if (jukugoFormats.indexOf(sel.value) < 0) {
+          sel.value = 'jukugo_yomi';
+          try { localStorage.setItem(LS_KANJI_QUIZ_FORMAT, 'jukugo_yomi'); } catch (e) {}
+        }
       } else {
         // 通常の単漢字ブック → 熟語読み以外をすべて用意
         Array.from(sel.options).forEach(function (opt) {
@@ -7782,7 +7791,7 @@
           try { localStorage.setItem(LS_KANJI_QUIZ_FORMAT, 'write_kanji'); } catch (e1) {}
           return 'write_kanji';
         }
-        if (v && ['write_kanji', 'select_kana', 'type_yomi', 'stroke_order', 'jukugo_yomi'].indexOf(v) >= 0) return v;
+        if (v && ['write_kanji', 'select_kana', 'type_yomi', 'stroke_order', 'jukugo_yomi', 'jukugo_type_yomi'].indexOf(v) >= 0) return v;
       } catch (e) {}
       return 'write_kanji';
     }
@@ -7815,7 +7824,8 @@
         select_kana: 'okurigana_shift',
         type_yomi: 'sentence_to_ruby',
         stroke_order: 'stroke_order_trace',
-        jukugo_yomi: 'jukugo_yomi'
+        jukugo_yomi: 'jukugo_yomi',
+        jukugo_type_yomi: 'jukugo_sentence_to_ruby'
       };
       var t = typeMap[m];
       if (!t) return arr.filter(function (q) { return q.type === 'ruby_to_kanji'; });
@@ -8151,7 +8161,7 @@
       if (!Array.isArray(sets) || !sets.length) return;
       cancelKanjiQuizQuestionsPrefetch_();
       const o = opts || {};
-      const isJukugo = o.sheetKind === "jukugo" || getKanjiQuizFormatMode() === "jukugo_yomi";
+      const isJukugo = o.sheetKind === "jukugo" || getKanjiQuizFormatMode() === "jukugo_yomi" || getKanjiQuizFormatMode() === "jukugo_type_yomi";
       const maxPrefetch = typeof o.maxPrefetch === "number"
         ? o.maxPrefetch
         : (isJukugo ? 2 : sets.length);
@@ -11687,6 +11697,19 @@
     }
     function kanjiYomiFormatSentenceBlockHtml(q) {
       if (!q) return "";
+      // 熟語読みタイプは熟語ワード全体を赤字ハイライトする
+      if (q.type === "jukugo_sentence_to_ruby") {
+        const word = String(q.jukugoWord || "");
+        const ex = String(q.fullExample || "");
+        if (!word || !ex) return ex ? '<div class="kanji-yomi-sentence-block">' + escapeHtml(ex) + "</div>" : "";
+        const widx = ex.indexOf(word);
+        if (widx < 0) return '<div class="kanji-yomi-sentence-block">' + escapeHtml(ex) + "</div>";
+        return '<div class="kanji-yomi-sentence-block">' +
+          escapeHtml(ex.slice(0, widx)) +
+          '<span class="kanji-yomi-target-char">' + escapeHtml(word) + "</span>" +
+          escapeHtml(ex.slice(widx + word.length)) +
+          "</div>";
+      }
       let s = String(q.fullExample || "");
       const k = String(q.kanji || "");
       if (!s && k) {
@@ -11992,6 +12015,10 @@
       const n = q && q.choiceCount ? Number(q.choiceCount) : 4;
       return roundKanjiPtOneDecimal_(base + n * perChoice + bonus);
     }
+    /** 熟語読みタイプ：管理ブック設定「漢字熟語読みタイプ_基礎点」（デフォルト 15）を取得 */
+    function computeJukugoSentenceToRubyEarnedOverride_() {
+      return roundKanjiPtOneDecimal_(getKanjiQuizSettingNumber_("漢字熟語読みタイプ_基礎点", 15));
+    }
     function renderJukugoExampleHtml_(example, jukugoWord) {
       const text = String(example || "");
       const word = String(jukugoWord || "");
@@ -12251,7 +12278,8 @@
         const isChoiceQ = q.type === "jukugo_yomi" || q.type === "okurigana_shift" || q.type === "stroke_count";
         secPlay.classList.toggle("kanji-quiz-jukugo-active", q.type === "jukugo_yomi");
         secPlay.classList.toggle("kanji-quiz-choices-active", isChoiceQ);
-        secPlay.classList.toggle("kanji-quiz-typing-active", q.type === "sentence_to_ruby");
+        secPlay.classList.toggle("kanji-quiz-typing-active",
+          q.type === "sentence_to_ruby" || q.type === "jukugo_sentence_to_ruby");
       }
       const subBtnReset = document.getElementById("kanji-play-submit-btn");
       if (subBtnReset) {
@@ -12308,7 +12336,7 @@
         } else if (q.type === "ruby_to_kanji" || q.type === "stroke_order_trace") {
           charEl.innerText = "";
           charEl.style.display = "none";
-        } else if (q.type === "jukugo_yomi") {
+        } else if (q.type === "jukugo_yomi" || q.type === "jukugo_sentence_to_ruby") {
           charEl.innerText = "";
           charEl.style.display = "none";
         } else if (q.type === "sentence_to_ruby") {
@@ -12326,8 +12354,8 @@
           setKanjiHwCardPromptText_(q.prompt || "読みと例文の空欄の漢字を書いて、60点以上をめざそう。");
         } else if (q.type === "okurigana_shift") promptEl.innerText = "正しい送り仮名を選びましょう。";
         else if (q.type === "jukugo_yomi") promptEl.innerText = q.prompt || "例文の下線の熟語の読み方を選びましょう。";
-        else if (q.type === "sentence_to_ruby") {
-          promptEl.innerText = q.prompt || "赤字のかんじの よみを 入力しましょう。";
+        else if (q.type === "sentence_to_ruby" || q.type === "jukugo_sentence_to_ruby") {
+          promptEl.innerText = q.prompt || "赤字のよみを 入力しましょう。";
         } else promptEl.innerText = q.prompt || "";
       }
       const detail = document.getElementById('kanji-play-detail');
@@ -12538,7 +12566,7 @@
         } else if (q.type === "stroke_count") {
           detail.innerHTML =
             '<div style="color:#333;font-size:clamp(15px,3.2vw,20px);line-height:1.5;">教材の字体に基づく<strong>画数</strong>です。教育字体とちがう場合があります。</div>';
-        } else if (q.type === "sentence_to_ruby") {
+        } else if (q.type === "sentence_to_ruby" || q.type === "jukugo_sentence_to_ruby") {
           detail.innerHTML = "";
         } else {
           detail.innerHTML = q.sentence
@@ -12658,7 +12686,7 @@
         }
       }
       if (typingWrap) {
-        if (q.type === "sentence_to_ruby") {
+        if (q.type === "sentence_to_ruby" || q.type === "jukugo_sentence_to_ruby") {
           typingWrap.style.display = "flex";
           typingWrap.removeAttribute("aria-hidden");
           kanjiYomiMountTypingRailLayout_();
@@ -12703,7 +12731,7 @@
       }
       if (subBtn) {
         // よみタイピングは出題列内の「こたえを決定」を CSS で表示
-        if (q.type === "sentence_to_ruby") {
+        if (q.type === "sentence_to_ruby" || q.type === "jukugo_sentence_to_ruby") {
           subBtn.style.display = "";
         } else {
           subBtn.style.display = "none";
@@ -13423,6 +13451,8 @@
       if (earnedOverrideVal != null && !isNaN(Number(earnedOverrideVal))) {
         return roundKanjiPtOneDecimal_(earnedOverrideVal);
       }
+      // 熟語読みタイプ：管理ブック設定のデフォルト値で詳細表示
+      if (qType === "jukugo_sentence_to_ruby") return getKanjiQuizSettingNumber_("漢字熟語読みタイプ_基礎点", 15);
       const s = Number(scoreForServer) || 0;
       if (s >= 90) return 10;
       if (s >= 80) return 5;
@@ -13538,7 +13568,7 @@
           return;
         }
         isCorrect = isJukugoYomiQuizCorrect_(q, userRaw);
-      } else if (q.type === "sentence_to_ruby") {
+      } else if (q.type === "sentence_to_ruby" || q.type === "jukugo_sentence_to_ruby") {
         userRaw =
           kanjiQuizSession && kanjiQuizSession.sentenceYomiRecognized != null
             ? String(kanjiQuizSession.sentenceYomiRecognized || "")
@@ -13566,7 +13596,7 @@
       if (
         !isCorrect &&
         kanjiQuizSession &&
-        (q.type === "sentence_to_ruby" || q.type === "okurigana_shift" || q.type === "jukugo_yomi")
+        (q.type === "sentence_to_ruby" || q.type === "okurigana_shift" || q.type === "jukugo_yomi" || q.type === "jukugo_sentence_to_ruby")
       ) {
         queueKanjiReadingWeakSignal();
       }
@@ -13593,6 +13623,8 @@
           scoreForServer = 100;
           if (q.type === "jukugo_yomi") {
             earnedOverrideVal = computeJukugoYomiEarnedOverride_(q);
+          } else if (q.type === "jukugo_sentence_to_ruby") {
+            earnedOverrideVal = computeJukugoSentenceToRubyEarnedOverride_();
           }
         }
       }

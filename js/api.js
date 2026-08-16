@@ -3,7 +3,7 @@
  * gasApiFetchJson は app.js 内の実装をラップする。
  */
 (function (global) {
-  const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbzACbx06JMP8NhL1wdOr-lChwuSLKHd1pxVhI3gnO9_dAFMZLQ941ffX6zd3hXJphJoMg/exec';
+  const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbwzthKF9ZpIXPzaIY6rSXyoSN9XVrPml05KP-f-rTfYnxRqsBBzMpBxYe6NEoNcxdTA_A/exec';
 
   function postAction(action, payload, opts) {
     const body = Object.assign({ action: action }, payload || {});
