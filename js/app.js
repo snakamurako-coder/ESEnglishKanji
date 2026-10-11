@@ -221,7 +221,7 @@
       });
       return window.__pendingFinishFlushPromise;
     }
-    function gasApiFetchJson(bodyObj, opts) {
+    function gasApiFetchJsonRaw_(bodyObj, opts) {
       const o = opts || {};
       const parseRetries = typeof o.parseRetries === "number" ? o.parseRetries : 2;
       const delays = Array.isArray(o.retryDelaysMs) ? o.retryDelaysMs : [600, 1400, 2800];
@@ -244,6 +244,28 @@
         });
       }
       return attemptParse(parseRetries, 0);
+    }
+
+    function gasApiFetchJson(bodyObj, opts) {
+      const action = bodyObj && bodyObj.action;
+      if (window.ESManifestCache) {
+        if (action === "get_materials_list") {
+          return window.ESManifestCache.getMaterialsList(function () {
+            return gasApiFetchJsonRaw_(bodyObj, opts);
+          });
+        }
+        if (action === "get_kanji_quiz_sets" && bodyObj.modeId && bodyObj.unitName) {
+          return window.ESManifestCache.getKanjiQuizSets(bodyObj.modeId, bodyObj.unitName, function () {
+            return gasApiFetchJsonRaw_(bodyObj, opts);
+          });
+        }
+        if (action === "get_kanji_quiz_questions" && bodyObj.modeId && bodyObj.unitName && bodyObj.setId) {
+          return window.ESManifestCache.getKanjiQuizQuestions(bodyObj.modeId, bodyObj.unitName, bodyObj.setId, function () {
+            return gasApiFetchJsonRaw_(bodyObj, opts);
+          });
+        }
+      }
+      return gasApiFetchJsonRaw_(bodyObj, opts);
     }
 
     let selectedUserId = null; let currentPin = ""; let isPinResetMode = false;
@@ -2923,11 +2945,18 @@
           }
         }
       } catch (_) {}
-      return fetch(GAS_API_URL, {
-        method: "POST",
-        body: JSON.stringify({ action: "get_questions", modeId: modeId, unitName: unitName })
-      })
-        .then(function (r) { return r.json(); })
+      function fetchEnglishQuestionsViaGas_() {
+        return fetch(GAS_API_URL, {
+          method: "POST",
+          body: JSON.stringify({ action: "get_questions", modeId: modeId, unitName: unitName })
+        }).then(function (r) { return r.json(); });
+      }
+
+      const qPromise = (window.ESManifestCache && typeof window.ESManifestCache.getEnglishQuestions === "function")
+        ? window.ESManifestCache.getEnglishQuestions(modeId, unitName, fetchEnglishQuestionsViaGas_)
+        : fetchEnglishQuestionsViaGas_();
+
+      return qPromise
         .then(function (d) {
           if (d && d.status === "success" && Array.isArray(d.questions)) {
             try { localStorage.setItem(cacheKey, JSON.stringify(d)); } catch (_) {}

@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "exportedAt": "2026-10-11T13:58:40.679Z",
+  "materials": {
+    "hash": "c0ae482762686779",
+    "path": "data/manifest-materials.c0ae482762686779.json",
+    "count": 4
+  },
+  "books": {
+    "1Dhd9bV4SDc-SWNHqyykZqPsmRsSFtGnDHpic2uQwW14": {
+      "modeName": "単語練習モード",
+      "category": "english",
+      "hash": "a03b633922cf8714",
+      "path": "data/books/1Dhd9bV4SDc-SWNHqyykZqPsmRsSFtGnDHpic2uQwW14.a03b633922cf8714.json",
+      "units": [
+        "数字1_50",
+        "数字2_60",
+        "色_50",
+        "自己紹介用１",
+        "自己紹介用２"
+      ]
+    },
+    "1FEwmkmGQYKttN-Uovji8YbNXaT7rzWE0aH6Cyi7osaA": {
+      "modeName": "表現練習モード",
+      "category": "english",
+      "hash": "71ab8b59faa0342f",
+      "path": "data/books/1FEwmkmGQYKttN-Uovji8YbNXaT7rzWE0aH6Cyi7osaA.71ab8b59faa0342f.json",
+      "units": [
+        "あかり自己紹介",
+        "ひかり自己紹介",
+        "ひかりを紹介",
+        "あかりを紹介",
+        "しょうごを紹介"
+      ]
+    },
+    "1Z65C7El41TMZct5kdXEstfPR2P4I1_Y4VE96O_SGFRE": {
+      "modeName": "漢字熟語",
+      "category": "kanji",
+      "hash": "d70dfea663296946",
+      "path": "data/books/1Z65C7El41TMZct5kdXEstfPR2P4I1_Y4VE96O_SGFRE.d70dfea663296946.json",
+      "units": [
+        "小１",
+        "小2",
+        "小3"
+      ]
+    },
+    "1LptLNv9bfm97byuWoPW8f9d1Ui7VCaX_CV-MFf3u4-4": {
+      "modeName": "漢字学習",
+      "category": "kanji",
+      "hash": "aad61d5627bda3c5",
+      "path": "data/books/1LptLNv9bfm97byuWoPW8f9d1Ui7VCaX_CV-MFf3u4-4.aad61d5627bda3c5.json",
+      "units": [
+        "小１",
+        "小２",
+        "小３",
+        "小２復習テスト"
+      ]
+    }
+  }
+}
