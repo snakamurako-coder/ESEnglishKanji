@@ -9225,27 +9225,31 @@
         String(kanjiChar || (q && q.kanji) || "") +
         "_" +
         nowMs;
+      const wrongPracticePayload = {
+        action: "save_learning_session",
+        userId: user.id,
+        unitId: unitId,
+        unitSheetName: kanjiQuizSession.unitName,
+        isReviewMode: false,
+        isRandom: true,
+        results: [],
+        learningCategory: "kanji",
+        challengeType: "score",
+        kanjiChar: String(kanjiChar || (q && q.kanji) || ""),
+        score: authScore,
+        earnedOverride: earned,
+        questionId: unitId,
+        questionCorrect: authScore >= KANJI_QUIZ_HAND_PASS,
+        kanjiSetScopeId: kanjiSetScopeId,
+        kanjiSetContinuation: true,
+        kanjiQuestionType: "wrong_panel_practice"
+      };
+      if (typeof window !== "undefined" && window.sessionStore && typeof window.sessionStore.saveLearningSession === "function") {
+        window.sessionStore.saveLearningSession(wrongPracticePayload);
+      }
       fetch(GAS_API_URL, {
         method: "POST",
-        body: JSON.stringify({
-          action: "save_learning_session",
-          userId: user.id,
-          unitId: unitId,
-          unitSheetName: kanjiQuizSession.unitName,
-          isReviewMode: false,
-          isRandom: true,
-          results: [],
-          learningCategory: "kanji",
-          challengeType: "score",
-          kanjiChar: String(kanjiChar || (q && q.kanji) || ""),
-          score: authScore,
-          earnedOverride: earned,
-          questionId: unitId,
-          questionCorrect: authScore >= KANJI_QUIZ_HAND_PASS,
-          kanjiSetScopeId: kanjiSetScopeId,
-          kanjiSetContinuation: true,
-          kanjiQuestionType: "wrong_panel_practice"
-        })
+        body: JSON.stringify(wrongPracticePayload)
       })
         .then(function (r) { return r.json(); })
         .then(function (d) {
@@ -9699,26 +9703,30 @@
         var sid = (sEl && sEl.value) || "PRACTICE";
         var unitScope = "KP_" + mid + "_" + unm + "_" + sid;
 
+        const rubyPracticePayload = {
+          action: "save_learning_session",
+          userId: kidUser.id,
+          unitId: unitScope + "_" + kanjiChar + "_" + nowMs,
+          unitSheetName: unm,
+          isReviewMode: false,
+          isRandom: true,
+          results: [],
+          learningCategory: "kanji",
+          challengeType: "score",
+          kanjiChar: kanjiChar,
+          score: score,
+          questionId: unitScope + "_" + kanjiChar,
+          questionCorrect: score >= KANJI_QUIZ_HAND_PASS,
+          kanjiSetScopeId: unitScope,
+          kanjiSetContinuation: true,
+          kanjiQuestionType: "ruby_to_kanji"
+        };
+        if (typeof window !== "undefined" && window.sessionStore && typeof window.sessionStore.saveLearningSession === "function") {
+          window.sessionStore.saveLearningSession(rubyPracticePayload);
+        }
         fetch(GAS_API_URL, {
           method: "POST",
-          body: JSON.stringify({
-            action: "save_learning_session",
-            userId: kidUser.id,
-            unitId: unitScope + "_" + kanjiChar + "_" + nowMs,
-            unitSheetName: unm,
-            isReviewMode: false,
-            isRandom: true,
-            results: [],
-            learningCategory: "kanji",
-            challengeType: "score",
-            kanjiChar: kanjiChar,
-            score: score,
-            questionId: unitScope + "_" + kanjiChar,
-            questionCorrect: score >= KANJI_QUIZ_HAND_PASS,
-            kanjiSetScopeId: unitScope,
-            kanjiSetContinuation: true,
-            kanjiQuestionType: "ruby_to_kanji"
-          })
+          body: JSON.stringify(rubyPracticePayload)
         })
           .then(function (r) {
             return r.json();
@@ -12126,6 +12134,9 @@
       if (meta.isTrainingMode) {
         payload.trainingStepIndex = meta.trainingStepIndex;
         payload.trainingMenuId = meta.trainingMenuId;
+      }
+      if (typeof window !== "undefined" && window.sessionStore && typeof window.sessionStore.saveLearningSession === "function") {
+        window.sessionStore.saveLearningSession(payload);
       }
       function postBatch(retryCount) {
         return fetch(GAS_API_URL, { method: "POST", body: JSON.stringify(payload) })
@@ -14708,6 +14719,9 @@
       if (isTrainingMode) {
         payload.trainingStepIndex = currentTrainingStepIndex;
         payload.trainingMenuId = currentTrainingMenuId;
+      }
+      if (typeof window !== "undefined" && window.sessionStore && typeof window.sessionStore.saveLearningSession === "function") {
+        window.sessionStore.saveLearningSession(payload);
       }
 
       let submitInFlight = false;
