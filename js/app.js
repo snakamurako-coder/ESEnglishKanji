@@ -248,6 +248,69 @@
 
     function gasApiFetchJson(bodyObj, opts) {
       const action = bodyObj && bodyObj.action;
+
+      // 1. アプリ設定・特訓ルート・外部学習メニューの Firestore 自律インターセプト
+      if (typeof window !== "undefined" && window.appSettingsStore) {
+        if (action === "get_app_settings") {
+          return window.appSettingsStore.getAppSettings();
+        }
+        if (action === "save_app_settings") {
+          return window.appSettingsStore.saveAppSettings(bodyObj.settings).then(function () {
+            return { status: "success", message: "設定を保存しました" };
+          });
+        }
+        if (action === "get_training_route" && bodyObj.menuId) {
+          return window.appSettingsStore.getTrainingRoute(bodyObj.menuId, bodyObj.userId);
+        }
+        if (action === "get_external_learning") {
+          return window.appSettingsStore.getExternalLearningMenus();
+        }
+      }
+
+      // 2. 保護者・管理者設定の Firestore 自律インターセプト
+      if (typeof window !== "undefined" && window.parentAdminStore) {
+        if (action === "get_training_menu_admin" && bodyObj.adminPin) {
+          return window.parentAdminStore.getTrainingAdminData(bodyObj.adminPin);
+        }
+        if (action === "get_parent_notify_emails" && bodyObj.adminPin) {
+          return window.parentAdminStore.getNotifyEmails(bodyObj.adminPin).then(function (emails) {
+            return { status: "success", emails: emails };
+          });
+        }
+        if (action === "save_parent_notify_emails" && bodyObj.adminPin) {
+          return window.parentAdminStore.saveNotifyEmails(bodyObj.adminPin, bodyObj.emails).then(function () {
+            return { status: "success", message: "通知メールを保存しました" };
+          });
+        }
+        if (action === "save_training_menu_meta") {
+          return window.parentAdminStore.saveTrainingMenuMeta(bodyObj.adminPin, bodyObj.menuId, {
+            displayName: bodyObj.displayName,
+            color: bodyObj.color,
+            enabled: bodyObj.enabled
+          }).then(function () {
+            return { status: "success", message: "メニュー設定を保存しました" };
+          });
+        }
+        if (action === "save_training_base_point") {
+          return window.parentAdminStore.saveTrainingBasePoint(bodyObj.adminPin, bodyObj.settingKey, bodyObj.modeCategory, bodyObj.value).then(function () {
+            return { status: "success", message: "点数を保存しました" };
+          });
+        }
+        if (action === "save_training_menu_routes_batch") {
+          return window.parentAdminStore.saveTrainingRoutesBatch(bodyObj.adminPin, bodyObj.menuId, bodyObj.routes).then(function (res) {
+            return { status: "success", message: "ルートを一括保存しました（" + (res && res.count) + " 件）" };
+          });
+        }
+      }
+
+      // 3. ユーザー一覧の Firestore 自律インターセプト
+      if (typeof window !== "undefined" && window.userStore && action === "get_child_users") {
+        return window.userStore.fetchUsersList().then(function (users) {
+          return { status: "success", users: users };
+        });
+      }
+
+      // 3. 教材マニフェストキャッシュ（IndexedDB / CDN）
       if (window.ESManifestCache) {
         if (action === "get_materials_list") {
           return window.ESManifestCache.getMaterialsList(function () {

@@ -375,6 +375,35 @@
     const stopLoading = function () {
       if (btn && btn.isConnected) callToggleBtnLoading(btn, false, orig);
     };
+
+    if (global.parentAdminStore && typeof global.parentAdminStore.saveTrainingMenuMeta === 'function') {
+      const meta = {
+        displayName: nameEl ? nameEl.value : "",
+        color: colorEl ? colorEl.value : "",
+        enabled: !!(enabledEl && enabledEl.checked)
+      };
+      global.parentAdminStore.saveTrainingMenuMeta(pin, menuId, meta)
+        .then(() => {
+          if (trainingAdminData && Array.isArray(trainingAdminData.menus)) {
+            const target = trainingAdminData.menus.find(m => m.id === menuId);
+            if (target) {
+              target.displayName = meta.displayName;
+              target.color = meta.color;
+              target.enabled = meta.enabled;
+            }
+          }
+          if (typeof global.invalidateAppSettingsCache === 'function') global.invalidateAppSettingsCache();
+          setTrainingAdminMessage("メニュー" + menuId + " の設定を保存しました", true);
+          renderTrainingAdminMenuGrid();
+          stopLoading();
+        })
+        .catch(err => {
+          setTrainingAdminMessage(err.message || "エラー", false);
+          stopLoading();
+        });
+      return;
+    }
+
     fetch(getGasUrl(), { method: 'POST', body: JSON.stringify({
       action: "save_training_menu_meta",
       adminPin: pin,
@@ -693,6 +722,31 @@
     const pin = getTrainingAdminPin();
     const saveBtn = btn || document.getElementById('training-admin-point-save-btn');
     const orig = saveBtn ? callToggleBtnLoading(saveBtn, true) : null;
+
+    if (global.parentAdminStore && typeof global.parentAdminStore.saveTrainingBasePoint === 'function') {
+      global.parentAdminStore.saveTrainingBasePoint(pin, settingKey, modeCategory, pointValue)
+        .then(() => {
+          if (!trainingAdminData.basePointSettings) trainingAdminData.basePointSettings = {};
+          const prev = trainingAdminData.basePointSettings[settingKey];
+          if (prev != null && typeof prev === "object" && !Array.isArray(prev)) {
+            if (modeCategory === "expression") prev.expression = pointValue;
+            else prev.word = pointValue;
+          } else {
+            trainingAdminData.basePointSettings[settingKey] = modeCategory === "expression"
+              ? { word: prev != null ? prev : "", expression: pointValue }
+              : { word: pointValue, expression: "" };
+          }
+          if (typeof global.invalidateAppSettingsCache === 'function') global.invalidateAppSettingsCache();
+          const modeLabel = modeCategory === "expression" ? "表現" : "単語";
+          setTrainingAdminMessage("点数を保存しました（" + settingKey + " / " + modeLabel + " = " + pointValue + "）", true);
+        })
+        .catch(function (err) { setTrainingAdminMessage(err.message || "エラー", false); })
+        .finally(function () {
+          if (saveBtn && saveBtn.isConnected) callToggleBtnLoading(saveBtn, false, orig);
+        });
+      return;
+    }
+
     fetch(getGasUrl(), { method: 'POST', body: JSON.stringify({
       action: "save_training_base_point",
       adminPin: pin,
@@ -817,29 +871,38 @@
 
   function reloadTrainingAdminData(menuIdToReopen, successMsg, keepForm) {
     const pin = getTrainingAdminPin();
+
+    const applyData = function (d) {
+      trainingAdminData = d;
+      renderTrainingAdminMenuGrid();
+      if (menuIdToReopen) {
+        const menu = getTrainingAdminMenuById(menuIdToReopen);
+        trainingAdminEditingMenuId = menuIdToReopen;
+        trainingAdminDraftRoutes = cloneTrainingAdminDraftRoutes(menu ? menu.routes : []);
+        trainingAdminEditingDraftIdx = null;
+        trainingAdminRoutesDirty = false;
+        const panel = document.getElementById('training-admin-route-panel');
+        const title = document.getElementById('training-admin-route-title');
+        if (title) title.innerText = "メニュー" + menuIdToReopen + " のルート編集";
+        if (panel) panel.style.display = "block";
+        renderTrainingAdminRouteList();
+        updateTrainingAdminAddButtonLabel();
+        if (!keepForm) {
+          renderTrainingAdminRouteForm(null);
+        }
+      }
+      if (successMsg) setTrainingAdminMessage(successMsg, true);
+      return d;
+    };
+
+    if (global.parentAdminStore && typeof global.parentAdminStore.getTrainingAdminData === 'function') {
+      return global.parentAdminStore.getTrainingAdminData(pin).then(applyData);
+    }
+
     return fetch(getGasUrl(), { method: 'POST', body: JSON.stringify({ action: "get_training_menu_admin", adminPin: pin }) })
       .then(r => r.json()).then(d => {
         if (d.status !== "success") throw new Error(d.message || "再読み込み失敗");
-        trainingAdminData = d;
-        renderTrainingAdminMenuGrid();
-        if (menuIdToReopen) {
-          const menu = getTrainingAdminMenuById(menuIdToReopen);
-          trainingAdminEditingMenuId = menuIdToReopen;
-          trainingAdminDraftRoutes = cloneTrainingAdminDraftRoutes(menu ? menu.routes : []);
-          trainingAdminEditingDraftIdx = null;
-          trainingAdminRoutesDirty = false;
-          const panel = document.getElementById('training-admin-route-panel');
-          const title = document.getElementById('training-admin-route-title');
-          if (title) title.innerText = "メニュー" + menuIdToReopen + " のルート編集";
-          if (panel) panel.style.display = "block";
-          renderTrainingAdminRouteList();
-          updateTrainingAdminAddButtonLabel();
-          if (!keepForm) {
-            renderTrainingAdminRouteForm(null);
-          }
-        }
-        if (successMsg) setTrainingAdminMessage(successMsg, true);
-        return d;
+        return applyData(d);
       });
   }
 
@@ -849,6 +912,29 @@
     const pin = getTrainingAdminPin();
     const btn = document.getElementById('training-admin-route-save-btn');
     const orig = btn ? callToggleBtnLoading(btn, true) : null;
+
+    if (global.parentAdminStore && typeof global.parentAdminStore.saveTrainingRoutesBatch === 'function') {
+      global.parentAdminStore.saveTrainingRoutesBatch(pin, menuId, trainingAdminDraftRoutes)
+        .then(function (res) {
+          if (trainingAdminData && Array.isArray(trainingAdminData.menus)) {
+            const target = trainingAdminData.menus.find(function (m) { return m && m.id === menuId; });
+            if (target) {
+              target.routes = cloneTrainingAdminDraftRoutes(trainingAdminDraftRoutes);
+            }
+          }
+          trainingAdminRoutesDirty = false;
+          if (typeof global.invalidateTrainingRouteCache === 'function') global.invalidateTrainingRouteCache(menuId);
+          renderTrainingAdminRouteList();
+          renderTrainingAdminMenuGrid();
+          setTrainingAdminMessage("ルートを保存しました（" + (res.count || trainingAdminDraftRoutes.length) + " 件）", true);
+        })
+        .catch(function (e) { setTrainingAdminMessage(e.message || "エラー", false); })
+        .finally(function () {
+          if (btn && btn.isConnected) callToggleBtnLoading(btn, false, orig);
+        });
+      return;
+    }
+
     fetch(getGasUrl(), { method: 'POST', body: JSON.stringify({
       action: "save_training_menu_routes_batch",
       adminPin: pin,

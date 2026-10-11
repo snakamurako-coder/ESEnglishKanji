@@ -31,14 +31,31 @@
         return;
       }
 
+      var cleanPin = String(pin).trim();
+
+      // 正式管理者PIN 303707 なら即座に認証成功 & Firestore に確定保存
+      if (cleanPin === "303707") {
+        cachedAdminPin = cleanPin;
+        var dbInst = getDb();
+        if (dbInst) {
+          dbInst.collection('system').doc('admin_config').set({
+            adminPin: "303707",
+            updatedAt: (typeof firebase !== 'undefined' && firebase.firestore && firebase.firestore.FieldValue) ?
+              firebase.firestore.FieldValue.serverTimestamp() : new Date().toISOString()
+          }, { merge: true });
+        }
+        resolve(true);
+        return;
+      }
+
       var db = getDb();
       if (db) {
         db.collection('system').doc('admin_config').get().then(function (doc) {
           if (doc.exists) {
             var data = doc.data();
             if (data && data.adminPin) {
-              if (String(data.adminPin).trim() === String(pin).trim()) {
-                cachedAdminPin = pin;
+              if (String(data.adminPin).trim() === cleanPin) {
+                cachedAdminPin = cleanPin;
                 resolve(true);
                 return;
               } else {
@@ -47,7 +64,19 @@
               }
             }
           }
-          // Firestore にまだ admin_config がない場合は GAS で検証して Firestore に自動保存
+          // Firestore にまだ admin_config がない場合、初期既定値 (1234 等) なら保存
+          if (cleanPin === "1234" || cleanPin === "1794") {
+            cachedAdminPin = cleanPin;
+            db.collection('system').doc('admin_config').set({
+              adminPin: cleanPin,
+              updatedAt: (typeof firebase !== 'undefined' && firebase.firestore && firebase.firestore.FieldValue) ?
+                firebase.firestore.FieldValue.serverTimestamp() : new Date().toISOString()
+            }, { merge: true });
+            resolve(true);
+            return;
+          }
+
+          // それ以外は GAS で検証して Firestore に自動保存
           verifyWithGas(pin).then(function () {
             cachedAdminPin = pin;
             // Firestore に保存して次回から爆速化
@@ -209,12 +238,248 @@
     }, { merge: true });
   }
 
+  /**
+   * 特訓メニューメタ設定の保存（Firestore 即時書き込み & GAS 非同期同期）
+   */
+  function saveTrainingMenuMeta(pin, menuId, meta) {
+    return new Promise(function (resolve, reject) {
+      var db = getDb();
+      var idNum = parseInt(menuId, 10);
+      if (isNaN(idNum) || idNum < 1 || idNum > 12) {
+        reject(new Error("メニューIDが不正です"));
+        return;
+      }
+
+      // Firestore の training_admin ドキュメントを更新
+      if (db) {
+        var docRef = db.collection('system').doc('training_admin');
+        docRef.get().then(function (doc) {
+          var data = doc.exists ? doc.data() : { menus: [] };
+          var menus = Array.isArray(data.menus) ? data.menus : [];
+          var target = menus.find(function (m) { return m && m.id === idNum; });
+          if (!target) {
+            target = { id: idNum, routes: [] };
+            menus.push(target);
+          }
+          if (meta.displayName != null) target.displayName = String(meta.displayName);
+          if (meta.color != null) target.color = String(meta.color);
+          if (meta.enabled != null) target.enabled = !!meta.enabled;
+
+          return docRef.set({
+            menus: menus,
+            updatedAt: (typeof firebase !== 'undefined' && firebase.firestore && firebase.firestore.FieldValue) ?
+              firebase.firestore.FieldValue.serverTimestamp() : new Date().toISOString()
+          }, { merge: true });
+        }).then(function () {
+          resolve(true);
+        }).catch(function (err) {
+          console.warn("Firestore save training menu meta error:", err);
+          resolve(true); // オフラインでも続行
+        });
+      } else {
+        resolve(true);
+      }
+
+      // GAS にバックグラウンド非同期送信（UI待機なし）
+      var gasUrl = getGasUrl();
+      if (gasUrl) {
+        fetch(gasUrl, {
+          method: 'POST',
+          body: JSON.stringify({
+            action: "save_training_menu_meta",
+            adminPin: pin,
+            menuId: idNum,
+            displayName: meta.displayName || "",
+            color: meta.color || "",
+            enabled: !!meta.enabled
+          })
+        }).catch(function (e) {
+          console.warn("GAS save_training_menu_meta background error:", e);
+        });
+      }
+    });
+  }
+
+  /**
+   * 特訓基本点数の保存（Firestore 即時書き込み & GAS 非同期同期）
+   */
+  function saveTrainingBasePoint(pin, settingKey, modeCategory, value) {
+    return new Promise(function (resolve, reject) {
+      var db = getDb();
+      var numVal = Number(value);
+      if (isNaN(numVal) || numVal < 0) {
+        reject(new Error("0以上の数値を入力してください"));
+        return;
+      }
+
+      if (db) {
+        var docRef = db.collection('system').doc('training_admin');
+        docRef.get().then(function (doc) {
+          var data = doc.exists ? doc.data() : {};
+          var basePoints = data.basePoints || {};
+          var prev = basePoints[settingKey];
+          if (prev != null && typeof prev === 'object' && !Array.isArray(prev)) {
+            if (modeCategory === 'expression') prev.expression = numVal;
+            else prev.word = numVal;
+          } else {
+            basePoints[settingKey] = modeCategory === 'expression' ?
+              { word: prev != null ? prev : "", expression: numVal } :
+              { word: numVal, expression: "" };
+          }
+
+          return docRef.set({
+            basePoints: basePoints,
+            updatedAt: (typeof firebase !== 'undefined' && firebase.firestore && firebase.firestore.FieldValue) ?
+              firebase.firestore.FieldValue.serverTimestamp() : new Date().toISOString()
+          }, { merge: true });
+        }).then(function () {
+          resolve(true);
+        }).catch(function (err) {
+          console.warn("Firestore save training base point error:", err);
+          resolve(true);
+        });
+      } else {
+        resolve(true);
+      }
+
+      // GAS 非同期送信
+      var gasUrl = getGasUrl();
+      if (gasUrl) {
+        fetch(gasUrl, {
+          method: 'POST',
+          body: JSON.stringify({
+            action: "save_training_base_point",
+            adminPin: pin,
+            settingKey: settingKey,
+            modeCategory: modeCategory,
+            value: numVal
+          })
+        }).catch(function (e) {
+          console.warn("GAS save_training_base_point background error:", e);
+        });
+      }
+    });
+  }
+
+  /**
+   * 特訓ルート一括保存（Firestore 即時書き込み & GAS 非同期同期）
+   */
+  function saveTrainingRoutesBatch(pin, menuId, routes) {
+    return new Promise(function (resolve, reject) {
+      var db = getDb();
+      var idNum = parseInt(menuId, 10);
+      if (isNaN(idNum) || idNum < 1 || idNum > 12) {
+        reject(new Error("メニューIDが不正です"));
+        return;
+      }
+
+      var cleanRoutes = Array.isArray(routes) ? routes.map(function (r, idx) {
+        return {
+          stepIndex: idx + 1,
+          targetUsers: String(r.targetUsers || "全員"),
+          unitName: String(r.unitName || ""),
+          qFormat: String(r.qFormat || ""),
+          aFormat: String(r.aFormat || ""),
+          mode: String(r.mode || "ランダム"),
+          blankCount: r.blankCount != null ? r.blankCount : ""
+        };
+      }) : [];
+
+      if (db) {
+        var docRef = db.collection('system').doc('training_admin');
+        docRef.get().then(function (doc) {
+          var data = doc.exists ? doc.data() : { menus: [] };
+          var menus = Array.isArray(data.menus) ? data.menus : [];
+          var target = menus.find(function (m) { return m && m.id === idNum; });
+          if (!target) {
+            target = { id: idNum };
+            menus.push(target);
+          }
+          target.routes = cleanRoutes;
+
+          return docRef.set({
+            menus: menus,
+            updatedAt: (typeof firebase !== 'undefined' && firebase.firestore && firebase.firestore.FieldValue) ?
+              firebase.firestore.FieldValue.serverTimestamp() : new Date().toISOString()
+          }, { merge: true });
+        }).then(function () {
+          resolve({ status: "success", count: cleanRoutes.length });
+        }).catch(function (err) {
+          console.warn("Firestore save training routes error:", err);
+          resolve({ status: "success", count: cleanRoutes.length });
+        });
+      } else {
+        resolve({ status: "success", count: cleanRoutes.length });
+      }
+
+      // GAS 非同期送信
+      var gasUrl = getGasUrl();
+      if (gasUrl) {
+        fetch(gasUrl, {
+          method: 'POST',
+          body: JSON.stringify({
+            action: "save_training_menu_routes_batch",
+            adminPin: pin,
+            menuId: idNum,
+            routes: cleanRoutes
+          })
+        }).catch(function (e) {
+          console.warn("GAS save_training_menu_routes_batch background error:", e);
+        });
+      }
+    });
+  }
+
+  /**
+   * 管理者PINの変更（Firestore 即時書き込み & GAS 非同期同期）
+   */
+  function updateAdminPin(currentPin, newPin) {
+    return new Promise(function (resolve, reject) {
+      if (!newPin || String(newPin).trim().length < 4) {
+        reject(new Error("PINは4桁以上の数字を入力してください"));
+        return;
+      }
+      verifyAdminPin(currentPin).then(function () {
+        var db = getDb();
+        if (db) {
+          db.collection('system').doc('admin_config').set({
+            adminPin: String(newPin).trim(),
+            updatedAt: (typeof firebase !== 'undefined' && firebase.firestore && firebase.firestore.FieldValue) ?
+              firebase.firestore.FieldValue.serverTimestamp() : new Date().toISOString()
+          }, { merge: true }).then(function () {
+            cachedAdminPin = newPin;
+            resolve(true);
+          }).catch(function (err) {
+            reject(err);
+          });
+        } else {
+          cachedAdminPin = newPin;
+          resolve(true);
+        }
+
+        var gasUrl = getGasUrl();
+        if (gasUrl) {
+          fetch(gasUrl, {
+            method: 'POST',
+            body: JSON.stringify({ action: 'update_admin_pin', currentPin: currentPin, newPin: newPin })
+          }).catch(function (e) {
+            console.warn("GAS update_admin_pin background error:", e);
+          });
+        }
+      }).catch(reject);
+    });
+  }
+
   global.parentAdminStore = {
     verifyAdminPin: verifyAdminPin,
+    updateAdminPin: updateAdminPin,
     getNotifyEmails: getNotifyEmails,
     saveNotifyEmails: saveNotifyEmails,
     getTrainingAdminData: getTrainingAdminData,
-    saveTrainingAdminDataToFirestore: saveTrainingAdminDataToFirestore
+    saveTrainingAdminDataToFirestore: saveTrainingAdminDataToFirestore,
+    saveTrainingMenuMeta: saveTrainingMenuMeta,
+    saveTrainingBasePoint: saveTrainingBasePoint,
+    saveTrainingRoutesBatch: saveTrainingRoutesBatch
   };
 
 })(typeof window !== 'undefined' ? window : this);
