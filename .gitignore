@@ -4,3 +4,9 @@
 _backup*/
 # 抽出スクリプトの中間成果物
 **/_app-legacy-stripped.js
+
+# Firebase local cache & logs
+.firebase/
+firebase-debug.log
+firebase-debug.*.log
+
