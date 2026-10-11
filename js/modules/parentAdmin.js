@@ -80,6 +80,20 @@
       return;
     }
     if (msg) { msg.innerText = "確認中..."; msg.style.color = "#aaa"; }
+
+    if (global.parentAdminStore && typeof global.parentAdminStore.verifyAdminPin === 'function') {
+      global.parentAdminStore.verifyAdminPin(pin)
+        .then(() => {
+          parentAdminPinSession = pin;
+          syncAdminPinInputs(pin);
+          showParentAdminHub();
+        })
+        .catch(err => {
+          if (msg) { msg.innerText = err.message || "PINが正しくありません"; msg.style.color = "#ff8a80"; }
+        });
+      return;
+    }
+
     fetch(getGasUrl(), { method: 'POST', body: JSON.stringify({ action: "get_training_menu_admin", adminPin: pin }) })
       .then(r => r.json()).then(d => {
         if (d.status !== "success") {
@@ -159,6 +173,22 @@
   function loadParentNotifyEmails() {
     const msg = document.getElementById('parent-notify-message');
     if (msg) { msg.innerText = "読み込み中..."; msg.style.color = "#aaa"; }
+
+    if (global.parentAdminStore && typeof global.parentAdminStore.getNotifyEmails === 'function') {
+      global.parentAdminStore.getNotifyEmails(parentAdminPinSession)
+        .then(emails => {
+          for (let i = 1; i <= 4; i++) {
+            const el = document.getElementById('parent-notify-email-' + i);
+            if (el) el.value = emails[i - 1] || '';
+          }
+          if (msg) msg.innerText = '';
+        })
+        .catch(err => {
+          if (msg) { msg.innerText = err.message || '読み込みに失敗しました'; msg.style.color = '#ff8a80'; }
+        });
+      return;
+    }
+
     fetch(getGasUrl(), {
       method: 'POST',
       body: JSON.stringify({ action: 'get_parent_notify_emails', adminPin: parentAdminPinSession })
@@ -185,7 +215,19 @@
       const el = document.getElementById('parent-notify-email-' + i);
       emails.push(el ? String(el.value || '').trim() : '');
     }
-    if (msg) { msg.innerText = '保存中...'; msg.style.color = '#aaa'; }
+    if (msg) { msg.innerText = '保存中...'; msg.style.color = "#aaa"; }
+
+    if (global.parentAdminStore && typeof global.parentAdminStore.saveNotifyEmails === 'function') {
+      global.parentAdminStore.saveNotifyEmails(parentAdminPinSession, emails)
+        .then(() => {
+          if (msg) { msg.innerText = '保存しました（即時反映）'; msg.style.color = '#81C784'; }
+        })
+        .catch(err => {
+          if (msg) { msg.innerText = err.message || '保存に失敗しました'; msg.style.color = '#ff8a80'; }
+        });
+      return;
+    }
+
     fetch(getGasUrl(), {
       method: 'POST',
       body: JSON.stringify({ action: 'save_parent_notify_emails', adminPin: parentAdminPinSession, emails: emails })
@@ -235,6 +277,25 @@
   function loadTrainingMenuAdmin() {
     const pin = getTrainingAdminPin();
     setTrainingAdminMessage("読み込み中...", true);
+
+    if (global.parentAdminStore && typeof global.parentAdminStore.getTrainingAdminData === 'function') {
+      global.parentAdminStore.getTrainingAdminData(pin)
+        .then(d => {
+          trainingAdminData = d;
+          const pinPanel = document.getElementById('training-admin-pin-panel');
+          const mainPanel = document.getElementById('training-admin-main');
+          if (pinPanel) pinPanel.style.display = "none";
+          if (mainPanel) mainPanel.style.display = "block";
+          switchTrainingAdminTab('menus');
+          renderTrainingAdminMenuGrid();
+          setTrainingAdminMessage("", true);
+        })
+        .catch(err => {
+          setTrainingAdminMessage(err.message || "エラー", false);
+        });
+      return;
+    }
+
     fetch(getGasUrl(), { method: 'POST', body: JSON.stringify({ action: "get_training_menu_admin", adminPin: pin }) })
       .then(r => r.json()).then(d => {
         if (d.status !== "success") {
