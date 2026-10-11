@@ -161,23 +161,37 @@
     if (!user) return;
     const box = document.getElementById('external-my-requests');
     if (!box) return;
+
+    const renderList = function (list) {
+      if (!list || list.length === 0) {
+        box.innerHTML = "<p style='color:#888;'>※まだ申請履歴はありません。</p>";
+        return;
+      }
+      const label = { "申請中": "⏳ 申請中", "pending": "⏳ 申請中", "承認済み": "✅ 承認済み", "approved": "✅ 承認済み", "却下": "❌ 却下", "rejected": "❌ 却下" };
+      let html = "<strong style='color:#fff;'>あなたの申請</strong><ul style='margin:8px 0 0;padding-left:18px;'>";
+      list.forEach(r => {
+        const st = label[r.status] || r.status;
+        const memoHtml = r.childMemo ? `<br><span style='font-size:12px;color:#ddd;'>メモ: ${r.childMemo}</span>` : "";
+        html += `<li style='margin-bottom:8px;'>${r.category} / ${r.volume}（+${r.points} Pt）<br><span style='font-size:12px;color:#aaa;'>${r.requestedAt} — ${st}</span>${memoHtml}</li>`;
+      });
+      html += "</ul>";
+      box.innerHTML = html;
+    };
+
+    if (global.externalStore && typeof global.externalStore.subscribeMyRequests === 'function') {
+      global.externalStore.subscribeMyRequests(user.id, renderList);
+      return;
+    }
+
     box.innerHTML = "<p style='color:#888;'>あなたの申請を読み込み中...</p>";
     fetch(getGasUrl(), { method: 'POST', body: JSON.stringify({ action: "get_my_external_learning_requests", userId: user.id }) })
       .then(r => r.json())
       .then(d => {
-        if (d.status !== "success" || !d.list || d.list.length === 0) {
+        if (d.status === "success" && d.list) {
+          renderList(d.list);
+        } else {
           box.innerHTML = "<p style='color:#888;'>※まだ申請履歴はありません。</p>";
-          return;
         }
-        const label = { "申請中": "⏳ 申請中", "承認済み": "✅ 承認済み", "却下": "❌ 却下" };
-        let html = "<strong style='color:#fff;'>あなたの申請</strong><ul style='margin:8px 0 0;padding-left:18px;'>";
-        d.list.forEach(r => {
-          const st = label[r.status] || r.status;
-          const memoHtml = r.childMemo ? `<br><span style='font-size:12px;color:#ddd;'>メモ: ${r.childMemo}</span>` : "";
-          html += `<li style='margin-bottom:8px;'>${r.category} / ${r.volume}（+${r.points} Pt）<br><span style='font-size:12px;color:#aaa;'>${r.requestedAt} — ${st}</span>${memoHtml}</li>`;
-        });
-        html += "</ul>";
-        box.innerHTML = html;
       })
       .catch(() => { box.innerHTML = ""; });
   }
@@ -194,6 +208,28 @@
     if (!user) return;
     const memoEl = document.getElementById('external-child-memo');
     const childMemo = memoEl ? memoEl.value : "";
+
+    const reqPayload = {
+      userId: user.id,
+      userName: user.name,
+      category: menu.category,
+      volume: menu.volume,
+      points: menu.points,
+      childMemo: childMemo
+    };
+
+    if (global.externalStore && typeof global.externalStore.submitRequest === 'function') {
+      global.externalStore.submitRequest(reqPayload)
+        .then(() => {
+          alert("申請しました！おうちの人の承認をお待ちください。");
+          refreshMyExternalRequests();
+        })
+        .catch(err => {
+          console.warn("Firestore submit error, fallback to GAS:", err);
+        });
+    }
+
+    // GAS 側（スプレッドシート履歴）にも記録
     fetch(getGasUrl(), {
       method: 'POST',
       body: JSON.stringify({
@@ -207,14 +243,12 @@
     })
       .then(r => r.json())
       .then(d => {
-        if (d.status === "success") {
+        if (d.status === "success" && (!global.externalStore || typeof global.externalStore.submitRequest !== 'function')) {
           alert(d.message);
           refreshMyExternalRequests();
-        } else {
-          alert(d.message || "申請に失敗しました");
         }
       })
-      .catch(() => alert("通信エラーが発生しました。"));
+      .catch(() => {});
   }
 
   // =========================================================================
@@ -233,6 +267,19 @@
       listEl.style.display = "flex";
       listEl.innerHTML = "<p>よみこみ中...</p>";
     }
+
+    const pinPanel = document.getElementById('external-admin-pin-panel');
+    if (pinPanel) pinPanel.style.display = "none";
+
+    // Firestore リアルタイム監視を優先
+    if (global.externalStore && typeof global.externalStore.subscribePendingRequests === 'function') {
+      global.externalStore.subscribePendingRequests(function (list) {
+        if (msg) msg.innerText = "";
+        renderExternalAdminList(list, pin);
+      });
+      return;
+    }
+
     fetch(getGasUrl(), { method: 'POST', body: JSON.stringify({ action: "get_pending_external_requests", adminPin: pin }) })
       .then(r => r.json())
       .then(d => {
@@ -241,8 +288,6 @@
           if (msg) msg.innerText = d.message || "エラー";
           return;
         }
-        const pinPanel = document.getElementById('external-admin-pin-panel');
-        if (pinPanel) pinPanel.style.display = "none";
         if (msg) msg.innerText = "";
         renderExternalAdminList(d.list || [], pin);
       })
@@ -280,6 +325,7 @@
       const card = document.createElement('div');
       card.className = "external-admin-card";
       card.dataset.rowIdx = item.rowIdx;
+      card.dataset.reqId = item.id || '';
       card.style.cssText = "background:#2a2a2a;border-radius:12px;padding:14px;border:1px solid #444;position:relative;";
       card.innerHTML = `<label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;">
           <input type="checkbox" class="external-bulk-check" style="transform:scale(1.5);margin-top:4px;" checked>
@@ -298,8 +344,8 @@
         </div>`;
       const btns = card.querySelectorAll('button');
       const memoField = card.querySelector('.external-admin-memo');
-      btns[0].onclick = () => decideExternalRequest(item.rowIdx, pin, true, memoField ? memoField.value : "");
-      btns[1].onclick = () => decideExternalRequest(item.rowIdx, pin, false, memoField ? memoField.value : "");
+      btns[0].onclick = () => decideExternalRequest(item.rowIdx, pin, true, memoField ? memoField.value : "", item.id);
+      btns[1].onclick = () => decideExternalRequest(item.rowIdx, pin, false, memoField ? memoField.value : "", item.id);
       listEl.appendChild(card);
     });
 
@@ -312,28 +358,45 @@
     listEl.appendChild(back);
   }
 
-  function decideExternalRequest(rowIdx, pin, approve, memo = "") {
+  function decideExternalRequest(rowIdx, pin, approve, memo = "", reqId = null) {
     if (!confirm(approve ? "この申請を承認してポイントを付与しますか？" : "この申請を却下しますか？")) return;
-    const action = approve ? "approve_external_request" : "reject_external_request";
-    fetch(getGasUrl(), { method: 'POST', body: JSON.stringify({ action: action, adminPin: pin, rowIdx: rowIdx, adminMemo: memo }) })
-      .then(r => r.json())
-      .then(d => {
-        if (d.status !== "success") {
-          alert(d.message || "エラー");
-          return;
-        }
-        alert(d.message);
-        let user = null;
-        try { user = JSON.parse(localStorage.getItem('app_kid_user') || "{}"); } catch (_) {}
-        if (approve && d.userId && user && user.id === d.userId && typeof d.newTotal === "number") {
-          user.points = d.newTotal;
-          saveKidUser(user);
-          const pts = document.getElementById('user-points');
-          if (pts) pts.innerText = user.points;
-        }
-        loadExternalAdminPendingAfterPin(pin);
-      })
-      .catch(() => alert("通信エラーが発生しました。"));
+
+    if (reqId && global.externalStore && typeof global.externalStore.decideRequest === 'function') {
+      global.externalStore.decideRequest(reqId, approve, memo)
+        .then(() => {
+          alert(approve ? "承認しました！ポイントが加算されました。" : "却下しました。");
+        })
+        .catch(err => {
+          console.warn("Firestore decideRequest error:", err);
+        });
+    }
+
+    if (rowIdx != null) {
+      const action = approve ? "approve_external_request" : "reject_external_request";
+      fetch(getGasUrl(), { method: 'POST', body: JSON.stringify({ action: action, adminPin: pin, rowIdx: rowIdx, adminMemo: memo }) })
+        .then(r => r.json())
+        .then(d => {
+          if (!reqId) {
+            if (d.status !== "success") {
+              alert(d.message || "エラー");
+              return;
+            }
+            alert(d.message);
+          }
+          let user = null;
+          try { user = JSON.parse(localStorage.getItem('app_kid_user') || "{}"); } catch (_) {}
+          if (approve && d.userId && user && user.id === d.userId && typeof d.newTotal === "number") {
+            user.points = d.newTotal;
+            saveKidUser(user);
+            const pts = document.getElementById('user-points');
+            if (pts) pts.innerText = user.points;
+          }
+          loadExternalAdminPendingAfterPin(pin);
+        })
+        .catch(() => {
+          if (!reqId) alert("通信エラーが発生しました。");
+        });
+    }
   }
 
   function bulkApproveExternalRequests(pin) {
