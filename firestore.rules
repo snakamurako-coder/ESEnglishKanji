@@ -2,26 +2,28 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // 認証ヘルパー関数
-    function isAuthenticated() {
-      return request.auth != null;
-    }
-    function isOwner(userId) {
-      return isAuthenticated() && request.auth.uid == userId;
-    }
-
     // 教材マスター・共通システム設定（全ユーザー読み取り可、書き込み不可）
     match /system/{document=**} {
       allow read: if true;
-      allow write: if false; // 管理者・GAS・スクリプトのみ（Admin SDK経由）
+      allow write: if false;
     }
 
-    // ユーザー個別の進捗・回答履歴（本人だけがアクセス可）
-    match /users/{userId}/{document=**} {
-      allow read, write: if isOwner(userId);
+    // ユーザー基本情報（ユーザー一覧・ポイント表示・更新）
+    match /users/{userId} {
+      allow read, write: if true;
+
+      // ユーザーのセッション履歴・進捗ログ
+      match /{subCollection}/{docId} {
+        allow read, write: if true;
+      }
     }
 
-    // その他のコレクションは原則拒否
+    // 外部学習申請（子ども申請・親承認）
+    match /externalRequests/{requestId} {
+      allow read, write: if true;
+    }
+
+    // その他のコレクションは拒否
     match /{document=**} {
       allow read, write: if false;
     }

@@ -17,6 +17,22 @@
     var box = document.getElementById('user-container');
     if (box) box.innerHTML = "<p>よみこみ中...</p>";
 
+    if (global.userStore && typeof global.userStore.fetchUsersList === 'function') {
+      global.userStore.fetchUsersList()
+        .then(function (users) {
+          if (Array.isArray(users) && users.length > 0) {
+            renderUsers(users);
+          } else {
+            if (box) box.innerHTML = "<p style='color:#ff8a80;'>ユーザーが見つかりませんでした。</p>";
+          }
+        })
+        .catch(function (err) {
+          console.error("fetchUsersList failed:", err);
+          if (box) box.innerHTML = "<p style='color:#ff8a80;'>ユーザー一覧の取得に失敗しました。<br>画面を再読み込みしてください。</p>";
+        });
+      return;
+    }
+
     var done = function (d) {
       if (d && d.status === "success" && Array.isArray(d.users)) {
         renderUsers(d.users);
@@ -242,7 +258,9 @@
     global.englishUnitHistoryCache = {};
     global.kanjiHistoryCache = {};
     try { localStorage.removeItem('app_kid_user'); } catch (_eRem) {}
-    document.body.classList.remove('kanji-study-mode');
+    if (global.userStore && typeof global.userStore.unsubscribeUserPoints === 'function') {
+      try { global.userStore.unsubscribeUserPoints(); } catch (_eUnsub) {}
+    }
     var gh = document.getElementById('global-header');
     if (gh) gh.style.display = 'none';
 

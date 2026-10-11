@@ -3063,6 +3063,13 @@
         if (globalHeader) globalHeader.style.display = 'block';
         if (welcome) welcome.innerText = user.name + " さん";
         if (pts) pts.innerText = user.points != null ? String(user.points) : "0";
+        if (window.userStore && typeof window.userStore.subscribeUserPoints === 'function') {
+          window.userStore.subscribeUserPoints(user.id, function (newPoints) {
+            if (pts) pts.innerText = String(newPoints);
+            user.points = newPoints;
+            try { saveAppKidUserToLocal(user); } catch (_eUpd) {}
+          });
+        }
         renderHomeResumePanel();
         applyKanjiHwDominantHandToBody();
         syncKanjiHwHandSwitchUI();
