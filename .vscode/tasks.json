@@ -2,6 +2,46 @@
     "version": "2.0.0",
     "tasks": [
       // =====================================================================
+      // 🔥 Firebase & 仲介アプリ (Mediator) デプロイタスク
+      // =====================================================================
+      {
+        "label": "🔥 Firebase: Deploy Hosting (即座デプロイ)",
+        "type": "shell",
+        "command": "powershell -ExecutionPolicy Bypass -File .\\scripts\\deploy-fb.ps1 -HostingOnly",
+        "group": { "kind": "build", "isDefault": true },
+        "presentation": { "reveal": "always", "panel": "shared", "clear": true },
+        "problemMatcher": []
+      },
+      {
+        "label": "📦 Firebase: スプシ抽出 ＆ デプロイ (Publish & Deploy)",
+        "type": "shell",
+        "command": "powershell -ExecutionPolicy Bypass -File .\\publish-and-deploy.ps1",
+        "presentation": { "reveal": "always", "panel": "shared", "clear": true },
+        "problemMatcher": []
+      },
+      {
+        "label": "🚀 Mediator: 仲介GASアプリをデプロイ (clasp push & deploy)",
+        "type": "shell",
+        "command": "powershell -ExecutionPolicy Bypass -File .\\deploy-mediator.ps1",
+        "presentation": { "reveal": "always", "panel": "shared", "clear": true },
+        "problemMatcher": []
+      },
+      {
+        "label": "🔄 Mediator: 仲介APIからデータ同期 ＆ Firebaseデプロイ",
+        "type": "shell",
+        "command": "powershell -ExecutionPolicy Bypass -File .\\sync-and-deploy.ps1",
+        "presentation": { "reveal": "always", "panel": "shared", "clear": true },
+        "problemMatcher": []
+      },
+      {
+        "label": "🌐 Firebase: 公開サイトを開く (Open Web App)",
+        "type": "shell",
+        "command": "powershell -Command \"start https://jikkenfirebasekankyo.web.app\"",
+        "presentation": { "reveal": "silent", "panel": "shared" },
+        "problemMatcher": []
+      },
+
+      // =====================================================================
       // 基本：最新 Pull
       // =====================================================================
       {
