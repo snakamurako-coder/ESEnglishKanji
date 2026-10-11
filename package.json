@@ -1,0 +1,12 @@
+{
+  "name": "es-english-kanji",
+  "version": "1.0.0",
+  "description": "ESEnglishKanji - Kids English & Kanji Learning App",
+  "scripts": {
+    "deploy": "powershell -ExecutionPolicy Bypass -File ./scripts/deploy-fb.ps1",
+    "deploy:hosting": "powershell -ExecutionPolicy Bypass -File ./scripts/deploy-fb.ps1 -HostingOnly",
+    "deploy:rules": "powershell -ExecutionPolicy Bypass -File ./scripts/deploy-fb.ps1 -RulesOnly",
+    "deploy:quick": "powershell -ExecutionPolicy Bypass -File ./scripts/deploy-fb.ps1 -HostingOnly -SkipBuild",
+    "preview": "firebase hosting:channel:deploy test-preview"
+  }
+}

@@ -1,0 +1,29 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 認証ヘルパー関数
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // 教材マスター・共通システム設定（全ユーザー読み取り可、書き込み不可）
+    match /system/{document=**} {
+      allow read: if true;
+      allow write: if false; // 管理者・GAS・スクリプトのみ（Admin SDK経由）
+    }
+
+    // ユーザー個別の進捗・回答履歴（本人だけがアクセス可）
+    match /users/{userId}/{document=**} {
+      allow read, write: if isOwner(userId);
+    }
+
+    // その他のコレクションは原則拒否
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

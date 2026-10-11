@@ -1,0 +1,15 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // 公開教材・マニフェストJSON・音声アセット（誰でも読み取り可、クライアント書き込み不可）
+    match /materials/{allPaths=**} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // デフォルト拒否
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
