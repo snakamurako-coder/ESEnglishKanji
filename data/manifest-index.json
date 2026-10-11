@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "exportedAt": "2026-10-11T14:40:41.978Z",
+  "exportedAt": "2026-10-11T14:56:55.383Z",
   "materials": {
     "hash": "c0ae482762686779",
     "path": "data/manifest-materials.c0ae482762686779.json",
@@ -11,7 +11,6 @@
       "modeName": "単語練習モード",
       "category": "english",
       "hash": "a03b633922cf8714",
-      "path": "data/books/1Dhd9bV4SDc-SWNHqyykZqPsmRsSFtGnDHpic2uQwW14.a03b633922cf8714.json",
       "units": [
         "数字1_50",
         "数字2_60",
@@ -24,7 +23,6 @@
       "modeName": "表現練習モード",
       "category": "english",
       "hash": "71ab8b59faa0342f",
-      "path": "data/books/1FEwmkmGQYKttN-Uovji8YbNXaT7rzWE0aH6Cyi7osaA.71ab8b59faa0342f.json",
       "units": [
         "あかり自己紹介",
         "ひかり自己紹介",
@@ -36,8 +34,7 @@
     "1Z65C7El41TMZct5kdXEstfPR2P4I1_Y4VE96O_SGFRE": {
       "modeName": "漢字熟語",
       "category": "kanji",
-      "hash": "16648f3b181a1d15",
-      "path": "data/books/1Z65C7El41TMZct5kdXEstfPR2P4I1_Y4VE96O_SGFRE.16648f3b181a1d15.json",
+      "hash": "ab312da9d756f78a",
       "units": [
         "小１",
         "小2",
@@ -47,8 +44,7 @@
     "1LptLNv9bfm97byuWoPW8f9d1Ui7VCaX_CV-MFf3u4-4": {
       "modeName": "漢字学習",
       "category": "kanji",
-      "hash": "c08a4da0ceb1adcc",
-      "path": "data/books/1LptLNv9bfm97byuWoPW8f9d1Ui7VCaX_CV-MFf3u4-4.c08a4da0ceb1adcc.json",
+      "hash": "faec658533912163",
       "units": [
         "小１",
         "小２",
