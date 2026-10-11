@@ -1,0 +1,14 @@
+  <div id="section-result" class="section">
+    <div class="kanji-result-shell">
+      <h1 class="kanji-result-page-title">けっかはっぴょう！</h1>
+      <div id="result-content" class="kanji-result-card"></div>
+      <div class="kanji-result-actions">
+        <button onclick="prepareQuiz()" id="result-retry-btn" class="submit-btn btn-orange kanji-result-action-btn" style="display:none;">🔄 もう一度やる</button>
+        <button type="button" id="result-kanji-same-book-btn" class="submit-btn btn-blue kanji-result-action-btn" style="display:none;">おなじ学年（ブック）の違うセットに取り組む</button>
+        <button type="button" id="result-kanji-other-book-btn" class="submit-btn btn-blue kanji-result-action-btn" style="display:none;">ちがう学年（ブック）のセットに取り組む</button>
+        <button onclick="openSettingsScreen()" id="result-settings-btn" class="submit-btn btn-blue kanji-result-action-btn" style="display:none;">⚙️ 同じ単元を学習する</button>
+        <button onclick="showHome(JSON.parse(localStorage.getItem('app_kid_user')))" id="result-home-btn" class="submit-btn btn-gray kanji-result-action-btn" style="display:none;">🏠 ホームにもどる</button>
+      </div>
+    </div>
+  </div>
+

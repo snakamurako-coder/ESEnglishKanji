@@ -1,0 +1,43 @@
+  <div id="section-kanji-quiz-sets" class="section">
+    <div class="kanji-study-vertical-wrap">
+    <div class="kanji-page-title-stack">
+      <h1 id="kanji-quiz-title">漢字クイズに挑戦</h1>
+      <button type="button" class="cancel-btn kanji-menu-back-btn" onclick="openKanjiLearningMenu()">もどる</button>
+    </div>
+    <div id="kanji-quiz-format-wrap" class="kanji-quiz-format-wrap">
+      <label for="kanji-quiz-format-select">もんだいのしかた</label>
+      <select id="kanji-quiz-format-select" class="large-select" onchange="onKanjiQuizFormatChange()">
+        <option value="select_kana">送り仮名選択</option>
+        <option value="type_yomi">読み仮名タイプ</option>
+        <option value="write_kanji" selected>書いて問題に回答</option>
+        <option value="stroke_order">書き順チェック</option>
+        <option value="jukugo_yomi">熟語読み方選択</option>
+<option value="jukugo_type_yomi">読み仮名タイプ</option>
+      </select>
+    </div>
+    <div id="kanji-quiz-jukugo-opts" class="kanji-quiz-jukugo-opts" style="display:none;max-width:420px;margin:12px auto 0;text-align:left;">
+      <label for="jukugo-choice-count" style="display:block;color:#ccc;font-size:14px;margin-bottom:6px;">選択肢の数（3〜8）</label>
+      <select id="jukugo-choice-count" class="large-select" onchange="onKanjiQuizJukugoOptsChange()">
+        <option value="3">3択</option>
+        <option value="4" selected>4択</option>
+        <option value="5">5択</option>
+        <option value="6">6択</option>
+        <option value="7">7択</option>
+        <option value="8">8択</option>
+      </select>
+      <label style="display:flex;align-items:center;gap:8px;margin-top:12px;color:#ccc;font-size:14px;cursor:pointer;">
+        <input type="checkbox" id="jukugo-include-none" onchange="onKanjiQuizJukugoOptsChange()">
+        <span>「この中に回答はない」を選択肢に含める</span>
+      </label>
+    </div>
+    <div id="kanji-quiz-sets-container" class="kanji-quiz-sets-stack"></div>
+    </div>
+  </div>
+  <!-- body直下に置き、非表示セクション内の fixed が操作を奪うのを防ぐ -->
+  <div id="kanji-quiz-set-loading-overlay" aria-hidden="true" role="status" aria-live="polite" style="display:none;">
+    <div class="kanji-quiz-set-loading-card">
+      <div class="kanji-quiz-set-loading-spinner" aria-hidden="true"></div>
+      <p id="kanji-quiz-set-loading-title" class="kanji-quiz-set-loading-title">もんだいを じゅんびしています<span class="kanji-quiz-set-loading-dots" aria-hidden="true"><span>.</span><span>.</span><span>.</span></span></p>
+      <p id="kanji-quiz-set-loading-sub" class="kanji-quiz-set-loading-sub">そのまま まってね</p>
+    </div>
+  </div>

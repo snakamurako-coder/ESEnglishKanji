@@ -1,0 +1,30 @@
+  <div id="section-kanji-learning" class="section">
+    <div class="kanji-study-vertical-wrap">
+    <div class="kanji-page-title-stack">
+      <h1>漢字の自由学習</h1>
+      <button type="button" class="cancel-btn kanji-menu-back-btn" onclick="showHome(JSON.parse(localStorage.getItem('app_kid_user')))">ホームにもどる</button>
+    </div>
+    <p class="kanji-study-lead">やりたい学習をえらんでね</p>
+    <div class="kanji-hw-hand-setting" id="kanji-hw-hand-setting">
+      <span class="kanji-hw-hand-setting-label" id="kanji-hw-hand-label">かんじをかいてこたえるときの利き手</span>
+      <div class="kanji-hw-hand-toggle" role="group" aria-labelledby="kanji-hw-hand-label">
+        <button type="button" id="kanji-hw-hand-right" class="active" aria-pressed="true" onclick="setKanjiHwDominantHand('right')">みぎきき</button>
+        <button type="button" id="kanji-hw-hand-left" aria-pressed="false" onclick="setKanjiHwDominantHand('left')">ひだりきき</button>
+      </div>
+      <span class="kanji-hw-hand-setting-hint">みぎきき：よみのルビが右、さぎょうボタンが左。ひだりきき：ルビが左、ボタンが右。てのうごきでまちがえておさないためです。</span>
+    </div>
+    <div class="kanji-study-menu-btns">
+      <button class="menu-btn btn-red" onclick="loadKanjiMaterials(this)">漢字クイズに挑戦</button>
+      <button class="menu-btn btn-blue" onclick="openKanjiPractice()">漢字練習をする</button>
+      <button class="menu-btn btn-purple" onclick="openKanjiNigateSection()">漢字ニガテ特訓</button>
+    </div>
+    <div id="kanji-quiz-resume-panel" style="display:none; width:90%; max-width:560px; margin:12px auto 0; background:#1E2A38; border:1px solid #2F4660; border-radius:12px; padding:12px; box-sizing:border-box;">
+      <div style="font-weight:bold; color:#9ED0FF; margin-bottom:6px;">🛟 途中の漢字学習があります</div>
+      <div id="kanji-quiz-resume-text" style="font-size:13px; color:#cfd8dc; line-height:1.5;"></div>
+      <div style="display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;">
+        <button type="button" class="submit-btn btn-blue" style="flex:1; min-width:130px; margin:0;" onclick="resumeKanjiQuizFromDraft()">▶ 漢字学習を復帰する</button>
+        <button type="button" class="cancel-btn" style="flex:1; min-width:130px; margin:0;" onclick="discardKanjiQuizRecoveryDraft()">✖ 復帰データを消す</button>
+      </div>
+    </div>
+    </div>
+  </div>

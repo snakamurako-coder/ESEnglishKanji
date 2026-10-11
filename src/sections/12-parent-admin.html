@@ -1,0 +1,89 @@
+  <div id="section-parent-admin" class="section">
+    <h1>⚙ おうちの人：管理メニュー</h1>
+    <p style="max-width:420px;margin:0 auto 12px;line-height:1.5;color:#ccc;">管理者PIN（<code style="color:#9C27B0;">アプリ設定</code>の「外部学習_管理者PIN」）を入力してください。</p>
+    <div id="parent-admin-pin-panel" style="max-width:400px;margin:0 auto;">
+      <input type="password" id="parent-admin-pin-input" inputmode="numeric" autocomplete="off" placeholder="管理者PIN" style="width:100%;max-width:280px;padding:14px;font-size:20px;border-radius:10px;border:2px solid #555;background:#222;color:#fff;box-sizing:border-box;">
+      <button type="button" class="submit-btn btn-purple" style="margin-top:12px;width:100%;max-width:280px;" onclick="loginParentAdmin()">ログイン</button>
+    </div>
+    <div id="parent-admin-message" style="color:#ff8a80;margin:12px auto;max-width:400px;min-height:1.2em;text-align:center;font-size:14px;"></div>
+    <div id="parent-admin-hub-panel" class="parent-admin-hub" style="display:none;">
+      <p style="color:#aaa;font-size:14px;text-align:center;margin:0 0 4px;">管理する項目を選んでください</p>
+      <button type="button" class="menu-btn btn-blue" onclick="enterParentAdminExternal()">🔐 外部学習の承認</button>
+      <button type="button" class="menu-btn btn-purple" onclick="enterParentAdminTraining()">🎯 特訓メニュー管理</button>
+      <button type="button" class="menu-btn btn-green" onclick="enterParentAdminNotify()">📧 通知メール設定</button>
+      <button type="button" class="cancel-btn" style="margin-top:4px;" onclick="logoutParentAdmin()">ログアウト</button>
+    </div>
+    <button type="button" class="cancel-btn" style="margin-top:24px;" onclick="showHome(JSON.parse(localStorage.getItem('app_kid_user')))">ホームにもどる</button>
+  </div>
+
+  <div id="section-parent-admin-notify" class="section">
+    <h1>📧 通知メール設定</h1>
+    <p style="max-width:420px;margin:0 auto 12px;line-height:1.5;color:#ccc;">制限時間付きご褒美チケットの使用・終了をお知らせするメールアドレス（最大4件）</p>
+    <div style="max-width:400px;margin:0 auto;">
+      <label style="display:block;color:#aaa;font-size:14px;margin:8px 0 4px;">通知メール 1</label>
+      <input type="email" id="parent-notify-email-1" autocomplete="email" placeholder="example@mail.com" style="width:100%;padding:12px;font-size:16px;border-radius:8px;border:2px solid #555;background:#222;color:#fff;box-sizing:border-box;">
+      <label style="display:block;color:#aaa;font-size:14px;margin:12px 0 4px;">通知メール 2</label>
+      <input type="email" id="parent-notify-email-2" autocomplete="email" placeholder="（任意）" style="width:100%;padding:12px;font-size:16px;border-radius:8px;border:2px solid #555;background:#222;color:#fff;box-sizing:border-box;">
+      <label style="display:block;color:#aaa;font-size:14px;margin:12px 0 4px;">通知メール 3</label>
+      <input type="email" id="parent-notify-email-3" autocomplete="email" placeholder="（任意）" style="width:100%;padding:12px;font-size:16px;border-radius:8px;border:2px solid #555;background:#222;color:#fff;box-sizing:border-box;">
+      <label style="display:block;color:#aaa;font-size:14px;margin:12px 0 4px;">通知メール 4</label>
+      <input type="email" id="parent-notify-email-4" autocomplete="email" placeholder="（任意）" style="width:100%;padding:12px;font-size:16px;border-radius:8px;border:2px solid #555;background:#222;color:#fff;box-sizing:border-box;">
+      <button type="button" class="submit-btn btn-green" style="margin-top:16px;width:100%;" onclick="saveParentNotifyEmails()">保存する</button>
+      <div id="parent-notify-message" style="color:#ff8a80;margin:12px auto;min-height:1.2em;text-align:center;font-size:14px;"></div>
+    </div>
+    <button type="button" class="cancel-btn" style="margin-top:24px;" onclick="backToParentAdminHub()">管理メニューにもどる</button>
+  </div>
+
+  <div id="section-external-admin" class="section">
+    <h1>🔐 外部学習の承認</h1>
+    <div id="external-admin-pin-panel" style="display:none;max-width:400px;margin:0 auto;">
+      <input type="password" id="external-admin-pin-input" inputmode="numeric" autocomplete="off" placeholder="管理者PIN" style="width:100%;max-width:280px;padding:14px;font-size:20px;border-radius:10px;border:2px solid #555;background:#222;color:#fff;box-sizing:border-box;">
+      <button type="button" class="submit-btn btn-purple" style="margin-top:12px;width:100%;max-width:280px;" onclick="loadExternalAdminPending()">一覧を表示</button>
+    </div>
+    <div id="external-admin-message" style="color:#ff8a80;margin:12px auto;max-width:400px;min-height:1.2em;"></div>
+    <div id="external-admin-list" style="display:none;flex-direction:column;gap:12px;max-width:420px;margin:16px auto 0;"></div>
+    <button type="button" class="cancel-btn" style="margin-top:24px;" onclick="backToParentAdminHub()">管理メニューにもどる</button>
+  </div>
+
+  <div id="section-training-admin" class="section">
+    <h1>🎯 特訓メニュー管理</h1>
+    <div id="training-admin-pin-panel" style="display:none;max-width:400px;margin:0 auto;">
+      <input type="password" id="training-admin-pin-input" inputmode="numeric" autocomplete="off" placeholder="管理者PIN" style="width:100%;max-width:280px;padding:14px;font-size:20px;border-radius:10px;border:2px solid #555;background:#222;color:#fff;box-sizing:border-box;">
+      <button type="button" class="submit-btn btn-purple" style="margin-top:12px;width:100%;max-width:280px;" onclick="loadTrainingMenuAdmin()">ログインして編集</button>
+    </div>
+    <div id="training-admin-message" class="training-admin-msg" style="color:#ff8a80;"></div>
+    <div id="training-admin-main" class="training-admin-wrap" style="display:none;">
+      <div class="training-admin-tabs">
+        <button type="button" id="training-admin-tab-menus" class="training-admin-tab active" onclick="switchTrainingAdminTab('menus')">メニュー・ルート</button>
+        <button type="button" id="training-admin-tab-points" class="training-admin-tab" onclick="switchTrainingAdminTab('points')">問題形式の点数</button>
+      </div>
+      <div id="training-admin-panel-menus">
+      <p style="color:#aaa;font-size:14px;line-height:1.5;">「表示する」にチェックを入れたメニューだけ、子ども画面の特訓メニューに出ます。ボタンの色もここで設定できます。</p>
+      <p style="color:#90CAF9;font-size:13px;line-height:1.55;margin:8px 0 12px;">ヒント: 英語・漢字のサンプル特訓は、GAS の <strong style="color:#CE93D8;">setupSystem()</strong> を実行したときだけ登録されます（毎回の読み込みではチェックしません）。ルート編集で登録例を確認できます。</p>
+      <div id="training-admin-menu-grid" class="training-admin-menu-grid"></div>
+      <div id="training-admin-route-panel" class="training-admin-route-panel" style="display:none;">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+          <h3 id="training-admin-route-title" style="margin:0;color:#CE93D8;">ルート編集</h3>
+          <button type="button" class="cancel-btn" style="margin:0;" onclick="closeTrainingAdminRoutePanel()">閉じる</button>
+        </div>
+        <div id="training-admin-route-list"></div>
+        <p id="training-admin-route-draft-hint" style="color:#888;font-size:13px;margin:8px 0 0;display:none;"></p>
+        <h4 style="margin:16px 0 8px;color:#aaa;font-size:14px;">ルートを追加</h4>
+        <div id="training-admin-route-form" class="training-admin-route-form"></div>
+        <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;">
+          <button type="button" id="training-admin-route-add-btn" class="submit-btn btn-blue" style="margin:0;" onclick="addTrainingAdminRouteToDraft()">リストに追加</button>
+          <button type="button" id="training-admin-route-save-btn" class="submit-btn btn-green" style="margin:0;" onclick="saveTrainingAdminRoutesBatch()">ルートを保存</button>
+          <button type="button" class="cancel-btn" style="margin:0;" onclick="resetTrainingAdminRouteForm()">入力をクリア</button>
+        </div>
+      </div>
+      </div>
+      <div id="training-admin-panel-points" style="display:none;">
+        <p style="color:#aaa;font-size:14px;line-height:1.5;">学習者が選ぶのと同じプルダウンで、問題形式ごとの基本ポイント（1問あたり）を設定できます。値は <code style="color:#9C27B0;">アプリ設定</code> シートに保存されます。</p>
+        <div id="training-admin-points-form" class="training-admin-points-form"></div>
+        <button type="button" id="training-admin-point-save-btn" class="submit-btn btn-green" style="margin-top:12px;" onclick="saveTrainingAdminBasePoint(this)">この組み合わせの点数を保存</button>
+      </div>
+      <button type="button" class="cancel-btn" style="margin:20px auto 0;display:block;" onclick="backToParentAdminHub()">管理メニューにもどる</button>
+    </div>
+    <button type="button" class="cancel-btn" style="margin-top:24px;" onclick="backToParentAdminHub()">管理メニューにもどる</button>
+  </div>
+  

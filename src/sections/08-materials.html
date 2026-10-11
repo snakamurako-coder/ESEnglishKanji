@@ -1,0 +1,51 @@
+  <div id="section-materials" class="section">
+    <!-- 漢字クイズ：問題形式 → 学年 → セット（左寄せ・教材ボタンと分離） -->
+    <div id="kanji-quiz-format-first" class="kanji-quiz-format-first" style="display:none;" hidden>
+      <h2 class="kanji-quiz-format-first-title">問題形式からさがす</h2>
+      <p class="kanji-quiz-format-first-lead">もんだいのしかた → 学年 → セット のじゅんにえらべます</p>
+      <label class="kanji-quiz-format-first-label" for="kq-ff-format">① もんだいのしかた</label>
+      <select id="kq-ff-format" class="large-select kanji-quiz-format-first-select" onchange="onKanjiQuizFormatFirstFormatChange()">
+        <option value="select_kana">送り仮名選択</option>
+        <option value="type_yomi">読み仮名タイプ</option>
+        <option value="write_kanji" selected>書いて問題に回答</option>
+        <option value="stroke_order">書き順チェック</option>
+        <option value="jukugo_yomi">熟語読み方選択</option>
+<option value="jukugo_type_yomi">読み仮名タイプ</option>
+        <option value="jukugo_type_yomi">読み仮名タイプ</option>
+      </select>
+      <div id="kq-ff-jukugo-opts" class="kanji-quiz-format-first-jukugo" style="display:none;">
+        <label for="kq-ff-jukugo-choice-count">選択肢の数（3〜8）</label>
+        <select id="kq-ff-jukugo-choice-count" class="large-select" onchange="onKanjiQuizFormatFirstJukugoOptsChange()">
+          <option value="3">3択</option>
+          <option value="4" selected>4択</option>
+          <option value="5">5択</option>
+          <option value="6">6択</option>
+          <option value="7">7択</option>
+          <option value="8">8択</option>
+        </select>
+        <label class="kanji-quiz-format-first-check">
+          <input type="checkbox" id="kq-ff-jukugo-include-none" onchange="onKanjiQuizFormatFirstJukugoOptsChange()">
+          <span>「この中に回答はない」を含める</span>
+        </label>
+      </div>
+      <label class="kanji-quiz-format-first-label" for="kq-ff-sheet">② 学年（シート）</label>
+      <select id="kq-ff-sheet" class="large-select kanji-quiz-format-first-select" onchange="onKanjiQuizFormatFirstSheetChange()">
+        <option value="">学年をえらんでね</option>
+      </select>
+      <label class="kanji-quiz-format-first-label" for="kq-ff-set">③ セット番号</label>
+      <select id="kq-ff-set" class="large-select kanji-quiz-format-first-select">
+        <option value="">先に学年をえらんでね</option>
+      </select>
+      <div class="kanji-quiz-format-first-actions">
+        <button type="button" class="submit-btn btn-red" id="kq-ff-start-btn" onclick="startKanjiQuizFromFormatFirst(this)">この条件ではじめる</button>
+        <button type="button" class="menu-btn btn-gray" id="kq-ff-list-btn" onclick="openKanjiQuizSetsFromFormatFirst(this)">セットいちらんをみる</button>
+      </div>
+    </div>
+    <div class="kanji-study-materials-wrap">
+    <div class="kanji-page-title-stack">
+      <h1 id="materials-title">なにを勉強する？</h1>
+      <button type="button" class="cancel-btn kanji-menu-back-btn" onclick="backFromMaterials()">もどる</button>
+    </div>
+    <div id="materials-container" style="display: flex; flex-direction: column; gap: 15px; max-width: 400px; margin: 0 auto;"></div>
+    </div>
+  </div>

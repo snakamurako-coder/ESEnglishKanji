@@ -9,6 +9,7 @@
 <body>
 <div id="global-header">👤 <span id="header-user-info"></span></div>
 
+
   <div id="section-users" class="section active"><h1>だれがプレイする？</h1><div id="user-container" class="user-list"><p>よみこみ中...</p></div></div>
   
   <div id="section-pin" class="section"><h2 id="selected-user-name">名前</h2><p id="pin-instruction">あんしょうばんごう</p><div class="pin-display" id="pin-dots">_ _ _ _</div><div class="numpad"><button class="num-btn" onclick="addPin(1)">1</button><button class="num-btn" onclick="addPin(2)">2</button><button class="num-btn" onclick="addPin(3)">3</button><button class="num-btn" onclick="addPin(4)">4</button><button class="num-btn" onclick="addPin(5)">5</button><button class="num-btn" onclick="addPin(6)">6</button><button class="num-btn" onclick="addPin(7)">7</button><button class="num-btn" onclick="addPin(8)">8</button><button class="num-btn" onclick="addPin(9)">9</button><button class="num-btn action-btn" onclick="clearPin()">クリア</button><button class="num-btn" onclick="addPin(0)">0</button><button class="num-btn action-btn" onclick="deletePin()">もどる</button></div><div id="message" style="color:#ff4d4d; margin-top:15px; font-weight:bold;"></div><button class="cancel-btn" style="margin-top:30px;" onclick="cancelPin()">やめる</button></div>
@@ -61,6 +62,7 @@
       </div>
     </div>
   </div>
+  
   <div id="section-kanji-learning" class="section">
     <div class="kanji-study-vertical-wrap">
     <div class="kanji-page-title-stack">
@@ -91,6 +93,7 @@
     </div>
     </div>
   </div>
+  
   <div id="section-kanji-practice" class="section" style="background:#ffffff;color:#222;min-height:100vh;">
     <div class="kanji-practice-vertical-head">
     <h1 class="kp-page-title">漢字練習・設定調整</h1>
@@ -123,6 +126,7 @@
       </div>
     </div>
   </div>
+  
   <div id="section-kanji-nigate" class="section" style="background:#faf8ff;color:#222;min-height:100vh;">
     <div class="kanji-study-vertical-wrap">
       <div class="kanji-nigate-title-block">
@@ -152,7 +156,7 @@
       <button type="button" class="submit-btn btn-purple" style="width:90%;max-width:360px;margin:8px auto;display:block;" onclick="startKanjiNigateReviewFromUi()">この条件で特訓スタート</button>
     </div>
   </div>
-
+  
   <div id="section-training" class="section">
     <h1>🎯 特訓メニュー</h1>
     <p style="text-align:center;color:#aaa;max-width:420px;margin:0 auto 12px;font-size:14px;">メニューをえらんでね</p>
@@ -217,6 +221,7 @@
     <div id="materials-container" style="display: flex; flex-direction: column; gap: 15px; max-width: 400px; margin: 0 auto;"></div>
     </div>
   </div>
+  
   <div id="section-kanji-quiz-sets" class="section">
     <div class="kanji-study-vertical-wrap">
     <div class="kanji-page-title-stack">
@@ -260,6 +265,7 @@
       <p id="kanji-quiz-set-loading-sub" class="kanji-quiz-set-loading-sub">そのまま まってね</p>
     </div>
   </div>
+  
   <div id="section-kanji-quiz-play" class="section kanji-quiz-drill-section">
     <span id="kanji-play-type-badge" style="display:none;" aria-hidden="true"></span>
     <div class="kanji-quiz-drill-main">
@@ -389,7 +395,7 @@
     <p style="margin-top:16px;font-size:13px;color:#888;">おうちの人はホームの「管理メニュー」から承認できます。</p>
     <button class="cancel-btn" style="margin-top:20px;" onclick="showHome(JSON.parse(localStorage.getItem('app_kid_user')))">もどる</button>
   </div>
-
+  
   <div id="section-parent-admin" class="section">
     <h1>⚙ おうちの人：管理メニュー</h1>
     <p style="max-width:420px;margin:0 auto 12px;line-height:1.5;color:#ccc;">管理者PIN（<code style="color:#9C27B0;">アプリ設定</code>の「外部学習_管理者PIN」）を入力してください。</p>

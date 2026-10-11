@@ -1,0 +1,109 @@
+  <div id="section-kanji-quiz-play" class="section kanji-quiz-drill-section">
+    <span id="kanji-play-type-badge" style="display:none;" aria-hidden="true"></span>
+    <div class="kanji-quiz-drill-main">
+    <div class="kanji-quiz-drill-wrap">
+      <!--
+        手書きカード列（direction:rtl で右→左）:
+        解答前＝問題文/記述のみ
+        正解＝問題文/記述 → さいてん
+        不正解＝お手本 → 問題文/記述 → さいてん
+      -->
+      <div class="kanji-quiz-hw-stack">
+        <div id="kanji-quiz-hw-wrong-panel" class="kanji-quiz-hw-wrong-panel" style="display:none;" role="status" aria-live="polite">
+          <p id="kanji-quiz-hw-wrong-heading" class="kanji-quiz-hw-wrong-heading">ざんねん（60点みまん）</p>
+          <p class="kanji-quiz-hw-wrong-label-plain">せいかいのかんじ</p>
+          <div id="kanji-quiz-wrong-red-chars" class="kanji-quiz-wrong-red-chars"></div>
+          <p class="kanji-quiz-hw-wrong-stroke-label">かきじゅん（みょうじ）</p>
+          <div id="kanji-quiz-wrong-model-wrap" class="kanji-quiz-wrong-model-wrap">
+            <iframe id="kp-pro-frame-wrong" class="kp-pro-frame-wrong" src="about:blank" title="Kanji Quiz Wrong Model" style="width:100%;height:100%;border:none;background:#fff;"></iframe>
+          </div>
+        </div>
+        <div class="kanji-quiz-hw-question-col">
+          <!-- 書き順クイズ専用：リアルタイム書き順判定トグル（デフォルトOFF） -->
+          <div id="kanji-quiz-rt-order-row" class="kanji-quiz-rt-order-row">
+            <label class="kanji-quiz-rt-order-label" for="kanji-quiz-rt-order-toggle">
+              <input type="checkbox" id="kanji-quiz-rt-order-toggle" onchange="kanjiQuizOnRtOrderToggleChanged()">
+              リアルタイム書き順判定をオン
+            </label>
+            <span id="kanji-quiz-rt-order-feedback" class="kanji-quiz-rt-order-feedback" aria-live="polite"></span>
+          </div>
+          <div id="kanji-quiz-drill-handwriting" class="kanji-drill-hw-row" style="display:none;">
+              <div class="kanji-drill-hw-canvas-panel">
+                <div id="kanji-hw-controls-col" class="kanji-drill-hw-controls-col">
+                  <div id="kanji-hw-canvas-actions" class="kanji-drill-hw-panel-btns" style="display:none;">
+                    <button type="button" id="kanji-hw-submit-btn" class="kanji-drill-vbtn-small submit-btn-small kanji-hw-submit-btn" onclick="kanjiQuizRunHandwritingAnswer()">これでかいとう</button>
+                    <button type="button" class="kanji-drill-vbtn-small" onclick="kanjiQuizRemoveLastStrokeDecoration()">かざりをけす</button>
+                    <button type="button" class="kanji-drill-vbtn-small" onclick="kanjiQuizClearWritePad(true)">この字を書き直す</button>
+                  </div>
+                  <button type="button" class="kanji-drill-vbtn-small submit-btn-small" id="kanji-quiz-skip-hw-btn" onclick="kanjiQuizSkipHandwritingQuestion(this)">次へ</button>
+                </div>
+                <div class="kanji-drill-hw-write-stack">
+                  <div class="kanji-drill-hw-canvas-ruby-row">
+                    <div class="kanji-drill-hw-prefix-col" id="kanji-drill-hw-prefix-col" aria-hidden="false">
+                      <span class="kanji-drill-q-marker" id="kanji-drill-q-marker"></span><span id="kanji-drill-ctx-prefix" class="kanji-drill-context-inline"></span>
+                    </div>
+                    <canvas id="kanji-quiz-write-canvas" width="300" height="300"></canvas>
+                    <div class="kanji-drill-hw-suffix-col" id="kanji-drill-hw-suffix-col" aria-hidden="false">
+                      <span id="kanji-drill-ctx-suffix" class="kanji-drill-context-inline"></span>
+                    </div>
+                    <div id="kanji-play-char-handwriting" class="kanji-drill-reading-aside kanji-drill-hw-ruby-box"></div>
+                  </div>
+                </div>
+                <div id="kanji-stroke-order-play-host" class="kanji-stroke-order-play-host" style="display:none !important;" aria-hidden="true">
+                  <div id="kanji-stroke-order-target" class="kanji-stroke-order-target"></div>
+                  <p id="kanji-stroke-order-hint" class="kanji-stroke-order-hint"></p>
+                  <div id="kanji-stroke-order-play-slot" class="kanji-stroke-order-play-slot"></div>
+                </div>
+              </div>
+          </div>
+        </div>
+        <div id="kanji-hw-score-status" class="kanji-hw-score-status" style="display:none;" hidden aria-live="polite" aria-label="採点ステータス"></div>
+      </div>
+      <!-- 書き順：カード列の下・画面約1/3のよみ・例文帯（お手本カードとは別領域） -->
+      <div id="kanji-stroke-order-readings" class="kanji-stroke-order-readings" style="display:none;" aria-label="よみと例文"></div>
+      <div class="kanji-quiz-title-rail-wrap">
+        <h1 id="kanji-play-title">漢字ドリル</h1>
+      </div>
+      <div class="kanji-quiz-drill-head" id="kanji-quiz-drill-head" style="margin-left:0;"></div>
+      <div class="kanji-quiz-play-question-block">
+        <div class="kanji-quiz-drill-reading" id="kanji-play-char"></div>
+        <div id="kanji-play-prompt"></div>
+        <button type="button" class="kanji-drill-vbtn-small submit-btn-small kanji-play-submit-inline" id="kanji-play-submit-btn" style="display:none;">こたえを決定</button>
+        <div id="kanji-play-detail"></div>
+        <div id="kanji-choice-verdict" class="kanji-choice-verdict" style="display:none;" aria-live="polite">
+          <span id="kanji-choice-verdict-mark" class="kanji-choice-verdict-mark"></span>
+          <span id="kanji-choice-verdict-answer" class="kanji-choice-verdict-answer"></span>
+        </div>
+        <button type="button" id="kanji-choice-next-btn" class="kanji-choice-next-btn" style="display:none;">次へ</button>
+        <div id="kanji-play-choices" class="kanji-yomi-choices-rail" style="display:none;"></div>
+      </div>
+      <div id="kanji-play-typing-wrap" class="kanji-yomi-typing-wrap" style="display:none;" aria-hidden="true">
+        <div class="kanji-yomi-typing-rail" id="kanji-yomi-typing-rail">
+          <div id="kanji-yomi-type-root">
+            <textarea id="kanji-play-yomi-input" class="kanji-yomi-type-input kanji-yomi-type-input-vertical" readonly inputmode="none" lang="ja" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="下のキーボードで入力" rows="1" aria-readonly="true"></textarea>
+          </div>
+          <div id="kanji-yomi-sentence-box"></div>
+          <div class="kanji-yomi-kbd-col">
+            <div id="kanji-yomi-keyboard-container"></div>
+          </div>
+        </div>
+        <input type="hidden" id="kanji-play-input" value="">
+      </div>
+      <div id="kanji-play-summary"></div>
+    </div>
+    </div>
+    <div class="kanji-quiz-play-footer-bar kanji-quiz-play-footer-btns">
+      <div class="kanji-quiz-play-footer-inner">
+        <div id="kanji-drill-pen-controls">
+          <button type="button" class="kanji-drill-vbtn-small" id="kanji-pen-thick" onclick="kanjiQuizSetPenWidth(14)">ふとい</button>
+          <button type="button" class="kanji-drill-vbtn-small is-active-prior" id="kanji-pen-mid" onclick="kanjiQuizSetPenWidth(8)">ふつう</button>
+          <button type="button" class="kanji-drill-vbtn-small" id="kanji-pen-fine" onclick="kanjiQuizSetPenWidth(4)">ほそめ</button>
+        </div>
+        <button type="button" id="kanji-quiz-layout-refresh-btn" class="kanji-drill-vbtn-small" onclick="kanjiQuizRefreshHandwritingLayout()" title="表示がずれたとき、レイアウトを取り直します">🔄 画面をなおす</button>
+        <button type="button" id="kanji-quiz-cancel-btn" class="kanji-drill-vbtn-small" style="background:#f44336;color:#fff;border-color:#d32f2f;">ちゅうだん</button>
+        <button type="button" class="kanji-drill-vbtn-small" style="background:#5c6bc0;color:#fff;border-color:#3949ab;" onclick="kanjiQuizPlayGoHome()">🏠 ホームにもどる</button>
+        <span id="kanji-play-progress" class="kanji-quiz-play-progress" aria-live="polite">1 / 1</span><span id="kanji-play-practice-pts" class="kanji-quiz-practice-pts" aria-live="polite" hidden></span>
+      </div>
+    </div>
+  </div>
+  

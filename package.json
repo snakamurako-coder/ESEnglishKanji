@@ -3,6 +3,8 @@
   "version": "1.0.0",
   "description": "ESEnglishKanji - Kids English & Kanji Learning App",
   "scripts": {
+    "build": "node scripts/build-html.js",
+    "build:html": "node scripts/build-html.js",
     "deploy": "powershell -ExecutionPolicy Bypass -File ./scripts/deploy-fb.ps1",
     "deploy:hosting": "powershell -ExecutionPolicy Bypass -File ./scripts/deploy-fb.ps1 -HostingOnly",
     "deploy:rules": "powershell -ExecutionPolicy Bypass -File ./scripts/deploy-fb.ps1 -RulesOnly",

@@ -1,0 +1,21 @@
+  <div id="section-external" class="section">
+    <h1>📚 アプリ以外の勉強</h1>
+    <p style="max-width:400px;margin:0 auto 12px;line-height:1.5;">やったことを<strong>申請</strong>しよう。<br>おうちの人が<strong>管理者PIN</strong>で承認すると、ポイントが付きます。</p>
+    <div id="external-container" style="display: flex; flex-direction: column; gap: 15px; max-width: 400px; margin: 0 auto;"></div>
+    <div id="external-my-requests" style="max-width:400px;margin:20px auto 0;text-align:left;font-size:14px;color:#ccc;"></div>
+    <div id="external-stopwatch" style="margin: 18px auto 0; max-width: 360px; background:#1f1f1f; border:1px solid #333; border-radius:12px; padding:14px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
+        <div style="font-weight:bold; color:#ccc;">⏱️ ストップウォッチ</div>
+        <div id="external-sw-display" style="font-family:'Courier New', monospace; font-size:24px; color: #4CAF50;">00:00:00</div>
+      </div>
+      <div style="font-size:12px;color:#888;margin-top:6px;">最大1時間30分で自動リセット（アカウントごとに保存）</div>
+      <div style="display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;">
+        <button type="button" class="submit-btn btn-green" style="flex:1; min-width:120px;" onclick="startStopwatch('external')">開始</button>
+        <button type="button" class="cancel-btn" style="flex:1; min-width:120px;" onclick="stopStopwatch('external')">停止</button>
+        <button type="button" class="submit-btn btn-gray" style="flex:1; min-width:120px;" onclick="resetStopwatch('external')">リセット</button>
+      </div>
+    </div>
+    <p style="margin-top:16px;font-size:13px;color:#888;">おうちの人はホームの「管理メニュー」から承認できます。</p>
+    <button class="cancel-btn" style="margin-top:20px;" onclick="showHome(JSON.parse(localStorage.getItem('app_kid_user')))">もどる</button>
+  </div>
+

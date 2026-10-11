@@ -1,0 +1,81 @@
+  <div id="section-settings" class="section"><h2 id="settings-title">設定</h2>
+    <div class="setting-group" style="border: 2px solid #FF9800; text-align:center;">
+      <h3 style="color: #FF9800; text-align:center;">🔥 学習モード</h3>
+      <select id="setting-play-mode" class="large-select"><option value="normal">通常（ぜんぶ出題）</option><option value="review">ニガテ特訓（＋40% Pt）</option></select>
+    </div>
+    <div class="setting-group">
+      <h3>1. もんだいの形式</h3>
+      <select id="setting-format" class="large-select" onchange="updateAnswerTypeUI()"></select>
+    </div>
+    <div class="setting-group">
+      <h3>2. こたえ方</h3>
+      <select id="setting-answer-type" class="large-select" onchange="toggleBlankSetting()"></select>
+    </div>
+    <div class="setting-group">
+      <h3>3. 出し方 <span class="bonus-badge" id="random-bonus-badge" style="display:none;">ボーナス +10%</span></h3>
+      <select id="setting-order" class="large-select" onchange="document.getElementById('random-bonus-badge').style.display = this.value === 'random' ? 'inline-block' : 'none';">
+        <option value="normal">順番どおり</option><option value="random">ランダム</option>
+      </select>
+    </div>
+
+    <div id="setting-group-blanks" class="setting-group" style="display:none; border: 2px solid #2196F3;">
+      <h3 style="color:#2196F3;">4. 隠す文字数（難易度）</h3>
+      <select id="setting-blank-count" class="large-select"></select>
+    </div>
+
+    <div class="setting-group" style="border: 2px solid #607D8B;">
+      <h3 style="color:#90A4AE;">キーボード（タイピング・穴埋め）</h3>
+      <label style="display:block;color:#ccc;margin-bottom:8px;">全体の幅 <span id="kbd-scale-label">100</span>%（キーボードの横幅）</label>
+      <input type="range" id="kbd-scale-range" min="80" max="200" value="100" style="width:100%;max-width:360px;" oninput="applyKeyboardSettingsFromControls()">
+      <label style="display:block;color:#ccc;margin:12px 0 8px;">キーの文字サイズ <span id="kbd-font-label">18</span>px</label>
+      <input type="range" id="kbd-font-range" min="14" max="40" value="18" style="width:100%;max-width:360px;" oninput="applyKeyboardSettingsFromControls()">
+      <p style="font-size:13px;color:#888;margin-top:8px;">タブレットでは大きめにすると押しやすいよ。設定はこの端末に保存されます。</p>
+    </div>
+    <div class="setting-group" style="border: 2px solid #795548;">
+      <h3 style="color:#BCAAA4;">正誤の音</h3>
+      <label style="display:flex;align-items:center;gap:10px;color:#ccc;cursor:pointer;">
+        <input type="checkbox" id="answer-sound-enabled" checked onchange="syncAnswerSoundFromCheckbox(this)"> せいかいは「ピンポン」、まちがいは「ブッブー」
+      </label>
+    </div>
+    <button onclick="prepareQuiz()" class="submit-btn" style="width:80%; max-width:350px;">🚀 スタート！</button><br>
+    <button class="cancel-btn" style="margin-top:20px;" onclick="switchSection('section-materials')">もどる</button>
+  </div>
+  
+  <div id="section-quiz" class="section">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+      <button class="cancel-btn" id="quiz-quit-btn" onclick="quitQuiz()" style="background:#222; color:#aaa; border-radius:8px; padding:8px 12px; font-size:14px; margin:0;">🛑 もどる</button>
+      <h3 id="quiz-progress" style="color: #aaa; margin:0; font-size:16px;">第 1 問</h3>
+      <button class="cancel-btn" id="quiz-skip-btn" onclick="skipQuestion()" style="background:#444; color:#fff; border-radius:8px; padding:8px 12px; font-size:14px; margin:0;">⏭️ あきらめる</button>
+    </div>
+    <div style="max-width:420px; margin:0 auto 10px; text-align:right;">
+      <button type="button" class="cancel-btn" style="margin:0; font-size:12px; padding:6px 10px;" onclick="resumeQuizFromDraft()">🛟 復帰ボタン</button>
+    </div>
+    <div id="quiz-score-bar" style="margin:0 0 12px; padding:10px 12px; background:#1e1e1e; border:1px solid #444; border-radius:10px; font-size:15px; color:#ccc; text-align:center; line-height:1.5;"></div>
+    <div id="quiz-q-text">もんだい文</div>
+    
+    <div id="quiz-word-blank-area" class="word-blank-container" style="display:none;"></div>
+
+    <div id="quiz-answer-area"></div>
+    
+    <div id="quiz-feedback"></div>
+    <button id="quiz-next-btn" class="submit-btn btn-green" style="display:none; margin:0 auto;" onclick="nextQuestion()">つぎへ ▶</button>
+    <div id="quiz-keyboard-settings-panel" style="display:none; max-width: 420px; margin: 16px auto 0; padding: 12px; background: #1a1a1a; border: 1px solid #444; border-radius: 10px;">
+      <label style="display:flex;align-items:center;gap:10px;color:#ccc;font-size:14px;cursor:pointer;margin-bottom:10px;">
+        <input type="checkbox" id="quiz-answer-sound-enabled" onchange="syncAnswerSoundFromCheckbox(this)"> 正誤の音（ピンポン／ブッブー）
+      </label>
+      <button type="button" class="cancel-btn" style="width:100%;margin-bottom:8px;font-size:13px;" onclick="toggleQuizKeyboardPanel()">⌨️ キーボードの大きさをかえる</button>
+      <div id="quiz-keyboard-settings-body" style="display:none;">
+        <label style="display:block;color:#aaa;font-size:13px;">全体の幅 <span id="quiz-kbd-scale-label">100</span>%</label>
+        <input type="range" id="quiz-kbd-scale-range" min="80" max="200" value="100" style="width:100%;" oninput="applyKeyboardSettingsFromControls('quiz')">
+        <label style="display:block;color:#aaa;font-size:13px;margin-top:8px;">文字サイズ <span id="quiz-kbd-font-label">18</span>px</label>
+        <input type="range" id="quiz-kbd-font-range" min="14" max="40" value="18" style="width:100%;" oninput="applyKeyboardSettingsFromControls('quiz')">
+      </div>
+    </div>
+    <div id="quiz-hint-area" class="hint-btn-group" style="display:none;">
+      <button id="hint-btn-1" onclick="useHint(1, 5)" class="hint-btn">💡 イニシャルを見る（-5 Pt）</button>
+      <button id="hint-btn-2" onclick="useHint(2, 7)" class="hint-btn">💡 イニシャルと文字数を見る（-7 Pt）</button>
+      <button id="hint-btn-3" onclick="useHint(3, 10)" class="hint-btn">🔊 答えを読み上げる（-10 Pt）</button>
+      <div id="hint-display-text" style="color: #FFEB3B; font-size: 24px; font-weight: bold; background: #333; padding: 10px; border-radius: 8px; width: 90%; margin-top:10px; display:none; letter-spacing: 5px;"></div>
+    </div>
+  </div>
+  

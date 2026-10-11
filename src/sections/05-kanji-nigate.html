@@ -1,0 +1,30 @@
+  <div id="section-kanji-nigate" class="section" style="background:#faf8ff;color:#222;min-height:100vh;">
+    <div class="kanji-study-vertical-wrap">
+      <div class="kanji-nigate-title-block">
+        <h1>漢字ニガテ特訓</h1>
+        <button type="button" class="cancel-btn kanji-menu-back-btn" onclick="openKanjiLearningMenu()">漢字学習メニューにもどる</button>
+      </div>
+      <p class="kanji-study-lead">ふだんのクイズ・練習でためた「よわみ」から、スコープを決めて復習します。</p>
+      <div class="kp-controls-row" style="width:96vw;max-width:560px;margin:0 auto 12px;background:#f0ebff;border:1px solid #c9c2e8;border-radius:12px;padding:12px;box-sizing:border-box;">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;justify-content:center;">
+          <select id="kn-book-select" onchange="knOnBookChange()" style="min-width:180px;max-width:280px;padding:8px;background:#fff;color:#222;border:1px solid #b8c1cc;border-radius:8px;"></select>
+          <select id="kn-sheet-select" onchange="knOnSheetChange()" style="min-width:140px;max-width:220px;padding:8px;background:#fff;color:#222;border:1px solid #b8c1cc;border-radius:8px;"></select>
+          <select id="kn-set-select" onchange="knOnSetChange()" style="min-width:160px;max-width:240px;padding:8px;background:#fff;color:#222;border:1px solid #b8c1cc;border-radius:8px;"></select>
+        </div>
+        <div style="margin-top:10px;">
+          <label for="kn-nigate-axis" style="font-weight:bold;font-size:14px;display:block;margin-bottom:4px;">問題のしかた（ふだんのクイズと同じ）</label>
+          <select id="kn-nigate-axis" class="large-select" style="width:100%;max-width:420px;">
+            <option value="select_kana">送り仮名選択</option>
+            <option value="type_yomi">読み仮名タイプ</option>
+            <option value="write_kanji" selected>書いて問題に回答</option>
+            <option value="stroke_order">書き順チェック</option>
+            <option value="jukugo_yomi">熟語読み方選択</option>
+<option value="jukugo_type_yomi">読み仮名タイプ</option>
+          </select>
+        </div>
+        <p style="margin-top:8px;font-size:13px;color:#5c5270;">選んだ<strong>同じ問題形式</strong>で、間違えた漢字を最大<strong>12問</strong>集めて出題します（通常クイズと同じ画面）。各漢字は<strong>1回合格（60点以上）</strong>で得点を獲得でき、<strong>20時間</strong>は出題候補から外れます。</p>
+      </div>
+      <button type="button" class="submit-btn btn-purple" style="width:90%;max-width:360px;margin:8px auto;display:block;" onclick="startKanjiNigateReviewFromUi()">この条件で特訓スタート</button>
+    </div>
+  </div>
+

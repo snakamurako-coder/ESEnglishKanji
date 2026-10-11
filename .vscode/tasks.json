@@ -5,6 +5,13 @@
       // 🔥 Firebase & 仲介アプリ (Mediator) デプロイタスク
       // =====================================================================
       {
+        "label": "🔨 HTML: ビルド (Template ＆ Sections 結合)",
+        "type": "shell",
+        "command": "node scripts/build-html.js",
+        "presentation": { "reveal": "always", "panel": "shared", "clear": true },
+        "problemMatcher": []
+      },
+      {
         "label": "🔥 Firebase: Deploy Hosting (即座デプロイ)",
         "type": "shell",
         "command": "powershell -ExecutionPolicy Bypass -File .\\scripts\\deploy-fb.ps1 -HostingOnly",
