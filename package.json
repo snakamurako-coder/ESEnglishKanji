@@ -7,7 +7,9 @@
     "deploy:hosting": "powershell -ExecutionPolicy Bypass -File ./scripts/deploy-fb.ps1 -HostingOnly",
     "deploy:rules": "powershell -ExecutionPolicy Bypass -File ./scripts/deploy-fb.ps1 -RulesOnly",
     "deploy:quick": "powershell -ExecutionPolicy Bypass -File ./scripts/deploy-fb.ps1 -HostingOnly -SkipBuild",
+    "deploy:full": "powershell -ExecutionPolicy Bypass -File ./scripts/deploy-fb.ps1",
     "publish": "node scripts/publish-manifest.js",
+    "publish:deploy": "node scripts/publish-manifest.js; powershell -ExecutionPolicy Bypass -File ./scripts/deploy-fb.ps1 -HostingOnly",
     "preview": "firebase hosting:channel:deploy test-preview"
   }
 }
