@@ -11,6 +11,7 @@
       "**/*.bat",
       "**/*.md",
       "scripts/**",
+      "spreadsheet-firebase-mediator/**",
       "コード.js",
       "migrateOnce.gs",
       "appsscript.json",

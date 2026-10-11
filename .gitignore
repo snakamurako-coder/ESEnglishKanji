@@ -1,4 +1,5 @@
 .clasp.json
+**/.clasp.json
 .agents/
 # promote-to-root が作る一時バックアップ（コミットしない）
 _backup*/

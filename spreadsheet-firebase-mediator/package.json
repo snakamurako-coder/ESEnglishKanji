@@ -1,0 +1,9 @@
+{
+  "name": "spreadsheet-firebase-mediator",
+  "version": "1.0.0",
+  "description": "Mediator & Publisher between Google Spreadsheets and Firebase",
+  "scripts": {
+    "sync": "node cli/sync-to-firebase.js",
+    "sync:build": "node cli/sync-to-firebase.js --skip-deploy"
+  }
+}
