@@ -63,6 +63,7 @@ flowchart LR
 | `MATERIALS_FOLDER_ID` | 英語スプレッドシートが入っているGoogle DriveフォルダID | `1Dhd9b...` |
 | `KANJI_MATERIALS_FOLDER_ID` | 漢字スプレッドシートが入っているGoogle DriveフォルダID | `1Z65C7...` |
 | `FIREBASE_PROJECT_ID` | デプロイ先FirebaseプロジェクトID | `jikkenfirebasekankyo` |
+| `NOTIFY_EMAILS` | 学習サマリー送信用保護者メールアドレス（カンマ区切り） | `parent@example.com` |
 
 ### ステップ 4: Web アプリとしてデプロイ
 1. 画面右上の **「デプロイ」** → **「新しいデプロイ」** をクリックします。
@@ -76,23 +77,29 @@ flowchart LR
 
 ## 3. 使い方
 
-### 使い方 A: スプレッドシート上から出版（手動）
-教材マスター用スプレッドシートに本スクリプトを連携（またはライブラリ追加）すると、上部メニューバーに **「🚀 Firebase出版」** が表示されます。
-- **「教材マニフェストを検証・ビルド」** をクリックするだけで、全シートの検証と出版ログの書き込みが行われます。
+### 使い方 A: スプレッドシート上から出版・データ確認（手動）
+教材マスター用スプレッドシートに本スクリプトを連携すると、上部メニューバーに **「🚀 Firebase出版 & データ仲介」** が表示されます：
+1. **「1. 📚 教材マニフェストを検証・ビルド」**: 全シートの検証と出版ログ書き込み。
+2. **「2. 📥 取り組み記録シートを確認・更新」**: アプリから蓄積された学習履歴（日時、ユーザー、問題数、正答率、獲得Pt）を一覧表示。
+3. **「3. ✉️ 本日の学習サマリーをメール送信」**: 今日の学習実績を集計して保護者へHTMLレポート配信。
 
 ### 使い方 B: 仲介 CLI からワンコマンド同期
-発行されたウェブアプリURLを使って、手元のPCから即座に最新データを取得してFirebase Hostingに公開できます：
+発行されたウェブアプリURLを使って、手元のPCから最新教材マニフェストを取得してFirebase Hostingに公開できます：
 
 ```powershell
-# 仲介APIから取得して Firebase へ一発デプロイ
+# 【上流】教材マニフェストを取得して Firebase Hosting へ一発デプロイ
 node cli/sync-to-firebase.js --mediator-url "https://script.google.com/macros/s/xxxx/exec"
 
 # デプロイせずローカルの data/ 生成のみ
 node cli/sync-to-firebase.js --mediator-url "https://script.google.com/macros/s/xxxx/exec" --skip-deploy
+
+# 【下流】本日の学習サマリー配信をトリガー
+node cli/sync-sessions.js --mediator-url "https://script.google.com/macros/s/xxxx/exec" --action daily_report
 ```
 
 ---
 
 ## 4. 他のアプリへの横展開について
 
-新しいWebアプリ（例: 算数アプリや別形式の英語ドリル）を開発する際は、本仲介アプリのURLから `action: "manifest_index"` や `action: "export_all"` を呼ぶだけで、**同じスプレッドシート管理基盤をゼロコストで共有** できます。
+新しいWebアプリ（例: 英検・算数アプリ等）を開発する際は、本仲介アプリのURLから `action: "manifest_index"` や `action: "export_all"` を呼ぶだけで、**同じスプレッドシート管理基盤をゼロコストで共有** できます。
+また、`action: "log_learning_session"` を呼ぶことで、あらゆるアプリの学習ログを Google スプレッドシートへ自動集約できます。

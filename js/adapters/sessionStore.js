@@ -9,6 +9,27 @@
     return (typeof global.getFirestoreDb === 'function') ? global.getFirestoreDb() : (global.firebaseDb || null);
   }
 
+  function getGasUrl() {
+    return global.GAS_API_URL || (typeof GAS_API_URL !== "undefined" ? GAS_API_URL : "");
+  }
+
+  /**
+   * 仲介GASへの非同期学習ログ送信（fire-and-forget、UIブロックなし）
+   */
+  function syncSessionToMediatorGas(payload) {
+    try {
+      var gasUrl = getGasUrl();
+      if (!gasUrl) return;
+      fetch(gasUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(Object.assign({ action: 'log_learning_session' }, payload))
+      }).catch(function (e) {
+        console.warn("Mediator GAS session background sync ignored:", e);
+      });
+    } catch (_) {}
+  }
+
   /**
    * 1セット終了時のセッション結果を Firestore users/{userId}/sessions に保存
    */
@@ -60,6 +81,13 @@
             if (sessionDoc.earnedPoints > 0 && global.userStore && typeof global.userStore.addPoints === 'function') {
               global.userStore.addPoints(userId, sessionDoc.earnedPoints, '学習: ' + (payload.unitSheetName || payload.unitId));
             }
+
+            // 仲介GASへ非同期バックグラウンド連携（UI待機ゼロ）
+            syncSessionToMediatorGas(Object.assign({}, sessionDoc, {
+              sessionSubmitId: submitId,
+              userId: userId
+            }));
+
             resolve(true);
           })
           .catch(function (err) {

@@ -4,6 +4,7 @@
   "description": "Mediator & Publisher between Google Spreadsheets and Firebase",
   "scripts": {
     "sync": "node cli/sync-to-firebase.js",
-    "sync:build": "node cli/sync-to-firebase.js --skip-deploy"
+    "sync:build": "node cli/sync-to-firebase.js --skip-deploy",
+    "report": "node cli/sync-sessions.js --action daily_report"
   }
 }
