@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "exportedAt": "2026-10-11T13:58:40.679Z",
+  "exportedAt": "2026-10-11T14:40:41.978Z",
   "materials": {
     "hash": "c0ae482762686779",
     "path": "data/manifest-materials.c0ae482762686779.json",
@@ -36,8 +36,8 @@
     "1Z65C7El41TMZct5kdXEstfPR2P4I1_Y4VE96O_SGFRE": {
       "modeName": "漢字熟語",
       "category": "kanji",
-      "hash": "d70dfea663296946",
-      "path": "data/books/1Z65C7El41TMZct5kdXEstfPR2P4I1_Y4VE96O_SGFRE.d70dfea663296946.json",
+      "hash": "16648f3b181a1d15",
+      "path": "data/books/1Z65C7El41TMZct5kdXEstfPR2P4I1_Y4VE96O_SGFRE.16648f3b181a1d15.json",
       "units": [
         "小１",
         "小2",
@@ -47,8 +47,8 @@
     "1LptLNv9bfm97byuWoPW8f9d1Ui7VCaX_CV-MFf3u4-4": {
       "modeName": "漢字学習",
       "category": "kanji",
-      "hash": "aad61d5627bda3c5",
-      "path": "data/books/1LptLNv9bfm97byuWoPW8f9d1Ui7VCaX_CV-MFf3u4-4.aad61d5627bda3c5.json",
+      "hash": "c08a4da0ceb1adcc",
+      "path": "data/books/1LptLNv9bfm97byuWoPW8f9d1Ui7VCaX_CV-MFf3u4-4.c08a4da0ceb1adcc.json",
       "units": [
         "小１",
         "小２",
