@@ -4297,6 +4297,26 @@ var PiperTTSModule = (() => {
         [1, phonemeIds.length, 3]
       );
     }
+    if (inputNames.has("speaker_embedding")) {
+      let dim = 256;
+      if (Array.isArray(session.ortSession.inputMetadata)) {
+        const meta = session.ortSession.inputMetadata.find((m) => m.name === "speaker_embedding");
+        if (meta && Array.isArray(meta.shape) && typeof meta.shape[1] === "number") {
+          dim = meta.shape[1];
+        }
+      }
+      feeds.speaker_embedding = new ort.Tensor("float32", new Float32Array(dim), [1, dim]);
+    }
+    if (inputNames.has("speaker_embedding_mask")) {
+      let maskShape = [1, 1];
+      if (Array.isArray(session.ortSession.inputMetadata)) {
+        const meta = session.ortSession.inputMetadata.find((m) => m.name === "speaker_embedding_mask");
+        if (meta && Array.isArray(meta.shape) && meta.shape.length === 1) {
+          maskShape = [1];
+        }
+      }
+      feeds.speaker_embedding_mask = new ort.Tensor("int64", BigInt64Array.from([0n]), maskShape);
+    }
     const results = await session.ortSession.run(feeds);
     const outputTensor = results.output || Object.values(results)[0];
     return outputTensor.data;
