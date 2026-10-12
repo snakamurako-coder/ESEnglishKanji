@@ -6,11 +6,13 @@
  * IndexedDB と連携してブラウザ完全ローカル＆オフラインでの高音質日本語音声合成を実現
  */
 
+import initWasm, { WasmPhonemizer } from 'piper-plus/wasm/multilingual';
 import { saveBlob, getBlob, hasBlob, deleteBlob } from './piperIndexedDB.js';
 import { pcm2wav, splitIntoChunks } from './piperEngine.js';
 
-export const PIPER_PLUS_WASM_JS_URL = 'https://unpkg.com/piper-plus@0.8.1/dist/rust-wasm/piper_plus_wasm.js';
-export const PIPER_PLUS_WASM_BIN_URL = 'https://unpkg.com/piper-plus@0.8.1/dist/rust-wasm/piper_plus_wasm_bg.wasm';
+// 日本語音素解析（OpenJTalk / NAIST-JDIC辞書内蔵）WASMバイナリ (~60MB)
+export const PIPER_PLUS_WASM_BIN_URL = 'https://ayutaz.github.io/piper-plus/dist/rust-wasm/piper_plus_wasm_bg.wasm';
+export const MIN_VALID_WASM_SIZE = 55 * 1024 * 1024; // 正常時は約60,070,390バイト (57.3MB)
 
 /**
  * 利用可能な日本語音声モデルカタログ
@@ -44,8 +46,11 @@ export const JA_VOICE_CATALOG = {
 
 /**
  * プログレス監視付き fetchBlob
+ * @param {string} url
+ * @param {Function} [onProgress]
+ * @param {number} [expectedTotal]
  */
-async function fetchBlobWithProgress(url, onProgress) {
+async function fetchBlobWithProgress(url, onProgress, expectedTotal = 0) {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`HTTP ${res.status}: ${url} の取得に失敗しました。`);
 
@@ -53,7 +58,9 @@ async function fetchBlobWithProgress(url, onProgress) {
     return await res.blob();
   }
 
-  const contentLength = +(res.headers.get('content-length') || 0);
+  const headerLength = +(res.headers.get('content-length') || 0);
+  const total = expectedTotal > 0 ? expectedTotal : (headerLength > 0 ? headerLength : 0);
+
   if (!res.body || typeof res.body.getReader !== 'function') {
     const blob = await res.blob();
     onProgress({ loaded: blob.size, total: blob.size, percent: 100 });
@@ -69,11 +76,11 @@ async function fetchBlobWithProgress(url, onProgress) {
       if (done) break;
       chunks.push(value);
       received += value.length;
-      if (contentLength > 0) {
-        const pct = Math.min(100, Math.round((received / contentLength) * 100));
-        onProgress({ loaded: received, total: contentLength, percent: pct });
+      if (total > 0) {
+        const pct = Math.min(99, Math.round((received / total) * 100));
+        onProgress({ loaded: received, total, percent: pct });
       } else {
-        const estTotal = 26 * 1024 * 1024;
+        const estTotal = 30 * 1024 * 1024;
         const pct = Math.min(99, Math.round((received / estTotal) * 100));
         onProgress({ loaded: received, total: estTotal, percent: pct });
       }
@@ -91,19 +98,28 @@ async function fetchBlobWithProgress(url, onProgress) {
 let activeJaSession_ = null;
 let activeJaVoiceId_ = null;
 let currentJaAudio_ = null;
-let wasmModuleCache_ = null;
+let isWasmInitialized_ = false;
 
 /**
- * 日本語音声モデルおよび辞書WASMが IndexedDB に保存済みか確認
+ * 日本語音声モデルおよび辞書WASMが IndexedDB に完全な状態で保存済みか確認
+ * ※以前の不完全な25MBキャッシュ等が存在する場合は自動破棄します
  * @param {string} voiceId 
  * @returns {Promise<boolean>}
  */
 export async function isJapaneseVoiceCached(voiceId) {
-  const [hasModel, hasConfig, hasWasm] = await Promise.all([
+  const [hasModel, hasConfig, wasmBlob] = await Promise.all([
     hasBlob(`${voiceId}.onnx`),
     hasBlob(`${voiceId}.onnx.json`),
-    hasBlob('piper_plus_wasm_bg.wasm')
+    getBlob('piper_plus_wasm_bg.wasm')
   ]);
+
+  if (wasmBlob && wasmBlob.size < MIN_VALID_WASM_SIZE) {
+    console.warn(`[PiperTTS] 不完全な形態素辞書WASMキャッシュ (${wasmBlob.size} bytes) を検出したため削除します。`);
+    try { await deleteBlob('piper_plus_wasm_bg.wasm'); } catch (_) {}
+    return false;
+  }
+
+  const hasWasm = !!wasmBlob && wasmBlob.size >= MIN_VALID_WASM_SIZE;
   return hasModel && hasConfig && hasWasm;
 }
 
@@ -122,27 +138,31 @@ export async function downloadJapaneseVoice(voiceId, onProgress) {
 
   report('日本語音素エンジン辞書 (WASM) 確認中...', 5);
 
-  // 1. piper_plus_wasm_bg.wasm（OpenJTalk / NAIST-JDIC辞書内蔵）が未保存なら保存 (~57MB)
-  const hasWasm = await hasBlob('piper_plus_wasm_bg.wasm');
-  if (!hasWasm) {
-    report('日本語形態素辞書 (WASM ~50MB) ダウンロード中...', 10);
-    const wasmBlob = await fetchBlobWithProgress(PIPER_PLUS_WASM_BIN_URL, (p) => {
-      report('日本語形態素辞書 (WASM) ダウンロード中...', 10 + Math.round(p.percent * 0.40));
-    });
+  // 1. piper_plus_wasm_bg.wasm（OpenJTalk / NAIST-JDIC辞書内蔵）が完全な状態で保存されているか
+  let wasmBlob = await getBlob('piper_plus_wasm_bg.wasm');
+  if (!wasmBlob || wasmBlob.size < MIN_VALID_WASM_SIZE) {
+    report('日本語形態素辞書 (WASM ~60MB) ダウンロード中...', 10);
+    wasmBlob = await fetchBlobWithProgress(PIPER_PLUS_WASM_BIN_URL, (p) => {
+      report('日本語形態素辞書 (WASM) ダウンロード中...', 10 + Math.round(p.percent * 0.45));
+    }, 60070390);
+
+    if (wasmBlob.size < MIN_VALID_WASM_SIZE) {
+      throw new Error(`ダウンロードした日本語形態素辞書(WASM)のサイズが不完全です (${wasmBlob.size} bytes)。通信環境をご確認の上、再試行してください。`);
+    }
     await saveBlob('piper_plus_wasm_bg.wasm', wasmBlob);
   }
 
   // 2. モデル設定 config.json
-  report('モデル設定ファイル取得中...', 55);
+  report('モデル設定ファイル取得中...', 60);
   const configUrl = `https://huggingface.co/${meta.repo}/resolve/main/${meta.configFile}`;
   const configBlob = await fetchBlobWithProgress(configUrl);
   await saveBlob(`${voiceId}.onnx.json`, configBlob);
 
   // 3. ONNX モデル本体 (~38MB)
-  report('日本語音声モデル (ONNX ~38MB) ダウンロード中...', 60);
+  report('日本語音声モデル (ONNX ~38MB) ダウンロード中...', 65);
   const onnxUrl = `https://huggingface.co/${meta.repo}/resolve/main/${meta.onnxFile}`;
   const onnxBlob = await fetchBlobWithProgress(onnxUrl, (p) => {
-    report('日本語音声モデル (ONNX) ダウンロード中...', 60 + Math.round(p.percent * 0.38));
+    report('日本語音声モデル (ONNX) ダウンロード中...', 65 + Math.round(p.percent * 0.33));
   });
   await saveBlob(`${voiceId}.onnx`, onnxBlob);
 
@@ -165,16 +185,14 @@ export async function initJapaneseVoiceSession(voiceId) {
   }
 
   // 1. WASM モジュール初期化
-  if (!wasmModuleCache_) {
-    const mod = await import(PIPER_PLUS_WASM_JS_URL);
+  if (!isWasmInitialized_) {
     const wasmBlob = await getBlob('piper_plus_wasm_bg.wasm');
-    if (wasmBlob) {
-      const buf = await wasmBlob.arrayBuffer();
-      await mod.default(buf);
-    } else {
-      await mod.default();
+    if (!wasmBlob || wasmBlob.size < MIN_VALID_WASM_SIZE) {
+      throw new Error('日本語形態素辞書(WASM)が保存されていないか不完全です。保護者メニューでダウンロードしてください。');
     }
-    wasmModuleCache_ = mod;
+    const buf = await wasmBlob.arrayBuffer();
+    await initWasm(buf);
+    isWasmInitialized_ = true;
   }
 
   // 2. IndexedDB からモデルと設定を取得
@@ -191,7 +209,7 @@ export async function initJapaneseVoiceSession(voiceId) {
   const modelConfig = JSON.parse(configText);
 
   // 3. WasmPhonemizer インスタンス化
-  const phonemizer = new wasmModuleCache_.WasmPhonemizer(configText);
+  const phonemizer = new WasmPhonemizer(configText);
 
   // 4. ONNX 推論セッション作成 (WASM プロバイダ)
   const modelBuffer = await modelBlob.arrayBuffer();
