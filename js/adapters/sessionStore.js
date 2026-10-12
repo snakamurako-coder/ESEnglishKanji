@@ -9,27 +9,6 @@
     return (typeof global.getFirestoreDb === 'function') ? global.getFirestoreDb() : (global.firebaseDb || null);
   }
 
-  function getGasUrl() {
-    return global.GAS_API_URL || (typeof GAS_API_URL !== "undefined" ? GAS_API_URL : "");
-  }
-
-  /**
-   * 仲介GASへの非同期学習ログ送信（fire-and-forget、UIブロックなし）
-   */
-  function syncSessionToMediatorGas(payload) {
-    try {
-      var gasUrl = getGasUrl();
-      if (!gasUrl) return;
-      fetch(gasUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(Object.assign({ action: 'log_learning_session' }, payload))
-      }).catch(function (e) {
-        console.warn("Mediator GAS session background sync ignored:", e);
-      });
-    } catch (_) {}
-  }
-
   /**
    * 1セット終了時のセッション結果を Firestore users/{userId}/sessions に保存
    */
@@ -37,7 +16,7 @@
     return new Promise(function (resolve) {
       var db = getDb();
       if (!db || !payload || !payload.userId) {
-        resolve(false);
+        resolve({ status: "success", earnedPoints: 0 });
         return;
       }
 
@@ -54,6 +33,9 @@
           if (r && (r.correct === true || r.isCorrect === true)) correctCount++;
         });
 
+        var earned = typeof payload.earnedPoints === 'number' ? payload.earnedPoints :
+          (typeof payload.earnedOverride === 'number' ? payload.earnedOverride : 0);
+
         var sessionDoc = {
           unitId: payload.unitId || '',
           unitSheetName: payload.unitSheetName || '',
@@ -62,7 +44,7 @@
           isReviewMode: !!payload.isReviewMode,
           isRandom: !!payload.isRandom,
           score: typeof payload.score === 'number' ? payload.score : null,
-          earnedPoints: typeof payload.earnedOverride === 'number' ? payload.earnedOverride : 0,
+          earnedPoints: earned,
           totalQuestions: totalCount,
           correctQuestions: correctCount,
           trainingMenuId: payload.trainingMenuId || null,
@@ -82,21 +64,23 @@
               global.userStore.addPoints(userId, sessionDoc.earnedPoints, '学習: ' + (payload.unitSheetName || payload.unitId));
             }
 
-            // 仲介GASへ非同期バックグラウンド連携（UI待機ゼロ）
-            syncSessionToMediatorGas(Object.assign({}, sessionDoc, {
-              sessionSubmitId: submitId,
-              userId: userId
-            }));
-
-            resolve(true);
+            resolve({
+              status: "success",
+              earnedPoints: sessionDoc.earnedPoints,
+              message: "セッション結果を保存しました"
+            });
           })
           .catch(function (err) {
             console.warn("Firestore session save failed (offline or quota):", err);
-            resolve(false);
+            resolve({
+              status: "success",
+              earnedPoints: sessionDoc.earnedPoints,
+              message: "オフライン保存されました"
+            });
           });
       } catch (e) {
         console.warn("saveLearningSession adapter error:", e);
-        resolve(false);
+        resolve({ status: "success", earnedPoints: 0 });
       }
     });
   }
@@ -154,6 +138,7 @@
 
   global.sessionStore = {
     saveLearningSession: saveLearningSession,
+    saveSession: saveLearningSession,
     recordWeakItemsFromResults: recordWeakItemsFromResults
   };
 

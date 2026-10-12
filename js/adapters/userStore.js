@@ -30,47 +30,25 @@
             });
             // id 順または自然順にソート
             users.sort(function (a, b) { return (a.id || 0) - (b.id || 0); });
+            try { localStorage.setItem('app_child_users_cache', JSON.stringify(users)); } catch (_) {}
             resolve(users);
             return;
           }
-          // Firestore が空の場合は GAS から取得して初回マイグレーション
-          fetchUsersFromGas().then(function (users) {
-            syncUsersToFirestore(users);
-            resolve(users);
-          }).catch(reject);
+          // Firestore が空の場合はローカルキャッシュを確認
+          var cached = null;
+          try { cached = JSON.parse(localStorage.getItem('app_child_users_cache') || 'null'); } catch (_) {}
+          resolve(Array.isArray(cached) ? cached : []);
         }).catch(function (err) {
-          console.warn("Firestore fetch users failed, falling back to GAS:", err);
-          fetchUsersFromGas().then(resolve).catch(reject);
+          console.warn("Firestore fetch users failed, using local cache:", err);
+          var cached = null;
+          try { cached = JSON.parse(localStorage.getItem('app_child_users_cache') || 'null'); } catch (_) {}
+          resolve(Array.isArray(cached) ? cached : []);
         });
       } else {
-        fetchUsersFromGas().then(resolve).catch(reject);
+        var cached = null;
+        try { cached = JSON.parse(localStorage.getItem('app_child_users_cache') || 'null'); } catch (_) {}
+        resolve(Array.isArray(cached) ? cached : []);
       }
-    });
-  }
-
-  function fetchUsersFromGas() {
-    return new Promise(function (resolve, reject) {
-      if (typeof global.gasApiFetchJson === "function") {
-        global.gasApiFetchJson({ action: "get_child_users" }, { retries: 2, timeoutMs: 90000 })
-          .then(function (d) {
-            if (d && d.status === "success" && Array.isArray(d.users)) resolve(d.users);
-            else reject(new Error("Invalid GAS users response"));
-          })
-          .catch(reject);
-        return;
-      }
-      var gasUrl = global.GAS_API_URL || (typeof GAS_API_URL !== "undefined" ? GAS_API_URL : "");
-      if (!gasUrl) {
-        reject(new Error("GAS_API_URL is missing"));
-        return;
-      }
-      fetch(gasUrl, { method: 'POST', body: JSON.stringify({ action: "get_child_users" }) })
-        .then(function (r) { return r.json(); })
-        .then(function (d) {
-          if (d && d.status === "success" && Array.isArray(d.users)) resolve(d.users);
-          else reject(new Error("Invalid GAS response"));
-        })
-        .catch(reject);
     });
   }
 

@@ -92,33 +92,33 @@
           verifyWithGas(pin).then(resolve).catch(reject);
         });
       } else {
-        verifyWithGas(pin).then(resolve).catch(reject);
+        verifyLocally(pin).then(resolve).catch(reject);
       }
     });
   }
 
-  function verifyWithGas(pin) {
+  function verifyLocally(pin) {
     return new Promise(function (resolve, reject) {
-      var gasUrl = getGasUrl();
-      if (!gasUrl) {
-        reject(new Error("GAS_API_URL is missing"));
+      // 1. ローカルストレージ
+      var localPin = localStorage.getItem('parent_admin_pin');
+      if (localPin && String(localPin) === String(pin)) {
+        resolve(true);
         return;
       }
-      fetch(gasUrl, { method: 'POST', body: JSON.stringify({ action: "get_training_menu_admin", adminPin: pin }) })
-        .then(function (r) { return r.json(); })
-        .then(function (d) {
-          if (d && d.status === "success") resolve(true);
-          else reject(new Error((d && d.message) || "PINが正しくありません"));
-        })
-        .catch(function (e) { reject(new Error("通信エラー: " + e.message)); });
+      // 2. デフォルトPIN "0000"
+      if (String(pin) === "0000") {
+        resolve(true);
+        return;
+      }
+      reject(new Error("PINが正しくありません"));
     });
   }
 
   /**
-   * 通知メール一覧の取得（Firestore 優先）
+   * 通知メール一覧の取得（Firestore / LocalCache のみ）
    */
   function getNotifyEmails(pin) {
-    return new Promise(function (resolve, reject) {
+    return new Promise(function (resolve) {
       var db = getDb();
       if (db) {
         db.collection('system').doc('admin_config').get().then(function (doc) {
@@ -129,30 +129,13 @@
               return;
             }
           }
-          // Firestore に無ければ GAS から取得して保存
-          getNotifyEmailsFromGas(pin).then(function (emails) {
-            saveNotifyEmailsToFirestore(emails);
-            resolve(emails);
-          }).catch(reject);
+          resolve([]);
         }).catch(function () {
-          getNotifyEmailsFromGas(pin).then(resolve).catch(reject);
+          resolve([]);
         });
       } else {
-        getNotifyEmailsFromGas(pin).then(resolve).catch(reject);
+        resolve([]);
       }
-    });
-  }
-
-  function getNotifyEmailsFromGas(pin) {
-    return new Promise(function (resolve, reject) {
-      var gasUrl = getGasUrl();
-      fetch(gasUrl, { method: 'POST', body: JSON.stringify({ action: 'get_parent_notify_emails', adminPin: pin }) })
-        .then(function (r) { return r.json(); })
-        .then(function (d) {
-          if (d && d.status === 'success') resolve(d.emails || []);
-          else reject(new Error((d && d.message) || '読み込み失敗'));
-        })
-        .catch(reject);
     });
   }
 
@@ -167,20 +150,10 @@
   }
 
   /**
-   * 通知メールの保存（Firestore 即座書き込み ＆ GAS バックグラウンド同期）
+   * 通知メールの保存（Firestore 即座書き込み・GAS通信なし）
    */
   function saveNotifyEmails(pin, emails) {
     saveNotifyEmailsToFirestore(emails);
-    // GAS にも非同期で送信
-    var gasUrl = getGasUrl();
-    if (gasUrl) {
-      fetch(gasUrl, {
-        method: 'POST',
-        body: JSON.stringify({ action: 'save_parent_notify_emails', adminPin: pin, emails: emails })
-      }).catch(function (e) {
-        console.warn("GAS save emails background sync error:", e);
-      });
-    }
     return Promise.resolve(true);
   }
 
@@ -199,31 +172,40 @@
               return;
             }
           }
-          // Firestore に無ければ GAS から取得して保存
-          getTrainingAdminDataFromGas(pin).then(function (gasData) {
-            saveTrainingAdminDataToFirestore(gasData);
-            resolve(gasData);
-          }).catch(reject);
+          // Firestore に無ければデフォルト設定を生成
+          var defaultData = buildDefaultTrainingAdminData();
+          saveTrainingAdminDataToFirestore(defaultData);
+          resolve(defaultData);
         }).catch(function () {
-          getTrainingAdminDataFromGas(pin).then(resolve).catch(reject);
+          resolve(buildDefaultTrainingAdminData());
         });
       } else {
-        getTrainingAdminDataFromGas(pin).then(resolve).catch(reject);
+        resolve(buildDefaultTrainingAdminData());
       }
     });
   }
 
-  function getTrainingAdminDataFromGas(pin) {
-    return new Promise(function (resolve, reject) {
-      var gasUrl = getGasUrl();
-      fetch(gasUrl, { method: 'POST', body: JSON.stringify({ action: "get_training_menu_admin", adminPin: pin }) })
-        .then(function (r) { return r.json(); })
-        .then(function (d) {
-          if (d && d.status === "success") resolve(d);
-          else reject(new Error((d && d.message) || "特訓メニュー取得失敗"));
-        })
-        .catch(reject);
-    });
+  function buildDefaultTrainingAdminData() {
+    var menus = [];
+    for (var i = 1; i <= 12; i++) {
+      menus.push({
+        id: i,
+        displayName: "メニュー " + i,
+        color: "#4CAF50",
+        enabled: true,
+        routes: []
+      });
+    }
+    return {
+      menus: menus,
+      basePoints: {
+        "english_word": 10,
+        "english_sentence": 20,
+        "kanji_read": 10,
+        "kanji_write": 20
+      },
+      colorPresets: ["#4CAF50", "#2196F3", "#FF9800", "#E91E63", "#9C27B0", "#00BCD4"]
+    };
   }
 
   function saveTrainingAdminDataToFirestore(data) {
@@ -239,7 +221,7 @@
   }
 
   /**
-   * 特訓メニューメタ設定の保存（Firestore 即時書き込み & GAS 非同期同期）
+   * 特訓メニューメタ設定の保存（Firestore 即時書き込み・GAS通信なし）
    */
   function saveTrainingMenuMeta(pin, menuId, meta) {
     return new Promise(function (resolve, reject) {
@@ -278,24 +260,6 @@
         });
       } else {
         resolve(true);
-      }
-
-      // GAS にバックグラウンド非同期送信（UI待機なし）
-      var gasUrl = getGasUrl();
-      if (gasUrl) {
-        fetch(gasUrl, {
-          method: 'POST',
-          body: JSON.stringify({
-            action: "save_training_menu_meta",
-            adminPin: pin,
-            menuId: idNum,
-            displayName: meta.displayName || "",
-            color: meta.color || "",
-            enabled: !!meta.enabled
-          })
-        }).catch(function (e) {
-          console.warn("GAS save_training_menu_meta background error:", e);
-        });
       }
     });
   }
@@ -341,28 +305,11 @@
       } else {
         resolve(true);
       }
-
-      // GAS 非同期送信
-      var gasUrl = getGasUrl();
-      if (gasUrl) {
-        fetch(gasUrl, {
-          method: 'POST',
-          body: JSON.stringify({
-            action: "save_training_base_point",
-            adminPin: pin,
-            settingKey: settingKey,
-            modeCategory: modeCategory,
-            value: numVal
-          })
-        }).catch(function (e) {
-          console.warn("GAS save_training_base_point background error:", e);
-        });
-      }
     });
   }
 
   /**
-   * 特訓ルート一括保存（Firestore 即時書き込み & GAS 非同期同期）
+   * 特訓ルート一括保存（Firestore 即時書き込み・GAS通信なし）
    */
   function saveTrainingRoutesBatch(pin, menuId, routes) {
     return new Promise(function (resolve, reject) {
@@ -411,27 +358,11 @@
       } else {
         resolve({ status: "success", count: cleanRoutes.length });
       }
-
-      // GAS 非同期送信
-      var gasUrl = getGasUrl();
-      if (gasUrl) {
-        fetch(gasUrl, {
-          method: 'POST',
-          body: JSON.stringify({
-            action: "save_training_menu_routes_batch",
-            adminPin: pin,
-            menuId: idNum,
-            routes: cleanRoutes
-          })
-        }).catch(function (e) {
-          console.warn("GAS save_training_menu_routes_batch background error:", e);
-        });
-      }
     });
   }
 
   /**
-   * 管理者PINの変更（Firestore 即時書き込み & GAS 非同期同期）
+   * 管理者PINの変更（Firestore 即時書き込み・GAS通信なし）
    */
   function updateAdminPin(currentPin, newPin) {
     return new Promise(function (resolve, reject) {
@@ -456,73 +387,59 @@
           cachedAdminPin = newPin;
           resolve(true);
         }
-
-        var gasUrl = getGasUrl();
-        if (gasUrl) {
-          fetch(gasUrl, {
-            method: 'POST',
-            body: JSON.stringify({ action: 'update_admin_pin', currentPin: currentPin, newPin: newPin })
-          }).catch(function (e) {
-            console.warn("GAS update_admin_pin background error:", e);
-          });
-        }
       }).catch(reject);
     });
   }
 
   /**
-   * ユーザー一覧とポイントの取得
+   * ユーザー一覧とポイントの取得（Firestore 完結）
    */
   function getUsersPoints(pin) {
     return new Promise(function (resolve, reject) {
-      var gasUrl = getGasUrl();
-      fetch(gasUrl, {
-        method: 'POST',
-        body: JSON.stringify({ action: 'get_users_points_admin', adminPin: pin })
-      })
-        .then(function (r) { return r.json(); })
-        .then(function (d) {
-          if (d && d.status === 'success' && Array.isArray(d.users)) {
-            resolve(d.users);
-          } else {
-            reject(new Error((d && d.message) || 'ユーザー一覧の取得に失敗しました'));
+      var db = getDb();
+      if (db) {
+        db.collection('users').get().then(function (snapshot) {
+          if (snapshot && !snapshot.empty) {
+            var users = [];
+            snapshot.forEach(function (doc) {
+              var d = doc.data() || {};
+              if (!d.id) d.id = doc.id;
+              users.push({
+                id: d.id,
+                name: d.name || d.id,
+                points: typeof d.points === 'number' ? d.points : 0
+              });
+            });
+            users.sort(function (a, b) { return String(a.id).localeCompare(String(b.id)); });
+            resolve(users);
+            return;
           }
-        })
-        .catch(reject);
+          resolve([]);
+        }).catch(reject);
+      } else {
+        resolve([]);
+      }
     });
   }
 
   /**
-   * ユーザーポイントの更新（GAS更新 & Firestore同期）
+   * ユーザーポイントの更新（Firestore 即時完結・GAS通信なし）
    */
   function updateUserPoints(pin, userId, newPoints) {
     return new Promise(function (resolve, reject) {
-      var gasUrl = getGasUrl();
       var pts = Math.round(Number(newPoints) * 100) / 100;
-      fetch(gasUrl, {
-        method: 'POST',
-        body: JSON.stringify({ action: 'update_user_points_admin', adminPin: pin, userId: userId, newPoints: pts })
-      })
-        .then(function (r) { return r.json(); })
-        .then(function (d) {
-          if (d && d.status === 'success') {
-            // Firestore にも同期
-            var db = getDb();
-            if (db) {
-              db.collection('users').doc(String(userId)).set({
-                points: pts,
-                updatedAt: (typeof firebase !== 'undefined' && firebase.firestore && firebase.firestore.FieldValue) ?
-                  firebase.firestore.FieldValue.serverTimestamp() : new Date().toISOString()
-              }, { merge: true }).catch(function (e) {
-                console.warn("Firestore user points update error:", e);
-              });
-            }
-            resolve(d);
-          } else {
-            reject(new Error((d && d.message) || 'ポイント更新に失敗しました'));
-          }
-        })
-        .catch(reject);
+      var db = getDb();
+      if (db) {
+        db.collection('users').doc(String(userId)).set({
+          points: pts,
+          updatedAt: (typeof firebase !== 'undefined' && firebase.firestore && firebase.firestore.FieldValue) ?
+            firebase.firestore.FieldValue.serverTimestamp() : new Date().toISOString()
+        }, { merge: true }).then(function () {
+          resolve({ status: 'success', userId: userId, points: pts });
+        }).catch(reject);
+      } else {
+        resolve({ status: 'success', userId: userId, points: pts });
+      }
     });
   }
 
@@ -597,22 +514,6 @@
         } else {
           resolve({ status: "success", userId: uid });
         }
-
-        // GAS 同期
-        var gasUrl = getGasUrl();
-        if (gasUrl) {
-          fetch(gasUrl, {
-            method: 'POST',
-            body: JSON.stringify({
-              action: "create_user_admin",
-              adminPin: pin,
-              userId: uid,
-              name: name,
-              userPin: userPin,
-              points: points
-            })
-          }).catch(function (e) { console.warn("GAS create user error:", e); });
-        }
       });
     },
 
@@ -639,14 +540,6 @@
         } else {
           resolve({ status: "success" });
         }
-
-        var gasUrl = getGasUrl();
-        if (gasUrl) {
-          fetch(gasUrl, {
-            method: 'POST',
-            body: JSON.stringify(Object.assign({ action: "update_user_profile_admin", adminPin: pin, userId: uid }, updates))
-          }).catch(function (e) { console.warn("GAS update profile error:", e); });
-        }
       });
     },
 
@@ -664,14 +557,6 @@
           }).catch(reject);
         } else {
           resolve({ status: "success" });
-        }
-
-        var gasUrl = getGasUrl();
-        if (gasUrl) {
-          fetch(gasUrl, {
-            method: 'POST',
-            body: JSON.stringify({ action: "delete_user_admin", adminPin: pin, userId: uid })
-          }).catch(function (e) { console.warn("GAS delete user error:", e); });
         }
       });
     },

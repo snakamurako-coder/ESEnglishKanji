@@ -7,10 +7,6 @@
 
   let externalMenus = [];
 
-  function getGasUrl() {
-    return global.GAS_API_URL || "https://script.google.com/macros/s/AKfycbwzthKF9ZpIXPzaIY6rSXyoSN9XVrPml05KP-f-rTfYnxRqsBBzMpBxYe6NEoNcxdTA_A/exec";
-  }
-
   function saveKidUser(user) {
     if (typeof global.saveAppKidUserToLocal === 'function') {
       try { return global.saveAppKidUserToLocal(user); } catch (_) {}
@@ -60,25 +56,34 @@
     if (contEl) contEl.innerHTML = "<p>さがしています...</p>";
     if (myReqEl) myReqEl.innerHTML = "";
 
-    fetch(getGasUrl(), { method: 'POST', body: JSON.stringify({ action: "get_external_learning" }) })
-      .then(r => r.json())
-      .then(d => {
-        callToggleBtnLoading(btn, false, origText);
-        if (d.status === "success") {
-          callSwitchSection('section-external');
-          externalMenus = d.list || [];
-          renderExternalLearningForm();
-          refreshMyExternalRequests();
-          const user = JSON.parse(localStorage.getItem('app_kid_user') || 'null');
-          if (user && user.stopwatchJson && user.stopwatchJson.external && typeof global.applyStopwatchState_ === 'function') {
-            global.applyStopwatchState_('external', user.stopwatchJson.external);
-          }
-          if (user && typeof global.loadStopwatchFromServer === 'function') {
-            global.loadStopwatchFromServer(user);
-          }
-        }
-      })
-      .catch(() => callToggleBtnLoading(btn, false, origText));
+    const onMenusLoaded = function (menus) {
+      callToggleBtnLoading(btn, false, origText);
+      callSwitchSection('section-external');
+      externalMenus = menus || [];
+      renderExternalLearningForm();
+      refreshMyExternalRequests();
+      const user = JSON.parse(localStorage.getItem('app_kid_user') || 'null');
+      if (user && user.stopwatchJson && user.stopwatchJson.external && typeof global.applyStopwatchState_ === 'function') {
+        global.applyStopwatchState_('external', user.stopwatchJson.external);
+      }
+      if (user && typeof global.loadStopwatchFromServer === 'function') {
+        global.loadStopwatchFromServer(user);
+      }
+    };
+
+    if (global.appSettingsStore && typeof global.appSettingsStore.getExternalLearningMenus === 'function') {
+      global.appSettingsStore.getExternalLearningMenus()
+        .then(res => onMenusLoaded((res && res.list) || []))
+        .catch(() => {
+          callToggleBtnLoading(btn, false, origText);
+          onMenusLoaded([]);
+        });
+      return;
+    }
+
+    // キャッシュまたはローカル設定フォールバック
+    callToggleBtnLoading(btn, false, origText);
+    onMenusLoaded([]);
   }
 
   function renderExternalLearningForm() {
@@ -180,20 +185,9 @@
 
     if (global.externalStore && typeof global.externalStore.subscribeMyRequests === 'function') {
       global.externalStore.subscribeMyRequests(user.id, renderList);
-      return;
+    } else {
+      box.innerHTML = "<p style='color:#888;'>※まだ申請履歴はありません。</p>";
     }
-
-    box.innerHTML = "<p style='color:#888;'>あなたの申請を読み込み中...</p>";
-    fetch(getGasUrl(), { method: 'POST', body: JSON.stringify({ action: "get_my_external_learning_requests", userId: user.id }) })
-      .then(r => r.json())
-      .then(d => {
-        if (d.status === "success" && d.list) {
-          renderList(d.list);
-        } else {
-          box.innerHTML = "<p style='color:#888;'>※まだ申請履歴はありません。</p>";
-        }
-      })
-      .catch(() => { box.innerHTML = ""; });
   }
 
   function submitExternalLearningRequestSelected() {
@@ -223,32 +217,15 @@
         .then(() => {
           alert("申請しました！おうちの人の承認をお待ちください。");
           refreshMyExternalRequests();
+          if (memoEl) memoEl.value = "";
         })
         .catch(err => {
-          console.warn("Firestore submit error, fallback to GAS:", err);
+          console.error("Firestore submitRequest error:", err);
+          alert("申請の保存に失敗しました。");
         });
+    } else {
+      alert("外部学習機能が初期化されていません。");
     }
-
-    // GAS 側（スプレッドシート履歴）にも記録
-    fetch(getGasUrl(), {
-      method: 'POST',
-      body: JSON.stringify({
-        action: "submit_external_learning_request",
-        userId: user.id,
-        category: menu.category,
-        volume: menu.volume,
-        points: menu.points,
-        childMemo: childMemo
-      })
-    })
-      .then(r => r.json())
-      .then(d => {
-        if (d.status === "success" && (!global.externalStore || typeof global.externalStore.submitRequest !== 'function')) {
-          alert(d.message);
-          refreshMyExternalRequests();
-        }
-      })
-      .catch(() => {});
   }
 
   // =========================================================================
@@ -271,37 +248,22 @@
     const pinPanel = document.getElementById('external-admin-pin-panel');
     if (pinPanel) pinPanel.style.display = "none";
 
-    // Firestore リアルタイム監視を優先
+    // Firestore リアルタイム監視
     if (global.externalStore && typeof global.externalStore.subscribePendingRequests === 'function') {
       global.externalStore.subscribePendingRequests(function (list) {
         if (msg) msg.innerText = "";
         renderExternalAdminList(list, pin);
       });
-      return;
+    } else {
+      if (listEl) listEl.innerHTML = "<p style='text-align:center;color:#888;'>申請中のものはありません。</p>";
     }
-
-    fetch(getGasUrl(), { method: 'POST', body: JSON.stringify({ action: "get_pending_external_requests", adminPin: pin }) })
-      .then(r => r.json())
-      .then(d => {
-        if (d.status !== "success") {
-          if (listEl) listEl.style.display = "none";
-          if (msg) msg.innerText = d.message || "エラー";
-          return;
-        }
-        if (msg) msg.innerText = "";
-        renderExternalAdminList(d.list || [], pin);
-      })
-      .catch(() => {
-        if (listEl) listEl.style.display = "none";
-        if (msg) msg.innerText = "通信エラーが発生しました。";
-      });
   }
 
   function renderExternalAdminList(list, pin) {
     const listEl = document.getElementById('external-admin-list');
     if (!listEl) return;
     listEl.style.display = "flex";
-    if (list.length === 0) {
+    if (!list || list.length === 0) {
       listEl.innerHTML = "<p style='text-align:center;color:#888;'>申請中のものはありません。</p>";
       const retry = document.createElement('button');
       retry.type = "button";
@@ -324,7 +286,6 @@
     list.forEach(item => {
       const card = document.createElement('div');
       card.className = "external-admin-card";
-      card.dataset.rowIdx = item.rowIdx;
       card.dataset.reqId = item.id || '';
       card.style.cssText = "background:#2a2a2a;border-radius:12px;padding:14px;border:1px solid #444;position:relative;";
       card.innerHTML = `<label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;">
@@ -344,8 +305,8 @@
         </div>`;
       const btns = card.querySelectorAll('button');
       const memoField = card.querySelector('.external-admin-memo');
-      btns[0].onclick = () => decideExternalRequest(item.rowIdx, pin, true, memoField ? memoField.value : "", item.id);
-      btns[1].onclick = () => decideExternalRequest(item.rowIdx, pin, false, memoField ? memoField.value : "", item.id);
+      btns[0].onclick = () => decideExternalRequest(item.id, pin, true, memoField ? memoField.value : "");
+      btns[1].onclick = () => decideExternalRequest(item.id, pin, false, memoField ? memoField.value : "");
       listEl.appendChild(card);
     });
 
@@ -358,7 +319,7 @@
     listEl.appendChild(back);
   }
 
-  function decideExternalRequest(rowIdx, pin, approve, memo = "", reqId = null) {
+  function decideExternalRequest(reqId, pin, approve, memo = "") {
     if (!confirm(approve ? "この申請を承認してポイントを付与しますか？" : "この申請を却下しますか？")) return;
 
     if (reqId && global.externalStore && typeof global.externalStore.decideRequest === 'function') {
@@ -367,35 +328,11 @@
           alert(approve ? "承認しました！ポイントが加算されました。" : "却下しました。");
         })
         .catch(err => {
-          console.warn("Firestore decideRequest error:", err);
+          console.error("Firestore decideRequest error:", err);
+          alert("処理に失敗しました。");
         });
-    }
-
-    if (rowIdx != null) {
-      const action = approve ? "approve_external_request" : "reject_external_request";
-      fetch(getGasUrl(), { method: 'POST', body: JSON.stringify({ action: action, adminPin: pin, rowIdx: rowIdx, adminMemo: memo }) })
-        .then(r => r.json())
-        .then(d => {
-          if (!reqId) {
-            if (d.status !== "success") {
-              alert(d.message || "エラー");
-              return;
-            }
-            alert(d.message);
-          }
-          let user = null;
-          try { user = JSON.parse(localStorage.getItem('app_kid_user') || "{}"); } catch (_) {}
-          if (approve && d.userId && user && user.id === d.userId && typeof d.newTotal === "number") {
-            user.points = d.newTotal;
-            saveKidUser(user);
-            const pts = document.getElementById('user-points');
-            if (pts) pts.innerText = user.points;
-          }
-          loadExternalAdminPendingAfterPin(pin);
-        })
-        .catch(() => {
-          if (!reqId) alert("通信エラーが発生しました。");
-        });
+    } else {
+      alert("外部学習機能が初期化されていません。");
     }
   }
 
@@ -407,11 +344,10 @@
 
     cards.forEach(card => {
       const checkbox = card.querySelector('.external-bulk-check');
-      if (checkbox && checkbox.checked) {
-        const rowIdx = card.dataset.rowIdx;
+      if (checkbox && checkbox.checked && card.dataset.reqId) {
         const memoField = card.querySelector('.external-admin-memo');
         requestsToApprove.push({
-          rowIdx: rowIdx,
+          reqId: card.dataset.reqId,
           adminMemo: memoField ? memoField.value : ""
         });
       }
@@ -424,46 +360,25 @@
 
     if (!confirm(`選択された ${requestsToApprove.length} 件の申請を一括で承認してポイントを付与しますか？`)) return;
 
-    fetch(getGasUrl(), { method: 'POST', body: JSON.stringify({ action: "bulk_approve_external_requests", adminPin: pin, requests: requestsToApprove }) })
-      .then(r => r.json())
-      .then(d => {
-        if (d.status !== "success") {
-          alert(d.message || "エラー");
-          return;
-        }
-        alert(d.message);
-        let user = null;
-        try { user = JSON.parse(localStorage.getItem('app_kid_user') || "{}"); } catch (_) {}
-        if (d.userPointsUpdates && user && user.id && typeof d.userPointsUpdates[user.id] === "number") {
-          user.points = d.userPointsUpdates[user.id];
-          saveKidUser(user);
-          const pts = document.getElementById('user-points');
-          if (pts) pts.innerText = user.points;
-        }
-        loadExternalAdminPendingAfterPin(pin);
-      })
-      .catch(() => alert("通信エラーが発生しました。"));
+    if (global.externalStore && typeof global.externalStore.decideRequest === 'function') {
+      const promises = requestsToApprove.map(item =>
+        global.externalStore.decideRequest(item.reqId, true, item.adminMemo)
+      );
+      Promise.all(promises)
+        .then(() => {
+          alert("選択されたすべての申請を承認しました！");
+        })
+        .catch(err => {
+          console.error("Bulk approve error:", err);
+          alert("一括承認中にエラーが発生しました。");
+        });
+    } else {
+      alert("外部学習機能が初期化されていません。");
+    }
   }
 
   function loadExternalAdminPendingAfterPin(pin) {
-    const msg = document.getElementById('external-admin-message');
-    const listEl = document.getElementById('external-admin-list');
-    if (msg) msg.innerText = "";
-    if (listEl) {
-      listEl.innerHTML = "<p>更新中...</p>";
-      listEl.style.display = "flex";
-    }
-    fetch(getGasUrl(), { method: 'POST', body: JSON.stringify({ action: "get_pending_external_requests", adminPin: pin }) })
-      .then(r => r.json())
-      .then(d => {
-        if (d.status !== "success") {
-          if (msg) msg.innerText = d.message || "エラー";
-          if (listEl) listEl.innerHTML = "";
-          return;
-        }
-        renderExternalAdminList(d.list || [], pin);
-      })
-      .catch(() => { if (msg) msg.innerText = "通信エラー"; });
+    loadExternalAdminPending();
   }
 
   // グローバル公開

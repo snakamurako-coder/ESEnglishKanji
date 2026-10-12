@@ -12,13 +12,8 @@
     external: { timerId: null, startAt: 0, elapsed: 0, running: false }
   };
 
-  const stopwatchSyncInFlight = { home: false, external: false };
   let activeRewardTicket = null;
   let rewardCountdownTimerId = null;
-
-  function getGasUrl() {
-    return global.GAS_API_URL || "https://script.google.com/macros/s/AKfycbwzthKF9ZpIXPzaIY6rSXyoSN9XVrPml05KP-f-rTfYnxRqsBBzMpBxYe6NEoNcxdTA_A/exec";
-  }
 
   function saveKidUser(user) {
     if (typeof global.saveAppKidUserToLocal === 'function') {
@@ -113,36 +108,24 @@
   }
 
   function syncStopwatchToServer(target, opts) {
-    opts = opts || {};
     let user = null;
     try {
       user = JSON.parse(localStorage.getItem('app_kid_user') || 'null');
     } catch (_) {}
     if (!user || !user.id) return;
-    if (stopwatchSyncInFlight[target]) return;
-    stopwatchSyncInFlight[target] = true;
     const payload = buildStopwatchPayload(target);
+    if (!user.stopwatchJson) user.stopwatchJson = {};
+    user.stopwatchJson[target] = payload;
+    saveKidUser(user);
 
-    fetch(getGasUrl(), {
-      method: 'POST',
-      keepalive: !!opts.keepalive,
-      body: JSON.stringify({
-        action: 'save_stopwatch',
-        userId: user.id,
-        target: target,
-        running: payload.running,
-        startedAtMs: payload.startedAtMs,
-        elapsedMs: payload.elapsedMs
-      })
-    }).then(function (r) { return r.json(); }).then(function (d) {
-      if (d && d.status === 'success' && d.stopwatch) {
-        if (user.stopwatchJson == null) user.stopwatchJson = {};
-        user.stopwatchJson[target] = d.stopwatch[target];
-        saveKidUser(user);
-      }
-    }).catch(function () {}).finally(function () {
-      stopwatchSyncInFlight[target] = false;
-    });
+    // Firestore に非同期保存
+    if (typeof firebase !== 'undefined' && firebase.firestore) {
+      try {
+        firebase.firestore().collection('users').doc(String(user.id)).set({
+          stopwatchJson: user.stopwatchJson
+        }, { merge: true }).catch(function () {});
+      } catch (_) {}
+    }
   }
 
   function syncAllStopwatchesToServer(keepalive) {
@@ -154,17 +137,19 @@
     if (!user || !user.id) return Promise.resolve();
     if (user.stopwatchJson) {
       applyStopwatchJson(user.stopwatchJson);
+      return Promise.resolve();
     }
-    return fetch(getGasUrl(), {
-      method: 'POST',
-      body: JSON.stringify({ action: 'get_stopwatch', userId: user.id })
-    }).then(function (r) { return r.json(); }).then(function (d) {
-      if (d && d.status === 'success' && d.stopwatch) {
-        user.stopwatchJson = d.stopwatch;
-        saveKidUser(user);
-        applyStopwatchJson(d.stopwatch);
-      }
-    }).catch(function () {});
+    if (typeof firebase !== 'undefined' && firebase.firestore) {
+      return firebase.firestore().collection('users').doc(String(user.id)).get()
+        .then(function (snap) {
+          if (snap.exists && snap.data().stopwatchJson) {
+            user.stopwatchJson = snap.data().stopwatchJson;
+            saveKidUser(user);
+            applyStopwatchJson(user.stopwatchJson);
+          }
+        }).catch(function () {});
+    }
+    return Promise.resolve();
   }
 
   function enforceStopwatchMaxDuration(target) {
@@ -235,19 +220,24 @@
       const remain = new Date(user.activeRewardTicket.endsAt).getTime() - Date.now();
       if (remain > 0) {
         setActiveRewardTicket_(user.activeRewardTicket);
+        return Promise.resolve();
       } else {
         user.activeRewardTicket = null;
         saveKidUser(user);
       }
     }
-    return fetch(getGasUrl(), {
-      method: 'POST',
-      body: JSON.stringify({ action: 'get_active_reward_ticket', userId: user.id })
-    }).then(function (r) { return r.json(); }).then(function (d) {
-      if (d && d.status === 'success') {
-        setActiveRewardTicket_(d.activeTicket || null);
-      }
-    }).catch(function () {});
+    if (typeof firebase !== 'undefined' && firebase.firestore) {
+      return firebase.firestore().collection('users').doc(String(user.id)).get()
+        .then(function (snap) {
+          if (snap.exists && snap.data().activeRewardTicket) {
+            const ticket = snap.data().activeRewardTicket;
+            if (ticket.endsAt && new Date(ticket.endsAt).getTime() > Date.now()) {
+              setActiveRewardTicket_(ticket);
+            }
+          }
+        }).catch(function () {});
+    }
+    return Promise.resolve();
   }
 
   function startStopwatch(target) {

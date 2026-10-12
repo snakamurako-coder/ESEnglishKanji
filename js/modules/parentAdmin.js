@@ -16,10 +16,6 @@
 
   const DEFAULT_COLORS = ["#9C27B0", "#2196F3", "#4CAF50", "#FF9800", "#F44336", "#009688", "#E91E63", "#3F51B5", "#795548", "#607D8B", "#00BCD4", "#FFC107"];
 
-  function getGasUrl() {
-    return global.GAS_API_URL || "https://script.google.com/macros/s/AKfycbwzthKF9ZpIXPzaIY6rSXyoSN9XVrPml05KP-f-rTfYnxRqsBBzMpBxYe6NEoNcxdTA_A/exec";
-  }
-
   function escapeHtml(str) {
     if (typeof global.escapeHtml === 'function') return global.escapeHtml(str);
     return String(str || '').replace(/[&<>"']/g, function (m) {
@@ -94,18 +90,7 @@
       return;
     }
 
-    fetch(getGasUrl(), { method: 'POST', body: JSON.stringify({ action: "get_training_menu_admin", adminPin: pin }) })
-      .then(r => r.json()).then(d => {
-        if (d.status !== "success") {
-          if (msg) { msg.innerText = d.message || "PINが正しくありません"; msg.style.color = "#ff8a80"; }
-          return;
-        }
-        parentAdminPinSession = pin;
-        syncAdminPinInputs(pin);
-        showParentAdminHub();
-      }).catch(function () {
-        if (msg) { msg.innerText = "通信エラー"; msg.style.color = "#ff8a80"; }
-      });
+    if (msg) { msg.innerText = "管理機能が初期化されていません"; msg.style.color = "#ff8a80"; }
   }
 
   function backToParentAdminHub() {
@@ -226,18 +211,7 @@
       return;
     }
 
-    fetch(getGasUrl(), {
-      method: 'POST',
-      body: JSON.stringify({ action: 'get_users_points_admin', adminPin: parentAdminPinSession })
-    })
-      .then(r => r.json())
-      .then(d => {
-        if (d && d.status === 'success') onData(d.users || []);
-        else throw new Error((d && d.message) || '取得失敗');
-      })
-      .catch(err => {
-        if (container) container.innerHTML = '<p style="color:#ff8a80;text-align:center;">' + escapeHtml(err.message || '取得に失敗しました') + '</p>';
-      });
+    if (container) container.innerHTML = '<p style="color:#ff8a80;text-align:center;">管理機能が初期化されていません</p>';
   }
 
   function adjustUserPointInput(userId, delta) {
@@ -293,16 +267,7 @@
       return;
     }
 
-    fetch(getGasUrl(), {
-      method: 'POST',
-      body: JSON.stringify({ action: 'update_user_points_admin', adminPin: parentAdminPinSession, userId: userId, newPoints: newPts })
-    })
-      .then(r => r.json())
-      .then(d => {
-        if (d && d.status === 'success') onSuccess(d);
-        else throw new Error((d && d.message) || "更新失敗");
-      })
-      .catch(onError);
+    onError(new Error("管理機能が初期化されていません"));
   }
 
   function enterParentAdminPiperTTS() {
@@ -332,23 +297,7 @@
       return;
     }
 
-    fetch(getGasUrl(), {
-      method: 'POST',
-      body: JSON.stringify({ action: 'get_parent_notify_emails', adminPin: parentAdminPinSession })
-    }).then(function (r) { return r.json(); }).then(function (d) {
-      if (d.status !== 'success') {
-        if (msg) { msg.innerText = d.message || '読み込みに失敗しました'; msg.style.color = '#ff8a80'; }
-        return;
-      }
-      const emails = d.emails || [];
-      for (let i = 1; i <= 4; i++) {
-        const el = document.getElementById('parent-notify-email-' + i);
-        if (el) el.value = emails[i - 1] || '';
-      }
-      if (msg) msg.innerText = '';
-    }).catch(function () {
-      if (msg) { msg.innerText = '通信エラー'; msg.style.color = '#ff8a80'; }
-    });
+    if (msg) { msg.innerText = '管理機能が初期化されていません'; msg.style.color = '#ff8a80'; }
   }
 
   function saveParentNotifyEmails() {
@@ -371,18 +320,7 @@
       return;
     }
 
-    fetch(getGasUrl(), {
-      method: 'POST',
-      body: JSON.stringify({ action: 'save_parent_notify_emails', adminPin: parentAdminPinSession, emails: emails })
-    }).then(function (r) { return r.json(); }).then(function (d) {
-      if (d.status === 'success') {
-        if (msg) { msg.innerText = d.message || '保存しました'; msg.style.color = '#81C784'; }
-      } else {
-        if (msg) { msg.innerText = d.message || '保存に失敗しました'; msg.style.color = '#ff8a80'; }
-      }
-    }).catch(function () {
-      if (msg) { msg.innerText = '通信エラー'; msg.style.color = '#ff8a80'; }
-    });
+    if (msg) { msg.innerText = '管理機能が初期化されていません'; msg.style.color = '#ff8a80'; }
   }
 
   function getTrainingAdminPin() {
@@ -439,21 +377,7 @@
       return;
     }
 
-    fetch(getGasUrl(), { method: 'POST', body: JSON.stringify({ action: "get_training_menu_admin", adminPin: pin }) })
-      .then(r => r.json()).then(d => {
-        if (d.status !== "success") {
-          setTrainingAdminMessage(d.message || "エラー", false);
-          return;
-        }
-        trainingAdminData = d;
-        const pinPanel = document.getElementById('training-admin-pin-panel');
-        const mainPanel = document.getElementById('training-admin-main');
-        if (pinPanel) pinPanel.style.display = "none";
-        if (mainPanel) mainPanel.style.display = "block";
-        switchTrainingAdminTab('menus');
-        renderTrainingAdminMenuGrid();
-        setTrainingAdminMessage("", true);
-      }).catch(() => setTrainingAdminMessage("通信エラー", false));
+    setTrainingAdminMessage("管理機能が初期化されていません", false);
   }
 
   function switchTrainingAdminTab(tab) {
@@ -547,29 +471,8 @@
       return;
     }
 
-    fetch(getGasUrl(), { method: 'POST', body: JSON.stringify({
-      action: "save_training_menu_meta",
-      adminPin: pin,
-      menuId: menuId,
-      displayName: nameEl ? nameEl.value : "",
-      color: colorEl ? colorEl.value : "",
-      enabled: !!(enabledEl && enabledEl.checked)
-    }) })
-    .then(r => r.json()).then(d => {
-      if (d.status !== "success") {
-        setTrainingAdminMessage(d.message || "保存に失敗しました", false);
-        stopLoading();
-        return;
-      }
-      if (typeof global.invalidateAppSettingsCache === 'function') global.invalidateAppSettingsCache();
-      const p = typeof global.fetchAppSettings === 'function' ? global.fetchAppSettings() : Promise.resolve();
-      return p.then(function () {
-        return reloadTrainingAdminData(null, "メニュー" + menuId + " の設定を保存しました");
-      });
-    }).catch(function () {
-      setTrainingAdminMessage("通信エラー", false);
-      stopLoading();
-    });
+    setTrainingAdminMessage("管理機能が初期化されていません", false);
+    stopLoading();
   }
 
   function closeTrainingAdminRoutePanel() {
@@ -890,35 +793,8 @@
       return;
     }
 
-    fetch(getGasUrl(), { method: 'POST', body: JSON.stringify({
-      action: "save_training_base_point",
-      adminPin: pin,
-      settingKey: settingKey,
-      modeCategory: modeCategory,
-      value: pointValue
-    }) })
-    .then(r => r.json()).then(d => {
-      if (d.status !== "success") {
-        setTrainingAdminMessage(d.message || "保存に失敗しました", false);
-        return;
-      }
-      if (!trainingAdminData.basePointSettings) trainingAdminData.basePointSettings = {};
-      const prev = trainingAdminData.basePointSettings[settingKey];
-      if (prev != null && typeof prev === "object" && !Array.isArray(prev)) {
-        if (modeCategory === "expression") prev.expression = pointValue;
-        else prev.word = pointValue;
-      } else {
-        trainingAdminData.basePointSettings[settingKey] = modeCategory === "expression"
-          ? { word: prev != null ? prev : "", expression: pointValue }
-          : { word: pointValue, expression: "" };
-      }
-      if (typeof global.invalidateAppSettingsCache === 'function') global.invalidateAppSettingsCache();
-      const modeLabel = modeCategory === "expression" ? "表現" : "単語";
-      setTrainingAdminMessage("点数を保存しました（" + settingKey + " / " + modeLabel + " = " + pointValue + "）", true);
-    }).catch(function () { setTrainingAdminMessage("通信エラー", false); })
-    .finally(function () {
-      if (saveBtn && saveBtn.isConnected) callToggleBtnLoading(saveBtn, false, orig);
-    });
+    setTrainingAdminMessage("管理機能が初期化されていません", false);
+    if (saveBtn && saveBtn.isConnected) callToggleBtnLoading(saveBtn, false, orig);
   }
 
   function openTrainingAdminRouteEditor(menuId) {
@@ -1042,11 +918,7 @@
       return global.parentAdminStore.getTrainingAdminData(pin).then(applyData);
     }
 
-    return fetch(getGasUrl(), { method: 'POST', body: JSON.stringify({ action: "get_training_menu_admin", adminPin: pin }) })
-      .then(r => r.json()).then(d => {
-        if (d.status !== "success") throw new Error(d.message || "再読み込み失敗");
-        return applyData(d);
-      });
+    return Promise.reject(new Error("管理機能が初期化されていません"));
   }
 
   function saveTrainingAdminRoutesBatch() {
@@ -1078,23 +950,8 @@
       return;
     }
 
-    fetch(getGasUrl(), { method: 'POST', body: JSON.stringify({
-      action: "save_training_menu_routes_batch",
-      adminPin: pin,
-      menuId: menuId,
-      routes: trainingAdminDraftRoutes
-    }) })
-    .then(r => r.json()).then(d => {
-      if (d.status !== "success") {
-        setTrainingAdminMessage(d.message || "保存に失敗しました", false);
-        return;
-      }
-      if (typeof global.invalidateTrainingRouteCache === 'function') global.invalidateTrainingRouteCache(menuId);
-      return reloadTrainingAdminData(menuId, d.message || "ルートを保存しました", true);
-    }).catch(function (e) { setTrainingAdminMessage(e.message || "通信エラー", false); })
-    .finally(function () {
-      if (btn && btn.isConnected) callToggleBtnLoading(btn, false, orig);
-    });
+    setTrainingAdminMessage("管理機能が初期化されていません", false);
+    if (btn && btn.isConnected) callToggleBtnLoading(btn, false, orig);
   }
 
   function deleteTrainingAdminRoute(menuId, draftIdx) {

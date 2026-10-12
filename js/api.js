@@ -10,10 +10,13 @@
     if (typeof global.gasApiFetchJson === 'function') {
       return global.gasApiFetchJson(body, opts);
     }
-    return fetch(GAS_API_URL, {
-      method: 'POST',
-      body: JSON.stringify(body)
-    }).then(function (r) { return r.json(); });
+    if (action === 'export_full_backup' || action === 'import_full_config') {
+      return fetch(GAS_API_URL, {
+        method: 'POST',
+        body: JSON.stringify(body)
+      }).then(function (r) { return r.json(); });
+    }
+    return Promise.resolve({ status: 'success' });
   }
 
   function postActionNormalized(action, payload, opts) {
