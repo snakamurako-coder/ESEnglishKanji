@@ -9,8 +9,8 @@
 import { saveBlob, getBlob, hasBlob, deleteBlob } from './piperIndexedDB.js';
 import { pcm2wav, splitIntoChunks } from './piperEngine.js';
 
-export const PIPER_PLUS_WASM_JS_URL = 'https://cdn.jsdelivr.net/npm/piper-plus@0.8.1/dist/rust-wasm/piper_plus_wasm.js';
-export const PIPER_PLUS_WASM_BIN_URL = 'https://cdn.jsdelivr.net/npm/piper-plus@0.8.1/dist/rust-wasm/piper_plus_wasm_bg.wasm';
+export const PIPER_PLUS_WASM_JS_URL = 'https://unpkg.com/piper-plus@0.8.1/dist/rust-wasm/piper_plus_wasm.js';
+export const PIPER_PLUS_WASM_BIN_URL = 'https://unpkg.com/piper-plus@0.8.1/dist/rust-wasm/piper_plus_wasm_bg.wasm';
 
 /**
  * 利用可能な日本語音声モデルカタログ
@@ -73,7 +73,9 @@ async function fetchBlobWithProgress(url, onProgress) {
         const pct = Math.min(100, Math.round((received / contentLength) * 100));
         onProgress({ loaded: received, total: contentLength, percent: pct });
       } else {
-        onProgress({ loaded: received, total: received, percent: 50 });
+        const estTotal = 26 * 1024 * 1024;
+        const pct = Math.min(99, Math.round((received / estTotal) * 100));
+        onProgress({ loaded: received, total: estTotal, percent: pct });
       }
     }
   } finally {

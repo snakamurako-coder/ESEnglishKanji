@@ -3625,8 +3625,8 @@ var PiperTTSModule = (() => {
   }
 
   // src/piper/piperJapaneseEngine.js
-  var PIPER_PLUS_WASM_JS_URL = "https://cdn.jsdelivr.net/npm/piper-plus@0.8.1/dist/rust-wasm/piper_plus_wasm.js";
-  var PIPER_PLUS_WASM_BIN_URL = "https://cdn.jsdelivr.net/npm/piper-plus@0.8.1/dist/rust-wasm/piper_plus_wasm_bg.wasm";
+  var PIPER_PLUS_WASM_JS_URL = "https://unpkg.com/piper-plus@0.8.1/dist/rust-wasm/piper_plus_wasm.js";
+  var PIPER_PLUS_WASM_BIN_URL = "https://unpkg.com/piper-plus@0.8.1/dist/rust-wasm/piper_plus_wasm_bg.wasm";
   var JA_VOICE_CATALOG = {
     "ja_JP-tsukuyomi-chan": {
       id: "ja_JP-tsukuyomi-chan",
@@ -3678,7 +3678,9 @@ var PiperTTSModule = (() => {
           const pct = Math.min(100, Math.round(received / contentLength * 100));
           onProgress({ loaded: received, total: contentLength, percent: pct });
         } else {
-          onProgress({ loaded: received, total: received, percent: 50 });
+          const estTotal = 26 * 1024 * 1024;
+          const pct = Math.min(99, Math.round(received / estTotal * 100));
+          onProgress({ loaded: received, total: estTotal, percent: pct });
         }
       }
     } finally {
