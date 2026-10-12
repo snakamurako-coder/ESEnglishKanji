@@ -27,6 +27,16 @@
     if (typeof global.toggleBtnLoading === 'function') {
       return global.toggleBtnLoading(btn, isLoading, origText);
     }
+    if (!btn) return '';
+    if (isLoading) {
+      const text = btn.innerHTML;
+      btn.innerHTML = '⏳ よみこみ中...';
+      btn.classList.add('btn-loading');
+      return text;
+    } else {
+      btn.innerHTML = origText || '';
+      btn.classList.remove('btn-loading');
+    }
     return '';
   }
 
@@ -34,6 +44,15 @@
     if (typeof global.switchSection === 'function') {
       global.switchSection(secId);
     }
+  }
+
+  function switchParentAdminSection(secId) {
+    if (!parentAdminPinSession) {
+      openParentAdminMenu();
+      return false;
+    }
+    callSwitchSection(secId);
+    return true;
   }
 
   function syncAdminPinInputs(pin) {
@@ -46,6 +65,7 @@
 
   function openParentAdminMenu() {
     parentAdminPinSession = "";
+    global.parentAdminPinSession = "";
     syncAdminPinInputs("");
     const pinPanel = document.getElementById('parent-admin-pin-panel');
     const hubPanel = document.getElementById('parent-admin-hub-panel');
@@ -81,6 +101,7 @@
       global.parentAdminStore.verifyAdminPin(pin)
         .then(() => {
           parentAdminPinSession = pin;
+          global.parentAdminPinSession = pin;
           syncAdminPinInputs(pin);
           showParentAdminHub();
         })
@@ -111,6 +132,7 @@
 
   function logoutParentAdmin() {
     parentAdminPinSession = "";
+    global.parentAdminPinSession = "";
     syncAdminPinInputs("");
     logoutTrainingMenuAdmin(true);
     const extMsg = document.getElementById('external-admin-message');
@@ -975,7 +997,7 @@
   let cachedAdminUsers = [];
 
   function enterParentAdminUsers() {
-    switchParentAdminSection('section-parent-admin-users');
+    if (!switchParentAdminSection('section-parent-admin-users')) return;
     loadParentAdminUsers();
   }
 
@@ -1110,7 +1132,7 @@
   let cachedRewards = [];
 
   function enterParentAdminRewards() {
-    switchParentAdminSection('section-parent-admin-rewards');
+    if (!switchParentAdminSection('section-parent-admin-rewards')) return;
     loadParentAdminRewards();
   }
 
@@ -1226,7 +1248,7 @@
   let cachedExtMenus = [];
 
   function enterParentAdminExtMenu() {
-    switchParentAdminSection('section-parent-admin-extmenu');
+    if (!switchParentAdminSection('section-parent-admin-extmenu')) return;
     loadParentAdminExtMenu();
   }
 
@@ -1302,7 +1324,7 @@
   // 4. ⚙️ アプリ詳細・配点設定 (Sys Config)
   // ========================================================================
   function enterParentAdminSysConfig() {
-    switchParentAdminSection('section-parent-admin-sysconfig');
+    if (!switchParentAdminSection('section-parent-admin-sysconfig')) return;
     loadParentAdminSysConfig();
   }
 
@@ -1352,6 +1374,7 @@
     global.parentAdminStore.updateAdminPin(currentPin, newPin)
       .then(function () {
         parentAdminPinSession = newPin;
+        global.parentAdminPinSession = newPin;
         alert("管理者PINを変更しました。次回ログイン時から有効になります。");
         document.getElementById('sys-new-admin-pin').value = "";
       })
@@ -1362,7 +1385,7 @@
   // 5. 💾 データ管理＆仲介GASバックアップ一括出力連携
   // ========================================================================
   function enterParentAdminBackup() {
-    switchParentAdminSection('section-parent-admin-backup');
+    if (!switchParentAdminSection('section-parent-admin-backup')) return;
     const resBox = document.getElementById('parent-admin-backup-result');
     if (resBox) resBox.style.display = "none";
   }
@@ -1462,6 +1485,7 @@
 
   global.enterParentAdminBackup = enterParentAdminBackup;
   global.triggerMediatorBackup = triggerMediatorBackup;
+  global.switchParentAdminSection = switchParentAdminSection;
 
 })(window);
 

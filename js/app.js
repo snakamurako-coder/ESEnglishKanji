@@ -3367,6 +3367,7 @@
     }
 
     function toggleBtnLoading(btn, isLoading, originalText = "") { if(!btn) return ""; if(isLoading) { const text = btn.innerHTML; btn.innerHTML = "⏳ よみこみ中..."; btn.classList.add("btn-loading"); return text; } else { btn.innerHTML = originalText; btn.classList.remove("btn-loading"); } }
+    window.toggleBtnLoading = toggleBtnLoading;
 
     // ====== ★ 特訓ルートの取得と表示 ======
     function fetchTrainingRoute(userId) {
@@ -4304,7 +4305,8 @@
     function getExternalAdminPin() {
       const el = document.getElementById('external-admin-pin-input');
       const v = el ? String(el.value || "").trim() : "";
-      return v || parentAdminPinSession || "";
+      const s = typeof parentAdminPinSession !== 'undefined' ? parentAdminPinSession : (window.parentAdminPinSession || "");
+      return v || s || "";
     }
     window.getExternalAdminPin = getExternalAdminPin;
 
