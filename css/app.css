@@ -5651,3 +5651,28 @@ body { font-family: 'Hiragino Maru Gothic ProN', sans-serif; background-color: #
       border-left: none;
       border-right: none;
     }
+
+    /* Piper TTS 設定・UI スタイル */
+    .piper-admin-card {
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+    }
+    .piper-badge {
+      display: block;
+      font-weight: 500;
+      line-height: 1.4;
+    }
+    .piper-badge-success {
+      background: #003314 !important;
+      color: #69f0ae !important;
+      border: 1px solid #007934 !important;
+    }
+    .piper-badge-warning {
+      background: #332a00 !important;
+      color: #ffd54f !important;
+      border: 1px solid #7f6800 !important;
+    }
+    .piper-badge-danger {
+      background: #3e0000 !important;
+      color: #ff8a80 !important;
+      border: 1px solid #8e0000 !important;
+    }

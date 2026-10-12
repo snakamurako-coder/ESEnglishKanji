@@ -3,8 +3,9 @@
   "version": "1.0.0",
   "description": "ESEnglishKanji - Kids English & Kanji Learning App",
   "scripts": {
-    "build": "node scripts/build-html.js",
+    "build": "node scripts/build-piper.js && node scripts/build-html.js",
     "build:html": "node scripts/build-html.js",
+    "build:piper": "node scripts/build-piper.js",
     "deploy": "powershell -ExecutionPolicy Bypass -File ./scripts/deploy-fb.ps1",
     "deploy:hosting": "powershell -ExecutionPolicy Bypass -File ./scripts/deploy-fb.ps1 -HostingOnly",
     "deploy:rules": "powershell -ExecutionPolicy Bypass -File ./scripts/deploy-fb.ps1 -RulesOnly",
@@ -13,5 +14,13 @@
     "publish": "node scripts/publish-manifest.js",
     "publish:deploy": "node scripts/publish-manifest.js; powershell -ExecutionPolicy Bypass -File ./scripts/deploy-fb.ps1 -HostingOnly",
     "preview": "firebase hosting:channel:deploy test-preview"
+  },
+  "devDependencies": {
+    "@mintplex-labs/piper-tts-web": "^1.0.5",
+    "esbuild": "^0.28.2"
+  },
+  "dependencies": {
+    "onnxruntime-web": "^1.30.0",
+    "piper-plus": "^0.8.1"
   }
 }

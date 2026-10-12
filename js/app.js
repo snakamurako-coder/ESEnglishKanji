@@ -1720,7 +1720,10 @@
 
     /** langHint: 'ja' | 'en' | undefined（undefined は文字から自動判定） */
     function speakText(text, rate = 0.9, langHint) {
-      if (!('speechSynthesis' in window)) {
+      if (window.PiperTtsStore) {
+        try { window.PiperTtsStore.stop(); } catch (_) {}
+      }
+      if (!('speechSynthesis' in window) && !window.PiperTtsStore) {
         if (shouldQuizAudioVoiceMutex_()) {
           clearQuizEnglishAudioPending_();
           setQuizEnglishAudioPlaying_(false);
@@ -1742,13 +1745,53 @@
         }
         return;
       }
+
+      const useJa = langHint === 'ja' || (langHint !== 'en' && textLooksJapanese(t));
+      const mutex = shouldQuizAudioVoiceMutex_();
+
+      // Piper 高音質エンジン（IndexedDB キャッシュ優先）を試行（英語・日本語両対応）
+      if (window.PiperTtsStore) {
+        window.PiperTtsStore.speak(t, {
+          lang: useJa ? 'ja' : 'en',
+          rate: rate,
+          onStart: function () {
+            if (mutex) {
+              clearQuizEnglishAudioPending_();
+              setQuizEnglishAudioPlaying_(true);
+              armQuizEnglishAudioSafetyTimer_(15000);
+            }
+          },
+          onEnd: function () {
+            if (mutex) {
+              setQuizEnglishAudioPlaying_(false);
+            }
+          },
+          onError: function () {
+            if (mutex) {
+              setQuizEnglishAudioPlaying_(false);
+            }
+          }
+        }).then(function (handled) {
+          if (!handled) {
+            // Piper 未保存・無効・エラー時は標準 speechSynthesis へフォールバック
+            speakViaSpeechSynthesis_(t, rate, useJa, mutex);
+          }
+        }).catch(function () {
+          speakViaSpeechSynthesis_(t, rate, useJa, mutex);
+        });
+        return;
+      }
+
+      speakViaSpeechSynthesis_(t, rate, useJa, mutex);
+    }
+
+    function speakViaSpeechSynthesis_(t, rate, useJa, mutex) {
+      if (!('speechSynthesis' in window)) return;
       loadVoices();
       try { window.speechSynthesis.resume(); } catch (_) {}
-      const mutex = shouldQuizAudioVoiceMutex_();
       if (mutex) activeQuizSpeechUtterance = null;
       window.speechSynthesis.cancel();
       const uttr = new SpeechSynthesisUtterance(t);
-      const useJa = langHint === 'ja' || (langHint !== 'en' && textLooksJapanese(t));
       if (useJa) {
         uttr.lang = 'ja-JP';
         uttr.rate = rate;
@@ -9034,15 +9077,36 @@
       stopStrokeOrderReadingTTS_();
     }
     function stopStrokeOrderReadingTTS_() {
+      if (window.PiperTtsStore) {
+        try { window.PiperTtsStore.stop(); } catch (_) {}
+      }
       if (window.speechSynthesis) {
         window.speechSynthesis.cancel();
       }
     }
     function playStrokeOrderReadingTTS_(phrases) {
-      if (!window.speechSynthesis) return;
       stopStrokeOrderReadingTTS_();
       const isEnabled = getUserPref("kanji_quiz_stroke_tts_enabled", "1") === "1";
       if (!isEnabled) return;
+
+      const validPhrases = (Array.isArray(phrases) ? phrases : []).filter(function (t) { return !!t; });
+      if (!validPhrases.length) return;
+
+      const textToSpeak = validPhrases.join("、 ");
+      if (window.PiperTtsStore) {
+        window.PiperTtsStore.speak(textToSpeak, { lang: "ja", rate: 1.1 }).then(function (handled) {
+          if (!handled) {
+            speakStrokeOrderViaSpeechSynthesis_(validPhrases);
+          }
+        }).catch(function () {
+          speakStrokeOrderViaSpeechSynthesis_(validPhrases);
+        });
+        return;
+      }
+      speakStrokeOrderViaSpeechSynthesis_(validPhrases);
+    }
+    function speakStrokeOrderViaSpeechSynthesis_(phrases) {
+      if (!window.speechSynthesis) return;
       phrases.forEach(function (text) {
         if (!text) return;
         const ut = new SpeechSynthesisUtterance(text);
@@ -14709,6 +14773,7 @@
       clearTimeout(autoNextTimer);
       cancelVoiceRecognitionPendingStart_();
       stopEnglishRecognitionSafely_(null);
+      if (window.PiperTtsStore) window.PiperTtsStore.stop();
       window.speechSynthesis.cancel();
       resetQuizAudioVoiceMutex_();
       resetEnFlashQuestionState_();
@@ -14719,6 +14784,7 @@
     function quitQuiz() {
       clearTimeout(autoNextTimer);
       if (recognition) { try { recognition.stop(); } catch (_) {} }
+      if (window.PiperTtsStore) window.PiperTtsStore.stop();
       window.speechSynthesis.cancel();
       resetQuizAudioVoiceMutex_();
       resetEnFlashQuestionState_();

@@ -14,3 +14,5 @@ firebase-debug.*.log
 # 出版マニフェスト生成物（スプシから都度同期・Git追跡不要）
 data/
 
+node_modules/
+

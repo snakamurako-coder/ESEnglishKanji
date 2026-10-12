@@ -170,6 +170,14 @@
     loadParentNotifyEmails();
   }
 
+  function enterParentAdminPiperTTS() {
+    if (!parentAdminPinSession) { openParentAdminMenu(); return; }
+    callSwitchSection('section-parent-admin-piper');
+    if (global.PiperTtsStore && typeof global.PiperTtsStore.bindParentAdminUI === 'function') {
+      global.PiperTtsStore.bindParentAdminUI();
+    }
+  }
+
   function loadParentNotifyEmails() {
     const msg = document.getElementById('parent-notify-message');
     if (msg) { msg.innerText = "読み込み中..."; msg.style.color = "#aaa"; }
@@ -981,6 +989,7 @@
   global.enterParentAdminExternal = enterParentAdminExternal;
   global.enterParentAdminTraining = enterParentAdminTraining;
   global.enterParentAdminNotify = enterParentAdminNotify;
+  global.enterParentAdminPiperTTS = enterParentAdminPiperTTS;
   global.loadParentNotifyEmails = loadParentNotifyEmails;
   global.saveParentNotifyEmails = saveParentNotifyEmails;
   global.openExternalAdminApproval = openExternalAdminApproval;
