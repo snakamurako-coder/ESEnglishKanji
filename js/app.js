@@ -1,5 +1,5 @@
 // ▼ GASのURLを貼り付けてください（※前回と同じURLならそのままで大丈夫） ▼
-    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzFrNeURIyIcSB2F5rwTS3emHgQPu-gI7Fw6q0yiGAsiC8ZEXXMFvhVBTLJlF9ziIv9mg/exec";
+    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzKZ8pUoGkMRdO95aqjPSOLAVJaiwBjvfcWwWLNzt6SP-ZzvCOIWpRtP5OAGfPgBIDvnQ/exec";
     const LS_PENDING_FINISH_SAVE = "app_pending_finish_quiz_save_v1";
     const LS_FLUSHED_SUBMIT_IDS = "app_flushed_submit_ids_v1";
     const PENDING_FINISH_FLUSH_MAX_ATTEMPTS = 5;

@@ -1112,6 +1112,435 @@
     setTrainingAdminMessage("リストから削除しました（「ルートを保存」で反映）", true);
   }
 
+  // ========================================================================
+  // 1. 👥 ユーザー管理 (Users CRUD)
+  // ========================================================================
+  let cachedAdminUsers = [];
+
+  function enterParentAdminUsers() {
+    switchParentAdminSection('section-parent-admin-users');
+    loadParentAdminUsers();
+  }
+
+  function loadParentAdminUsers() {
+    const pin = getTrainingAdminPin();
+    const container = document.getElementById('parent-admin-users-list');
+    const msg = document.getElementById('parent-admin-users-msg');
+    if (msg) msg.innerText = "";
+    if (container) container.innerHTML = `<p style="color:#aaa;text-align:center;">読み込み中...</p>`;
+
+    if (!global.parentAdminStore || typeof global.parentAdminStore.getUsersList !== 'function') {
+      if (container) container.innerHTML = `<p style="color:#ff8a80;text-align:center;">ストア未対応</p>`;
+      return;
+    }
+
+    global.parentAdminStore.getUsersList(pin).then(function (users) {
+      cachedAdminUsers = users || [];
+      renderAdminUsersList();
+    }).catch(function (err) {
+      if (container) container.innerHTML = `<p style="color:#ff8a80;text-align:center;">読み込み失敗: ${escapeHtml(err.message)}</p>`;
+    });
+  }
+
+  function renderAdminUsersList() {
+    const container = document.getElementById('parent-admin-users-list');
+    if (!container) return;
+    if (!cachedAdminUsers || cachedAdminUsers.length === 0) {
+      container.innerHTML = `<p style="color:#888;text-align:center;">登録されているユーザーはいません</p>`;
+      return;
+    }
+
+    container.innerHTML = cachedAdminUsers.map(function (u) {
+      const isKid = String(u.id).indexOf("user_") === 0;
+      const avatar = isKid ? "👦" : "👤";
+      return `<div style="background:#252538;border:1px solid #3d3d5c;border-radius:10px;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span style="font-size:24px;">${avatar}</span>
+          <div>
+            <div style="font-weight:bold;color:#fff;font-size:15px;">${escapeHtml(u.name || "名称未設定")} <span style="font-size:12px;color:#888;">(${escapeHtml(u.id)})</span></div>
+            <div style="font-size:12px;color:#bbb;">PIN: <b style="color:#ffd54f;">${escapeHtml(u.pin || "----")}</b> ｜ 現在Pt: <b style="color:#4caf50;">${Number(u.points || 0).toLocaleString()} Pt</b></div>
+          </div>
+        </div>
+        <div style="display:flex;gap:6px;">
+          <button type="button" class="submit-btn btn-blue" style="margin:0;padding:6px 10px;font-size:12px;" onclick="openEditUserModal('${escapeHtml(u.id)}')">✏️ 編集</button>
+          <button type="button" class="submit-btn btn-red" style="margin:0;padding:6px 10px;font-size:12px;background:#c62828;" onclick="deleteUserConfirm('${escapeHtml(u.id)}', '${escapeHtml(u.name || "")}')">🗑️ 削除</button>
+        </div>
+      </div>`;
+    }).join("");
+  }
+
+  function openCreateUserModal() {
+    const modal = document.getElementById('modal-admin-user-create');
+    if (modal) modal.style.display = "flex";
+    const idInput = document.getElementById('new-user-id');
+    const nameInput = document.getElementById('new-user-name');
+    const pinInput = document.getElementById('new-user-pin');
+    const ptsInput = document.getElementById('new-user-points');
+    // 自動で user_{連番} を提案
+    let maxNum = 0;
+    (cachedAdminUsers || []).forEach(function (u) {
+      const m = String(u.id).match(/^user_(\d+)$/);
+      if (m) { const n = parseInt(m[1], 10); if (n > maxNum) maxNum = n; }
+    });
+    if (idInput) idInput.value = "user_" + (maxNum + 1);
+    if (nameInput) nameInput.value = "";
+    if (pinInput) pinInput.value = "1234";
+    if (ptsInput) ptsInput.value = "0";
+  }
+
+  function closeCreateUserModal() {
+    const modal = document.getElementById('modal-admin-user-create');
+    if (modal) modal.style.display = "none";
+  }
+
+  function submitCreateUser() {
+    const pin = getTrainingAdminPin();
+    const id = (document.getElementById('new-user-id').value || "").trim();
+    const name = (document.getElementById('new-user-name').value || "").trim();
+    const userPin = (document.getElementById('new-user-pin').value || "").trim();
+    const points = Number(document.getElementById('new-user-points').value) || 0;
+    if (!id || !name) { alert("IDと名前を入力してください"); return; }
+
+    global.parentAdminStore.createUser(pin, { id: id, name: name, pin: userPin, points: points })
+      .then(function () {
+        closeCreateUserModal();
+        loadParentAdminUsers();
+      })
+      .catch(function (err) { alert("追加失敗: " + err.message); });
+  }
+
+  function openEditUserModal(userId) {
+    const u = (cachedAdminUsers || []).find(function (x) { return x.id === userId; });
+    if (!u) return;
+    const modal = document.getElementById('modal-admin-user-edit');
+    if (modal) modal.style.display = "flex";
+    document.getElementById('edit-user-id').value = u.id;
+    document.getElementById('edit-user-name').value = u.name || "";
+    document.getElementById('edit-user-pin').value = u.pin || "";
+  }
+
+  function closeEditUserModal() {
+    const modal = document.getElementById('modal-admin-user-edit');
+    if (modal) modal.style.display = "none";
+  }
+
+  function submitEditUser() {
+    const pin = getTrainingAdminPin();
+    const id = document.getElementById('edit-user-id').value;
+    const name = (document.getElementById('edit-user-name').value || "").trim();
+    const userPin = (document.getElementById('edit-user-pin').value || "").trim();
+    if (!name) { alert("名前を入力してください"); return; }
+
+    global.parentAdminStore.updateUserProfile(pin, id, { name: name, pin: userPin })
+      .then(function () {
+        closeEditUserModal();
+        loadParentAdminUsers();
+      })
+      .catch(function (err) { alert("保存失敗: " + err.message); });
+  }
+
+  function deleteUserConfirm(userId, userName) {
+    if (!confirm(`ユーザー「${userName} (${userId})」を本当に削除しますか？\n（この操作は元に戻せません）`)) return;
+    const pin = getTrainingAdminPin();
+    global.parentAdminStore.deleteUser(pin, userId)
+      .then(function () { loadParentAdminUsers(); })
+      .catch(function (err) { alert("削除失敗: " + err.message); });
+  }
+
+  // ========================================================================
+  // 2. 🎁 ご褒美マスター管理 (Rewards CRUD)
+  // ========================================================================
+  let cachedRewards = [];
+
+  function enterParentAdminRewards() {
+    switchParentAdminSection('section-parent-admin-rewards');
+    loadParentAdminRewards();
+  }
+
+  function loadParentAdminRewards() {
+    const pin = getTrainingAdminPin();
+    const container = document.getElementById('parent-admin-rewards-list');
+    if (container) container.innerHTML = `<p style="color:#aaa;text-align:center;">読み込み中...</p>`;
+
+    global.parentAdminStore.getRewardsMaster(pin).then(function (list) {
+      cachedRewards = list || [];
+      renderAdminRewardsList();
+    }).catch(function (err) {
+      if (container) container.innerHTML = `<p style="color:#ff8a80;text-align:center;">読み込み失敗: ${escapeHtml(err.message)}</p>`;
+    });
+  }
+
+  function renderAdminRewardsList() {
+    const container = document.getElementById('parent-admin-rewards-list');
+    if (!container) return;
+    if (!cachedRewards || cachedRewards.length === 0) {
+      container.innerHTML = `<p style="color:#888;text-align:center;">登録されているご褒美はありません</p>`;
+      return;
+    }
+
+    container.innerHTML = cachedRewards.map(function (r) {
+      const timeStr = r.timeMinutes ? `⏱️ 制限時間 ${r.timeMinutes}分` : `（時間制限なし）`;
+      return `<div style="background:#252538;border:1px solid #3d3d5c;border-radius:10px;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">
+        <div style="display:flex;align-items:center;gap:12px;">
+          <span style="font-size:28px;">${escapeHtml(r.icon || "🎁")}</span>
+          <div>
+            <div style="font-weight:bold;color:#fff;font-size:15px;">
+              ${escapeHtml(r.name)}
+              <span style="margin-left:8px;font-size:12px;background:#388e3c;color:#fff;padding:2px 8px;border-radius:10px;">${Number(r.points).toLocaleString()} Pt</span>
+            </div>
+            <div style="font-size:12px;color:#aaa;margin-top:2px;">${escapeHtml(r.desc || "")} ｜ ${timeStr}</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:6px;">
+          <button type="button" class="submit-btn btn-blue" style="margin:0;padding:6px 10px;font-size:12px;" onclick="openRewardModal('${escapeHtml(r.id)}')">✏️ 編集</button>
+          <button type="button" class="submit-btn btn-red" style="margin:0;padding:6px 10px;font-size:12px;background:#c62828;" onclick="deleteRewardConfirm('${escapeHtml(r.id)}')">🗑️ 削除</button>
+        </div>
+      </div>`;
+    }).join("");
+  }
+
+  function openRewardModal(rewardId) {
+    const modal = document.getElementById('modal-admin-reward');
+    if (modal) modal.style.display = "flex";
+    const titleEl = document.getElementById('modal-reward-title');
+    const idInput = document.getElementById('reward-input-id');
+    const nameInput = document.getElementById('reward-input-name');
+    const ptsInput = document.getElementById('reward-input-points');
+    const timeInput = document.getElementById('reward-input-time');
+    const iconInput = document.getElementById('reward-input-icon');
+    const descInput = document.getElementById('reward-input-desc');
+
+    if (rewardId) {
+      const r = (cachedRewards || []).find(function (x) { return x.id === rewardId; });
+      if (r) {
+        if (titleEl) titleEl.innerText = "景品の編集";
+        idInput.value = r.id;
+        nameInput.value = r.name || "";
+        ptsInput.value = r.points || 0;
+        timeInput.value = r.timeMinutes || 0;
+        iconInput.value = r.icon || "🎁";
+        descInput.value = r.desc || "";
+        return;
+      }
+    }
+    if (titleEl) titleEl.innerText = "新しい景品を追加";
+    idInput.value = "";
+    nameInput.value = "";
+    ptsInput.value = "100";
+    timeInput.value = "30";
+    iconInput.value = "🎮";
+    descInput.value = "";
+  }
+
+  function closeRewardModal() {
+    const modal = document.getElementById('modal-admin-reward');
+    if (modal) modal.style.display = "none";
+  }
+
+  function submitSaveReward() {
+    const pin = getTrainingAdminPin();
+    const id = document.getElementById('reward-input-id').value;
+    const name = (document.getElementById('reward-input-name').value || "").trim();
+    const points = Number(document.getElementById('reward-input-points').value) || 0;
+    const timeMinutes = Number(document.getElementById('reward-input-time').value) || 0;
+    const icon = (document.getElementById('reward-input-icon').value || "🎁").trim();
+    const desc = (document.getElementById('reward-input-desc').value || "").trim();
+    if (!name) { alert("景品名を入力してください"); return; }
+
+    global.parentAdminStore.saveRewardItem(pin, { id: id, name: name, points: points, timeMinutes: timeMinutes, icon: icon, desc: desc, enabled: true })
+      .then(function () {
+        closeRewardModal();
+        loadParentAdminRewards();
+      })
+      .catch(function (err) { alert("保存失敗: " + err.message); });
+  }
+
+  function deleteRewardConfirm(rewardId) {
+    if (!confirm("この景品を削除しますか？")) return;
+    const pin = getTrainingAdminPin();
+    global.parentAdminStore.deleteRewardItem(pin, rewardId)
+      .then(function () { loadParentAdminRewards(); })
+      .catch(function (err) { alert("削除失敗: " + err.message); });
+  }
+
+  // ========================================================================
+  // 3. 📚 外部学習メニューマスター管理 (External Menus CRUD)
+  // ========================================================================
+  let cachedExtMenus = [];
+
+  function enterParentAdminExtMenu() {
+    switchParentAdminSection('section-parent-admin-extmenu');
+    loadParentAdminExtMenu();
+  }
+
+  function loadParentAdminExtMenu() {
+    const container = document.getElementById('parent-admin-extmenu-list');
+    if (container) container.innerHTML = `<p style="color:#aaa;text-align:center;">読み込み中...</p>`;
+
+    global.parentAdminStore.getExternalMenusMaster().then(function (list) {
+      cachedExtMenus = list || [];
+      renderAdminExtMenuList();
+    }).catch(function (err) {
+      if (container) container.innerHTML = `<p style="color:#ff8a80;text-align:center;">読み込み失敗: ${escapeHtml(err.message)}</p>`;
+    });
+  }
+
+  function renderAdminExtMenuList() {
+    const container = document.getElementById('parent-admin-extmenu-list');
+    if (!container) return;
+    if (!cachedExtMenus || cachedExtMenus.length === 0) {
+      container.innerHTML = `<p style="color:#888;text-align:center;">登録されている外部学習メニューはありません</p>`;
+      return;
+    }
+
+    container.innerHTML = `<table style="width:100%;border-collapse:collapse;color:#fff;font-size:14px;background:#252538;border-radius:8px;overflow:hidden;">
+      <thead>
+        <tr style="background:#1e1e2f;color:#aaa;text-align:left;">
+          <th style="padding:10px 12px;">カテゴリ</th>
+          <th style="padding:10px 12px;">分量</th>
+          <th style="padding:10px 12px;">付与Pt</th>
+          <th style="padding:10px 12px;text-align:right;">操作</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${cachedExtMenus.map(function (m) {
+          return `<tr style="border-top:1px solid #3d3d5c;">
+            <td style="padding:10px 12px;font-weight:bold;">${escapeHtml(m.category)}</td>
+            <td style="padding:10px 12px;">${escapeHtml(m.volume)}</td>
+            <td style="padding:10px 12px;color:#4caf50;font-weight:bold;">+${m.points} Pt</td>
+            <td style="padding:10px 12px;text-align:right;">
+              <button type="button" class="submit-btn btn-red" style="margin:0;padding:4px 8px;font-size:11px;background:#c62828;" onclick="deleteExtMenuConfirm('${escapeHtml(m.id)}')">🗑️ 削除</button>
+            </td>
+          </tr>`;
+        }).join("")}
+      </tbody>
+    </table>`;
+  }
+
+  function submitAddExtMenu() {
+    const pin = getTrainingAdminPin();
+    const cat = (document.getElementById('new-extmenu-cat').value || "").trim();
+    const vol = (document.getElementById('new-extmenu-vol').value || "").trim();
+    const pts = Number(document.getElementById('new-extmenu-pts').value) || 1;
+    if (!cat || !vol) { alert("カテゴリと分量を入力してください"); return; }
+
+    global.parentAdminStore.saveExternalMenuItem(pin, { category: cat, volume: vol, points: pts })
+      .then(function () {
+        document.getElementById('new-extmenu-cat').value = "";
+        document.getElementById('new-extmenu-vol').value = "";
+        loadParentAdminExtMenu();
+      })
+      .catch(function (err) { alert("追加失敗: " + err.message); });
+  }
+
+  function deleteExtMenuConfirm(menuId) {
+    if (!confirm("この項目を削除しますか？")) return;
+    const pin = getTrainingAdminPin();
+    global.parentAdminStore.deleteExternalMenuItem(pin, menuId)
+      .then(function () { loadParentAdminExtMenu(); })
+      .catch(function (err) { alert("削除失敗: " + err.message); });
+  }
+
+  // ========================================================================
+  // 4. ⚙️ アプリ詳細・配点設定 (Sys Config)
+  // ========================================================================
+  function enterParentAdminSysConfig() {
+    switchParentAdminSection('section-parent-admin-sysconfig');
+    loadParentAdminSysConfig();
+  }
+
+  function loadParentAdminSysConfig() {
+    const msg = document.getElementById('parent-admin-sysconfig-msg');
+    if (msg) msg.innerText = "";
+    global.parentAdminStore.getSysConfig().then(function (cfg) {
+      document.getElementById('sys-pass-score').value = cfg.passScore || 70;
+      document.getElementById('sys-tome-weight').value = cfg.tomeWeight || 15;
+      document.getElementById('sys-hane-weight').value = cfg.haneWeight || 15;
+      document.getElementById('sys-harai-weight').value = cfg.haraiWeight || 15;
+      document.getElementById('sys-balance-weight').value = cfg.balanceWeight || 30;
+      document.getElementById('sys-shape-weight').value = cfg.shapeWeight || 25;
+      document.getElementById('sys-weak-bonus').value = cfg.weakBonus || 1.4;
+      document.getElementById('sys-random-bonus').value = cfg.randomBonus || 1.1;
+    });
+  }
+
+  function submitSaveSysConfig() {
+    const pin = getTrainingAdminPin();
+    const payload = {
+      passScore: Number(document.getElementById('sys-pass-score').value) || 70,
+      tomeWeight: Number(document.getElementById('sys-tome-weight').value) || 15,
+      haneWeight: Number(document.getElementById('sys-hane-weight').value) || 15,
+      haraiWeight: Number(document.getElementById('sys-harai-weight').value) || 15,
+      balanceWeight: Number(document.getElementById('sys-balance-weight').value) || 30,
+      shapeWeight: Number(document.getElementById('sys-shape-weight').value) || 25,
+      weakBonus: Number(document.getElementById('sys-weak-bonus').value) || 1.4,
+      randomBonus: Number(document.getElementById('sys-random-bonus').value) || 1.1
+    };
+    const msg = document.getElementById('parent-admin-sysconfig-msg');
+    global.parentAdminStore.saveSysConfig(pin, payload)
+      .then(function () {
+        if (msg) { msg.innerText = "設定を保存しました 🎉"; msg.style.color = "#8bc34a"; }
+      })
+      .catch(function (err) {
+        if (msg) { msg.innerText = "保存失敗: " + err.message; msg.style.color = "#ff8a80"; }
+      });
+  }
+
+  function submitChangeAdminPin() {
+    const currentPin = getTrainingAdminPin();
+    const newPin = (document.getElementById('sys-new-admin-pin').value || "").trim();
+    if (!newPin || newPin.length < 4) { alert("新しいPINは4桁以上の数字を入力してください"); return; }
+    if (!confirm(`管理者PINを「${newPin}」に変更しますか？`)) return;
+
+    global.parentAdminStore.updateAdminPin(currentPin, newPin)
+      .then(function () {
+        parentAdminPinSession = newPin;
+        alert("管理者PINを変更しました。次回ログイン時から有効になります。");
+        document.getElementById('sys-new-admin-pin').value = "";
+      })
+      .catch(function (err) { alert("PIN変更失敗: " + err.message); });
+  }
+
+  // ========================================================================
+  // 5. 💾 データ管理＆仲介GASバックアップ一括出力連携
+  // ========================================================================
+  function enterParentAdminBackup() {
+    switchParentAdminSection('section-parent-admin-backup');
+    const resBox = document.getElementById('parent-admin-backup-result');
+    if (resBox) resBox.style.display = "none";
+  }
+
+  function triggerMediatorBackup() {
+    const pin = getTrainingAdminPin();
+    const btn = document.getElementById('btn-mediator-backup');
+    const resBox = document.getElementById('parent-admin-backup-result');
+    const orig = btn ? callToggleBtnLoading(btn, true) : null;
+    if (resBox) resBox.style.display = "none";
+
+    global.parentAdminStore.triggerSpreadsheetFullBackup(pin)
+      .then(function (res) {
+        if (resBox) {
+          resBox.style.display = "block";
+          resBox.innerHTML = `<div style="background:#1b5e20;border:1px solid #4caf50;color:#e8f5e9;padding:16px;border-radius:10px;line-height:1.6;">
+            <h3 style="margin:0 0 8px 0;font-size:16px;color:#a5d6a7;">🎉 バックアップスプレッドシートを生成しました！</h3>
+            <p style="margin:0 0 12px 0;font-size:13px;">Googleドライブに見出し・書式付きで全設定・全教材ブックを出力しました。</p>
+            <a href="${escapeHtml(res.folderUrl || '#')}" target="_blank" rel="noopener noreferrer" style="display:inline-block;background:#4caf50;color:#fff;text-decoration:none;font-weight:bold;padding:10px 16px;border-radius:8px;font-size:14px;">📁 ドライブのバックアップフォルダを開く</a>
+          </div>`;
+        }
+      })
+      .catch(function (err) {
+        if (resBox) {
+          resBox.style.display = "block";
+          resBox.innerHTML = `<div style="background:#b71c1c;border:1px solid #ef5350;color:#ffebee;padding:14px;border-radius:10px;font-size:13px;">
+            ⚠️ バックアップ生成に失敗しました: ${escapeHtml(err.message)}
+          </div>`;
+        }
+      })
+      .finally(function () {
+        if (btn && btn.isConnected) callToggleBtnLoading(btn, false, orig);
+      });
+  }
+
   function openExternalAdminApproval() { openParentAdminMenu(); }
   function openTrainingMenuAdmin() { openParentAdminMenu(); }
 
@@ -1146,4 +1575,36 @@
   global.saveTrainingAdminBasePoint = saveTrainingAdminBasePoint;
   global.deleteTrainingAdminRoute = deleteTrainingAdminRoute;
 
+  // 新規公開ハンドラ
+  global.enterParentAdminUsers = enterParentAdminUsers;
+  global.loadParentAdminUsers = loadParentAdminUsers;
+  global.openCreateUserModal = openCreateUserModal;
+  global.closeCreateUserModal = closeCreateUserModal;
+  global.submitCreateUser = submitCreateUser;
+  global.openEditUserModal = openEditUserModal;
+  global.closeEditUserModal = closeEditUserModal;
+  global.submitEditUser = submitEditUser;
+  global.deleteUserConfirm = deleteUserConfirm;
+
+  global.enterParentAdminRewards = enterParentAdminRewards;
+  global.loadParentAdminRewards = loadParentAdminRewards;
+  global.openRewardModal = openRewardModal;
+  global.closeRewardModal = closeRewardModal;
+  global.submitSaveReward = submitSaveReward;
+  global.deleteRewardConfirm = deleteRewardConfirm;
+
+  global.enterParentAdminExtMenu = enterParentAdminExtMenu;
+  global.loadParentAdminExtMenu = loadParentAdminExtMenu;
+  global.submitAddExtMenu = submitAddExtMenu;
+  global.deleteExtMenuConfirm = deleteExtMenuConfirm;
+
+  global.enterParentAdminSysConfig = enterParentAdminSysConfig;
+  global.loadParentAdminSysConfig = loadParentAdminSysConfig;
+  global.submitSaveSysConfig = submitSaveSysConfig;
+  global.submitChangeAdminPin = submitChangeAdminPin;
+
+  global.enterParentAdminBackup = enterParentAdminBackup;
+  global.triggerMediatorBackup = triggerMediatorBackup;
+
 })(window);
+

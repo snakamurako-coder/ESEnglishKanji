@@ -31,10 +31,35 @@ function onOpen() {
       .addItem('2. 📥 取り組み記録シートを確認・更新', 'menuOpenStudyLogSheet_')
       .addItem('3. ✉️ 本日の学習サマリーをメール送信', 'menuSendDailyStudyReport_')
       .addSeparator()
+      .addItem('4. 💾 全設定＆教材スプレッドシート一括出力（バックアップ）', 'menuExportFullBackupSpreadsheets_')
+      .addSeparator()
       .addItem('⚙️ 設定・フォルダID・連携状況の確認', 'menuShowSettings_')
       .addToUi();
   } catch (_) {
     // コンテナバインド外（Webアプリ単体実行時）は無視
+  }
+}
+
+/**
+ * 4. 全設定＆教材スプレッドシート一括出力（バックアップ）メニューハンドラ
+ */
+function menuExportFullBackupSpreadsheets_() {
+  const ui = SpreadsheetApp.getUi();
+  const resp = ui.alert('完全バックアップの生成', '現在の全設定および各教材ブック（5冊）をGoogleドライブへ見出し付きで一括生成します。数秒〜数十秒かかります。開始しますか？', ui.ButtonSet.OK_CANCEL);
+  if (resp !== ui.Button.OK) return;
+
+  try {
+    const result = exportFullBackupSpreadsheets_();
+    ui.alert(
+      'エクスポート完了 🎉',
+      'Googleドライブに見出し・書式付きで全ブックを生成しました！\n\n' +
+      '・フォルダ名: ' + result.folderName + '\n' +
+      '・生成日時: ' + result.exportedAt + '\n\n' +
+      'フォルダURL:\n' + result.folderUrl,
+      ui.ButtonSet.OK
+    );
+  } catch (err) {
+    ui.alert('エラー ❌', 'エクスポートに失敗しました:\n' + err.message, ui.ButtonSet.OK);
   }
 }
 
@@ -214,6 +239,20 @@ function handleApiRequest_(params) {
       return jsonResponse_({
         status: 'success',
         report: report
+      });
+    }
+
+    // ------------------------------------------------------------------------
+    // 【バックアップ】全設定＆教材スプレッドシート一括出力 API
+    // ------------------------------------------------------------------------
+    if (action === 'export_full_backup' || action === 'backup_spreadsheets') {
+      const backupResult = exportFullBackupSpreadsheets_();
+      return jsonResponse_({
+        status: 'success',
+        folderName: backupResult.folderName,
+        folderUrl: backupResult.folderUrl,
+        exportedAt: backupResult.exportedAt,
+        files: backupResult.files
       });
     }
 
@@ -652,3 +691,303 @@ function sendDailyStudyReport_() {
     recipients: recipients
   };
 }
+
+// ============================================================================
+// 【バックアップ＆エクスポート】見出し付きスプレッドシート完全自動生成エンジン
+// ============================================================================
+
+/**
+ * 全設定および各教材ブック（5冊）をGoogleドライブへ見出し付きで一括生成
+ */
+function exportFullBackupSpreadsheets_() {
+  const now = new Date();
+  const timestampStr = Utilities.formatDate(now, "Asia/Tokyo", "yyyyMMdd_HHmmss");
+  const folderName = "ESEnglishKanji_バックアップ_" + timestampStr;
+
+  // 1. Google Drive にタイムスタンプ付き専用フォルダを作成
+  const folder = DriveApp.createFolder(folderName);
+  const folderUrl = folder.getUrl();
+
+  // 2. 『1_学習アプリ_管理ブック』を生成
+  const adminSs = SpreadsheetApp.create("1_学習アプリ_管理ブック");
+  DriveApp.getFileById(adminSs.getId()).moveTo(folder);
+  buildAdminManagementWorkbook_(adminSs);
+
+  // 3. 『2_教材_英単語ブック』を生成
+  const engWordSs = SpreadsheetApp.create("2_教材_英単語ブック");
+  DriveApp.getFileById(engWordSs.getId()).moveTo(folder);
+  buildEnglishWordWorkbook_(engWordSs);
+
+  // 4. 『3_教材_英語表現ブック』を生成
+  const engPhraseSs = SpreadsheetApp.create("3_教材_英語表現ブック");
+  DriveApp.getFileById(engPhraseSs.getId()).moveTo(folder);
+  buildEnglishPhraseWorkbook_(engPhraseSs);
+
+  // 5. 『4_教材_漢字練習ブック』を生成
+  const kanjiSs = SpreadsheetApp.create("4_教材_漢字練習ブック");
+  DriveApp.getFileById(kanjiSs.getId()).moveTo(folder);
+  buildKanjiWorkbook_(kanjiSs);
+
+  // 6. 『5_教材_漢字熟語ブック』を生成
+  const jukugoSs = SpreadsheetApp.create("5_教材_漢字熟語ブック");
+  DriveApp.getFileById(jukugoSs.getId()).moveTo(folder);
+  buildJukugoWorkbook_(jukugoSs);
+
+  return {
+    folderName: folderName,
+    folderUrl: folderUrl,
+    exportedAt: Utilities.formatDate(now, "Asia/Tokyo", "yyyy-MM-dd HH:mm:ss"),
+    files: [
+      { name: "1_学習アプリ_管理ブック", url: adminSs.getUrl() },
+      { name: "2_教材_英単語ブック", url: engWordSs.getUrl() },
+      { name: "3_教材_英語表現ブック", url: engPhraseSs.getUrl() },
+      { name: "4_教材_漢字練習ブック", url: kanjiSs.getUrl() },
+      { name: "5_教材_漢字熟語ブック", url: jukugoSs.getUrl() }
+    ]
+  };
+}
+
+/**
+ * 見出しスタイリング共通ユーティリティ（背景色、太字、中央揃え、枠線、固定行、列幅調整）
+ */
+function applySheetHeaderStyle_(sheet, headers, bgColor) {
+  sheet.clear();
+  const range = sheet.getRange(1, 1, 1, headers.length);
+  range.setValues([headers]);
+  range.setBackground(bgColor || '#E8EAED');
+  range.setFontWeight('bold');
+  range.setFontColor('#202124');
+  range.setHorizontalAlignment('center');
+  range.setVerticalAlignment('middle');
+  range.setBorder(true, true, true, true, true, true, '#9AA0A6', SpreadsheetApp.BorderStyle.SOLID);
+  sheet.setRowHeight(1, 32);
+  sheet.setFrozenRows(1);
+  for (let c = 1; c <= headers.length; c++) {
+    sheet.autoResizeColumn(c);
+    if (sheet.getColumnWidth(c) < 110) {
+      sheet.setColumnWidth(c, 110);
+    }
+  }
+}
+
+/**
+ * ① 『学習アプリ_管理ブック』の構築
+ */
+function buildAdminManagementWorkbook_(ss) {
+  // 1. users シート
+  const usersSheet = ss.getActiveSheet();
+  usersSheet.setName("users");
+  const userHeaders = ["ID", "名前", "PIN", "合計ポイント", "最終学習日時_JSON", "履歴_JSON", "日別ポイント_JSON", "特訓進捗_JSON", "ストップウォッチ_JSON"];
+  applySheetHeaderStyle_(usersSheet, userHeaders, '#E8EAED');
+  const defaultUsers = [
+    ["admin_1", "パパ", "303707", 0, "", "", "", "", ""],
+    ["user_1", "あかり", "1234", 100, "", "", "", "", ""],
+    ["user_2", "ひかり", "1234", 100, "", "", "", "", ""],
+    ["user_3", "しょうご", "1234", 100, "", "", "", "", ""],
+    ["user_4", "ママ", "1234", 0, "", "", "", "", ""]
+  ];
+  usersSheet.getRange(2, 1, defaultUsers.length, userHeaders.length).setValues(defaultUsers);
+
+  // 2. アプリ設定 シート
+  const configSheet = ss.insertSheet("アプリ設定");
+  const configHeaders = ["設定名", "単語", "表現"];
+  applySheetHeaderStyle_(configSheet, configHeaders, '#E8EAED');
+  const defaultConfigs = [
+    ["外部学習_管理者PIN", "303707", ""],
+    ["漢字手書き配点", '{"tome":15,"hane":15,"harai":15,"balance":30,"shape":25}', ""],
+    ["漢字手書き合格ライン", "70", ""],
+    ["ニガテ特訓ボーナス倍率", "1.4", ""],
+    ["ランダム出題ボーナス倍率", "1.1", ""],
+    ["基本Pt_英単語", "1", ""],
+    ["基本Pt_英語表現", "2", ""],
+    ["基本Pt_漢字", "1", ""],
+    ["通知メール_1", "parent@example.com", ""],
+    ["通知メール_2", "", ""],
+    ["通知メール_3", "", ""],
+    ["通知メール_4", "", ""],
+    ["特訓メニュー1_表示名", "英検5級 基本特訓", ""],
+    ["特訓メニュー1_有効", "TRUE", ""],
+    ["特訓メニュー1_色", "#3b82f6", ""],
+    ["特訓メニュー2_表示名", "英単語 発音＆スペル特訓", ""],
+    ["特訓メニュー2_有効", "TRUE", ""],
+    ["特訓メニュー2_色", "#10b981", ""],
+    ["特訓メニュー3_表示名", "漢字 書き取り＆読み特訓", ""],
+    ["特訓メニュー3_有効", "TRUE", ""],
+    ["特訓メニュー3_色", "#f59e0b", ""]
+  ];
+  configSheet.getRange(2, 1, defaultConfigs.length, configHeaders.length).setValues(defaultConfigs);
+
+  // 3. rewards シート
+  const rewardsSheet = ss.insertSheet("rewards");
+  const rewardHeaders = ["景品ID", "景品名", "必要ポイント", "制限時間(分)", "説明", "アイコン", "有効"];
+  applySheetHeaderStyle_(rewardsSheet, rewardHeaders, '#CEEAD6');
+  const defaultRewards = [
+    ["reward_game_30", "ゲーム 30分", 100, 30, "宿題を終えてから遊ぼう", "🎮", true],
+    ["reward_youtube_30", "YouTube 30分", 100, 30, "スマホかテレビで見てね", "📺", true],
+    ["reward_snack_special", "特別なおやつ", 80, 0, "好きなおやつを1つ選べるよ", "🍦", true],
+    ["reward_book_manga", "マンガ・本 1冊", 300, 0, "読みたい本を買ってもらえるチケット", "📚", true]
+  ];
+  rewardsSheet.getRange(2, 1, defaultRewards.length, rewardHeaders.length).setValues(defaultRewards);
+
+  // 4. inventory シート
+  const invSheet = ss.insertSheet("inventory");
+  const invHeaders = ["交換日時", "ユーザーID", "景品ID", "景品名", "状態", "使用日時", "通知状態"];
+  applySheetHeaderStyle_(invSheet, invHeaders, '#FCE8E6');
+
+  // 5. 外部学習 シート
+  const extSheet = ss.insertSheet("外部学習");
+  const extHeaders = ["カテゴリ", "分量", "ポイント"];
+  applySheetHeaderStyle_(extSheet, extHeaders, '#FEF7E0');
+  const defaultExt = [
+    ["ドリル・宿題", "1ページ", 5],
+    ["ドリル・宿題", "2ページ以上", 10],
+    ["読書", "15分", 5],
+    ["読書", "30分以上", 10],
+    ["習い事・練習", "15分", 5],
+    ["習い事・練習", "30分以上", 10],
+    ["お手伝い", "かんたん", 3],
+    ["お手伝い", "しっかり", 8]
+  ];
+  extSheet.getRange(2, 1, defaultExt.length, extHeaders.length).setValues(defaultExt);
+
+  // 6. 外部学習申請 シート
+  const reqSheet = ss.insertSheet("外部学習申請");
+  const reqHeaders = ["申請日時", "ユーザーID", "ユーザー名", "カテゴリ", "分量", "ポイント", "こどもメモ", "状態", "処理日時", "おとなメモ"];
+  applySheetHeaderStyle_(reqSheet, reqHeaders, '#FEF7E0');
+
+  // 7. 特訓メニュー1 〜 12 シート
+  for (let m = 1; m <= 12; m++) {
+    const trainSheet = ss.insertSheet("特訓メニュー" + m);
+    const trainHeaders = ["ステップ番号", "単元名", "出題形式", "回答形式", "モード", "穴埋め文字数"];
+    applySheetHeaderStyle_(trainSheet, trainHeaders, '#E8F0FE');
+    if (m === 1) {
+      const sampleSteps = [
+        [1, "英検5級_単元1", "日本語→英語", "4択", "ランダム", ""],
+        [2, "英検5級_単元1", "英語音声→日本語", "タイピング", "通常", ""],
+        [3, "英検5級_単元1", "日本語→英語", "音声発音", "ランダム", ""]
+      ];
+      trainSheet.getRange(2, 1, sampleSteps.length, trainHeaders.length).setValues(sampleSteps);
+    }
+  }
+}
+
+/**
+ * ② 『教材_英単語ブック』の構築
+ */
+function buildEnglishWordWorkbook_(ss) {
+  const sheet1 = ss.getActiveSheet();
+  sheet1.setName("英検5級_単元1");
+  const headers = ["通し番号", "英単語", "日本語", "イニシャル", "イニシャルと文字数", "ヒント"];
+  applySheetHeaderStyle_(sheet1, headers, '#E8F0FE');
+
+  const sampleWords = [
+    [1, "apple", "りんご", "a", "a (5)", "赤いくだもの"],
+    [2, "book", "本", "b", "b (4)", "読むもの"],
+    [3, "cat", "ねこ", "c", "c (3)", "かわいい動物"],
+    [4, "dog", "いぬ", "d", "d (3)", "人なつっこい動物"],
+    [5, "elephant", "ぞう", "e", "e (8)", "鼻の長い動物"],
+    [6, "friend", "友だち", "f", "f (6)", "なかよし"],
+    [7, "guitar", "ギター", "g", "g (6)", "楽器"],
+    [8, "house", "家", "h", "h (5)", "住むところ"],
+    [9, "island", "島", "i", "i (6)", "海にかこまれた陸地"],
+    [10, "juice", "ジュース", "j", "j (5)", "飲み物"]
+  ];
+  sheet1.getRange(2, 1, sampleWords.length, headers.length).setValues(sampleWords);
+
+  // 単元2シートも追加
+  const sheet2 = ss.insertSheet("英検5級_単元2");
+  applySheetHeaderStyle_(sheet2, headers, '#E8F0FE');
+  const sampleWords2 = [
+    [1, "kitchen", "台所", "k", "k (7)", "料理をするところ"],
+    [2, "lemon", "レモン", "l", "l (5)", "黄色くてすっぱいくだもの"],
+    [3, "music", "音楽", "m", "m (5)", "歌やメロディ"],
+    [4, "notebook", "ノート", "n", "n (8)", "文字を書く帳面"],
+    [5, "orange", "オレンジ", "o", "o (6)", "かんきつ類のくだもの"]
+  ];
+  sheet2.getRange(2, 1, sampleWords2.length, headers.length).setValues(sampleWords2);
+}
+
+/**
+ * ③ 『教材_英語表現ブック』の構築
+ */
+function buildEnglishPhraseWorkbook_(ss) {
+  const sheet = ss.getActiveSheet();
+  sheet.setName("日常会話_Lesson1");
+  const headers = [
+    "通し番号", "日本語", "英文", "別解１", "別解２", "別解３", "別解４", "別解５",
+    "疑問文", "穴埋め１", "穴埋め２", "イニシャル", "イニシャルと文字数", "ヒント",
+    "並び替え用英文", "並び替え箇所", "並び替え語句ダミー",
+    "並び替え語句1", "並び替え語句2", "並び替え語句3", "並び替え語句4",
+    "並び替え語句5", "並び替え語句6", "並び替え語句7", "並び替え語句8"
+  ];
+  applySheetHeaderStyle_(sheet, headers, '#E6F4EA');
+
+  const samplePhrases = [
+    [
+      1, "おはようございます。", "Good morning.", "", "", "", "", "",
+      "", "Good", "morning", "G", "G (4)", "朝のあいさつ",
+      "Good morning.", "all", "",
+      "Good", "morning.", "", "", "", "", "", ""
+    ],
+    [
+      2, "お元気ですか？", "How are you?", "", "", "", "", "",
+      "How are you?", "How", "you", "H", "H (3)", "あいさつ",
+      "How are you?", "all", "",
+      "How", "are", "you?", "", "", "", "", ""
+    ],
+    [
+      3, "私の名前はケンです。", "My name is Ken.", "I am Ken.", "", "", "", "",
+      "", "name", "Ken", "M", "M (2)", "自己紹介",
+      "My name is Ken.", "all", "",
+      "My", "name", "is", "Ken.", "", "", "", ""
+    ]
+  ];
+  sheet.getRange(2, 1, samplePhrases.length, headers.length).setValues(samplePhrases);
+}
+
+/**
+ * ④ 『教材_漢字練習ブック』の構築
+ */
+function buildKanjiWorkbook_(ss) {
+  const grades = ["小１", "小２", "小３", "小４", "小５", "小６"];
+  const headers = ["通し番号", "漢字", "読み", "画数", "部首", "意味", "例題文", "穴埋め問題", "選択肢1", "選択肢2", "選択肢3"];
+
+  const sampleKanjiG1 = [
+    [1, "日", "にち、ひ", 4, "日", "太陽、ひ", "日曜日に公園へ行く。", "（　）曜日に公園へ行く。", "日", "目", "白"],
+    [2, "月", "げつ、つき", 4, "月", "お月さま", "夜空に月が出ている。", "夜空に（　）が出ている。", "月", "円", "用"],
+    [3, "火", "か、ひ", 4, "火", "ひ、ほのお", "火曜日は習い事がある。", "（　）曜日は習い事がある。", "火", "水", "人"],
+    [4, "水", "すい、みず", 4, "水", "みず", "冷たい水を飲む。", "冷たい（　）を飲む。", "水", "氷", "木"],
+    [5, "木", "もく、き", 4, "木", "き、樹木", "大きな木の下で休む。", "大きな（　）の下で休む。", "木", "本", "林"],
+    [6, "金", "きん、かね", 8, "金", "きん、おかね", "金曜日が一番好きだ。", "（　）曜日が一番好きだ。", "金", "全", "銀"],
+    [7, "土", "ど、つち", 3, "土", "つち、じめん", "植木鉢に土を入れる。", "植木鉢に（　）を入れる。", "土", "士", "工"]
+  ];
+
+  grades.forEach(function (g, idx) {
+    const sheet = idx === 0 ? ss.getActiveSheet() : ss.insertSheet(g);
+    sheet.setName(g);
+    applySheetHeaderStyle_(sheet, headers, '#FEF7E0');
+    if (idx === 0) {
+      sheet.getRange(2, 1, sampleKanjiG1.length, headers.length).setValues(sampleKanjiG1);
+    }
+  });
+}
+
+/**
+ * ⑤ 『教材_漢字熟語ブック』の構築
+ */
+function buildJukugoWorkbook_(ss) {
+  const sheet = ss.getActiveSheet();
+  sheet.setName("熟語一覧");
+  const headers = ["通し番号", "熟語", "読み", "意味", "例文"];
+  applySheetHeaderStyle_(sheet, headers, '#FCE8E6');
+
+  const sampleJukugo = [
+    [1, "日光", "にっこう", "太陽の光", "暖かい日光を浴びる。"],
+    [2, "月光", "げっこう", "月の光", "静かな月光の下を歩く。"],
+    [3, "火花", "ひばな", "飛び散る火の粉", "火花がパチパチと散る。"],
+    [4, "水車", "すいしゃ", "水力で回る車", "川辺で水車が回っている。"],
+    [5, "森林", "しんりん", "たくさんの木が生い茂る場所", "森林浴を楽しむ。"]
+  ];
+  sheet.getRange(2, 1, sampleJukugo.length, headers.length).setValues(sampleJukugo);
+}
+

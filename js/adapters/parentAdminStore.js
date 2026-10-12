@@ -537,7 +537,413 @@
     saveTrainingAdminDataToFirestore: saveTrainingAdminDataToFirestore,
     saveTrainingMenuMeta: saveTrainingMenuMeta,
     saveTrainingBasePoint: saveTrainingBasePoint,
-    saveTrainingRoutesBatch: saveTrainingRoutesBatch
+    saveTrainingRoutesBatch: saveTrainingRoutesBatch,
+
+    // ========================================================================
+    // 1. ユーザー管理（完全CRUD）
+    // ========================================================================
+    getUsersList: function (pin) {
+      return new Promise(function (resolve, reject) {
+        var db = getDb();
+        if (db) {
+          db.collection('users').get().then(function (snapshot) {
+            if (snapshot && !snapshot.empty) {
+              var list = [];
+              snapshot.forEach(function (doc) {
+                var d = doc.data() || {};
+                if (!d.id) d.id = doc.id;
+                list.push(d);
+              });
+              list.sort(function (a, b) { return String(a.id).localeCompare(String(b.id)); });
+              resolve(list);
+              return;
+            }
+            // 空なら getUsersPoints で GAS から取得
+            getUsersPoints(pin).then(resolve).catch(reject);
+          }).catch(function () {
+            getUsersPoints(pin).then(resolve).catch(reject);
+          });
+        } else {
+          getUsersPoints(pin).then(resolve).catch(reject);
+        }
+      });
+    },
+
+    createUser: function (pin, userData) {
+      return new Promise(function (resolve, reject) {
+        if (!userData || !userData.id || !userData.name) {
+          reject(new Error("IDと名前は必須です"));
+          return;
+        }
+        var uid = String(userData.id).trim();
+        var name = String(userData.name).trim();
+        var userPin = String(userData.pin || "1234").trim();
+        var points = Number(userData.points) || 0;
+
+        var db = getDb();
+        if (db) {
+          db.collection('users').doc(uid).set({
+            id: uid,
+            name: name,
+            pin: userPin,
+            points: points,
+            createdAt: (typeof firebase !== 'undefined' && firebase.firestore && firebase.firestore.FieldValue) ?
+              firebase.firestore.FieldValue.serverTimestamp() : new Date().toISOString(),
+            updatedAt: (typeof firebase !== 'undefined' && firebase.firestore && firebase.firestore.FieldValue) ?
+              firebase.firestore.FieldValue.serverTimestamp() : new Date().toISOString()
+          }, { merge: true }).then(function () {
+            resolve({ status: "success", userId: uid });
+          }).catch(reject);
+        } else {
+          resolve({ status: "success", userId: uid });
+        }
+
+        // GAS 同期
+        var gasUrl = getGasUrl();
+        if (gasUrl) {
+          fetch(gasUrl, {
+            method: 'POST',
+            body: JSON.stringify({
+              action: "create_user_admin",
+              adminPin: pin,
+              userId: uid,
+              name: name,
+              userPin: userPin,
+              points: points
+            })
+          }).catch(function (e) { console.warn("GAS create user error:", e); });
+        }
+      });
+    },
+
+    updateUserProfile: function (pin, userId, updates) {
+      return new Promise(function (resolve, reject) {
+        if (!userId) {
+          reject(new Error("ユーザーIDが指定されていません"));
+          return;
+        }
+        var uid = String(userId).trim();
+        var payload = {};
+        if (updates.name != null) payload.name = String(updates.name).trim();
+        if (updates.pin != null) payload.pin = String(updates.pin).trim();
+        if (updates.points != null) payload.points = Number(updates.points);
+
+        payload.updatedAt = (typeof firebase !== 'undefined' && firebase.firestore && firebase.firestore.FieldValue) ?
+          firebase.firestore.FieldValue.serverTimestamp() : new Date().toISOString();
+
+        var db = getDb();
+        if (db) {
+          db.collection('users').doc(uid).set(payload, { merge: true }).then(function () {
+            resolve({ status: "success" });
+          }).catch(reject);
+        } else {
+          resolve({ status: "success" });
+        }
+
+        var gasUrl = getGasUrl();
+        if (gasUrl) {
+          fetch(gasUrl, {
+            method: 'POST',
+            body: JSON.stringify(Object.assign({ action: "update_user_profile_admin", adminPin: pin, userId: uid }, updates))
+          }).catch(function (e) { console.warn("GAS update profile error:", e); });
+        }
+      });
+    },
+
+    deleteUser: function (pin, userId) {
+      return new Promise(function (resolve, reject) {
+        if (!userId) {
+          reject(new Error("ユーザーIDが指定されていません"));
+          return;
+        }
+        var uid = String(userId).trim();
+        var db = getDb();
+        if (db) {
+          db.collection('users').doc(uid).delete().then(function () {
+            resolve({ status: "success" });
+          }).catch(reject);
+        } else {
+          resolve({ status: "success" });
+        }
+
+        var gasUrl = getGasUrl();
+        if (gasUrl) {
+          fetch(gasUrl, {
+            method: 'POST',
+            body: JSON.stringify({ action: "delete_user_admin", adminPin: pin, userId: uid })
+          }).catch(function (e) { console.warn("GAS delete user error:", e); });
+        }
+      });
+    },
+
+    // ========================================================================
+    // 2. ご褒美マスター管理（完全CRUD）
+    // ========================================================================
+    getRewardsMaster: function (pin) {
+      return new Promise(function (resolve) {
+        var defaultRewards = [
+          { id: "reward_game_30", name: "ゲーム 30分", points: 100, timeMinutes: 30, desc: "宿題を終えてから遊ぼう", icon: "🎮", enabled: true },
+          { id: "reward_youtube_30", name: "YouTube 30分", points: 100, timeMinutes: 30, desc: "スマホかテレビで見てね", icon: "📺", enabled: true },
+          { id: "reward_snack_special", name: "特別なおやつ", points: 80, timeMinutes: 0, desc: "好きなおやつを1つ選べるよ", icon: "🍦", enabled: true },
+          { id: "reward_book_manga", name: "マンガ・本 1冊", points: 300, timeMinutes: 0, desc: "読みたい本を買ってもらえるチケット", icon: "📚", enabled: true }
+        ];
+
+        var db = getDb();
+        if (db) {
+          db.collection('system').doc('rewards_master').get().then(function (doc) {
+            if (doc.exists) {
+              var data = doc.data() || {};
+              if (Array.isArray(data.list) && data.list.length > 0) {
+                resolve(data.list);
+                return;
+              }
+            }
+            // 初期シード
+            db.collection('system').doc('rewards_master').set({
+              list: defaultRewards,
+              updatedAt: (typeof firebase !== 'undefined' && firebase.firestore && firebase.firestore.FieldValue) ?
+                firebase.firestore.FieldValue.serverTimestamp() : new Date().toISOString()
+            }, { merge: true });
+            resolve(defaultRewards);
+          }).catch(function () {
+            resolve(defaultRewards);
+          });
+        } else {
+          resolve(defaultRewards);
+        }
+      });
+    },
+
+    saveRewardItem: function (pin, rewardItem) {
+      var self = this;
+      return new Promise(function (resolve, reject) {
+        if (!rewardItem || !rewardItem.name) {
+          reject(new Error("景品名は必須です"));
+          return;
+        }
+        self.getRewardsMaster(pin).then(function (list) {
+          var updated = list ? list.slice() : [];
+          var id = rewardItem.id || ("reward_" + Date.now());
+          var item = {
+            id: id,
+            name: String(rewardItem.name).trim(),
+            points: Math.max(0, Number(rewardItem.points) || 0),
+            timeMinutes: Math.max(0, Number(rewardItem.timeMinutes) || 0),
+            desc: String(rewardItem.desc || "").trim(),
+            icon: String(rewardItem.icon || "🎁").trim(),
+            enabled: rewardItem.enabled !== false
+          };
+          var idx = updated.findIndex(function (r) { return r.id === id; });
+          if (idx >= 0) updated[idx] = item;
+          else updated.push(item);
+
+          var db = getDb();
+          if (db) {
+            db.collection('system').doc('rewards_master').set({
+              list: updated,
+              updatedAt: (typeof firebase !== 'undefined' && firebase.firestore && firebase.firestore.FieldValue) ?
+                firebase.firestore.FieldValue.serverTimestamp() : new Date().toISOString()
+            }, { merge: true }).then(function () {
+              resolve(updated);
+            }).catch(reject);
+          } else {
+            resolve(updated);
+          }
+        }).catch(reject);
+      });
+    },
+
+    deleteRewardItem: function (pin, rewardId) {
+      var self = this;
+      return new Promise(function (resolve, reject) {
+        self.getRewardsMaster(pin).then(function (list) {
+          var filtered = (list || []).filter(function (r) { return r.id !== rewardId; });
+          var db = getDb();
+          if (db) {
+            db.collection('system').doc('rewards_master').set({
+              list: filtered,
+              updatedAt: (typeof firebase !== 'undefined' && firebase.firestore && firebase.firestore.FieldValue) ?
+                firebase.firestore.FieldValue.serverTimestamp() : new Date().toISOString()
+            }, { merge: true }).then(function () {
+              resolve(filtered);
+            }).catch(reject);
+          } else {
+            resolve(filtered);
+          }
+        }).catch(reject);
+      });
+    },
+
+    // ========================================================================
+    // 3. 外部学習メニューマスター管理（完全CRUD）
+    // ========================================================================
+    getExternalMenusMaster: function () {
+      var defaultMenus = [
+        { id: "ext_1", category: "ドリル・宿題", volume: "1ページ", points: 5 },
+        { id: "ext_2", category: "ドリル・宿題", volume: "2ページ以上", points: 10 },
+        { id: "ext_3", category: "読書", volume: "15分", points: 5 },
+        { id: "ext_4", category: "読書", volume: "30分以上", points: 10 },
+        { id: "ext_5", category: "習い事・練習", volume: "15分", points: 5 },
+        { id: "ext_6", category: "習い事・練習", volume: "30分以上", points: 10 },
+        { id: "ext_7", category: "お手伝い", volume: "かんたん", points: 3 },
+        { id: "ext_8", category: "お手伝い", volume: "しっかり", points: 8 }
+      ];
+
+      var db = getDb();
+      if (!db) return Promise.resolve(defaultMenus);
+
+      return new Promise(function (resolve) {
+        db.collection('system').doc('external_menus').get().then(function (doc) {
+          if (doc.exists) {
+            var data = doc.data() || {};
+            if (Array.isArray(data.list) && data.list.length > 0) {
+              resolve(data.list);
+              return;
+            }
+          }
+          db.collection('system').doc('external_menus').set({
+            list: defaultMenus,
+            updatedAt: (typeof firebase !== 'undefined' && firebase.firestore && firebase.firestore.FieldValue) ?
+              firebase.firestore.FieldValue.serverTimestamp() : new Date().toISOString()
+          }, { merge: true });
+          resolve(defaultMenus);
+        }).catch(function () {
+          resolve(defaultMenus);
+        });
+      });
+    },
+
+    saveExternalMenuItem: function (pin, menuItem) {
+      var self = this;
+      return new Promise(function (resolve, reject) {
+        if (!menuItem || !menuItem.category || !menuItem.volume) {
+          reject(new Error("カテゴリと分量は必須です"));
+          return;
+        }
+        self.getExternalMenusMaster().then(function (list) {
+          var updated = list ? list.slice() : [];
+          var id = menuItem.id || ("ext_" + Date.now());
+          var item = {
+            id: id,
+            category: String(menuItem.category).trim(),
+            volume: String(menuItem.volume).trim(),
+            points: Math.max(1, Number(menuItem.points) || 1)
+          };
+          var idx = updated.findIndex(function (m) { return m.id === id; });
+          if (idx >= 0) updated[idx] = item;
+          else updated.push(item);
+
+          var db = getDb();
+          if (db) {
+            db.collection('system').doc('external_menus').set({
+              list: updated,
+              updatedAt: (typeof firebase !== 'undefined' && firebase.firestore && firebase.firestore.FieldValue) ?
+                firebase.firestore.FieldValue.serverTimestamp() : new Date().toISOString()
+            }, { merge: true }).then(function () {
+              resolve(updated);
+            }).catch(reject);
+          } else {
+            resolve(updated);
+          }
+        }).catch(reject);
+      });
+    },
+
+    deleteExternalMenuItem: function (pin, menuId) {
+      var self = this;
+      return new Promise(function (resolve, reject) {
+        self.getExternalMenusMaster().then(function (list) {
+          var filtered = (list || []).filter(function (m) { return m.id !== menuId; });
+          var db = getDb();
+          if (db) {
+            db.collection('system').doc('external_menus').set({
+              list: filtered,
+              updatedAt: (typeof firebase !== 'undefined' && firebase.firestore && firebase.firestore.FieldValue) ?
+                firebase.firestore.FieldValue.serverTimestamp() : new Date().toISOString()
+            }, { merge: true }).then(function () {
+              resolve(filtered);
+            }).catch(reject);
+          } else {
+            resolve(filtered);
+          }
+        }).catch(reject);
+      });
+    },
+
+    // ========================================================================
+    // 4. アプリ詳細・配点設定（採点ウェイト・合格ライン・倍率）
+    // ========================================================================
+    getSysConfig: function () {
+      var defaultConfig = {
+        passScore: 70,
+        tomeWeight: 15,
+        haneWeight: 15,
+        haraiWeight: 15,
+        balanceWeight: 30,
+        shapeWeight: 25,
+        weakBonus: 1.4,
+        randomBonus: 1.1
+      };
+      var db = getDb();
+      if (!db) return Promise.resolve(defaultConfig);
+
+      return new Promise(function (resolve) {
+        db.collection('system').doc('scoring_config').get().then(function (doc) {
+          if (doc.exists) {
+            resolve(Object.assign({}, defaultConfig, doc.data() || {}));
+          } else {
+            db.collection('system').doc('scoring_config').set(defaultConfig, { merge: true });
+            resolve(defaultConfig);
+          }
+        }).catch(function () {
+          resolve(defaultConfig);
+        });
+      });
+    },
+
+    saveSysConfig: function (pin, config) {
+      var db = getDb();
+      if (!db) return Promise.resolve(config);
+
+      return new Promise(function (resolve, reject) {
+        var payload = Object.assign({}, config, {
+          updatedAt: (typeof firebase !== 'undefined' && firebase.firestore && firebase.firestore.FieldValue) ?
+            firebase.firestore.FieldValue.serverTimestamp() : new Date().toISOString()
+        });
+        db.collection('system').doc('scoring_config').set(payload, { merge: true }).then(function () {
+          resolve(payload);
+        }).catch(reject);
+      });
+    },
+
+    // ========================================================================
+    // 5. データ管理＆仲介GASバックアップ一括出力連携
+    // ========================================================================
+    triggerSpreadsheetFullBackup: function (pin) {
+      return new Promise(function (resolve, reject) {
+        var gasUrl = getGasUrl();
+        if (!gasUrl) {
+          reject(new Error("GAS_API_URLが設定されていません"));
+          return;
+        }
+        fetch(gasUrl, {
+          method: 'POST',
+          body: JSON.stringify({ action: 'export_full_backup', adminPin: pin })
+        })
+          .then(function (r) { return r.json(); })
+          .then(function (d) {
+            if (d && d.status === 'success') {
+              resolve(d);
+            } else {
+              reject(new Error((d && d.message) || 'エクスポートに失敗しました'));
+            }
+          })
+          .catch(function (e) {
+            reject(new Error("通信エラー: " + e.message));
+          });
+      });
+    }
   };
 
 })(typeof window !== 'undefined' ? window : this);
+

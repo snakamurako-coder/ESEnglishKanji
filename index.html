@@ -404,14 +404,19 @@
       <button type="button" class="submit-btn btn-purple" style="margin-top:12px;width:100%;max-width:280px;" onclick="loginParentAdmin()">ログイン</button>
     </div>
     <div id="parent-admin-message" style="color:#ff8a80;margin:12px auto;max-width:400px;min-height:1.2em;text-align:center;font-size:14px;"></div>
-    <div id="parent-admin-hub-panel" class="parent-admin-hub" style="display:none;">
+    <div id="parent-admin-hub-panel" class="parent-admin-hub" style="display:none;max-width:440px;margin:0 auto;display:flex;flex-direction:column;gap:8px;">
       <p style="color:#aaa;font-size:14px;text-align:center;margin:0 0 4px;">管理する項目を選んでください</p>
+      <button type="button" class="menu-btn btn-blue" onclick="enterParentAdminUsers()">👥 ユーザー管理（新規追加・編集・削除）</button>
+      <button type="button" class="menu-btn" style="background:#f57c00;color:#fff;" onclick="enterParentAdminUserPoints()">⭐ ユーザーのポイント調整</button>
+      <button type="button" class="menu-btn btn-green" onclick="enterParentAdminRewards()">🎁 ご褒美（景品）マスター管理</button>
+      <button type="button" class="menu-btn" style="background:#0288d1;color:#fff;" onclick="enterParentAdminExtMenu()">📚 外部学習メニュー管理</button>
       <button type="button" class="menu-btn btn-blue" onclick="enterParentAdminExternal()">🔐 外部学習の承認</button>
       <button type="button" class="menu-btn btn-purple" onclick="enterParentAdminTraining()">🎯 特訓メニュー管理</button>
-      <button type="button" class="menu-btn" style="background:#f57c00;color:#fff;" onclick="enterParentAdminUserPoints()">⭐ ユーザーのポイント調整</button>
+      <button type="button" class="menu-btn" style="background:#546e7a;color:#fff;" onclick="enterParentAdminSysConfig()">⚙️ アプリ詳細・配点設定</button>
       <button type="button" class="menu-btn btn-green" onclick="enterParentAdminNotify()">📧 通知メール設定</button>
       <button type="button" class="menu-btn" style="background:#00838f;color:#fff;" onclick="enterParentAdminPiperTTS()">🎙️ 高音質音声（Piper TTS）設定</button>
-      <button type="button" class="cancel-btn" style="margin-top:4px;" onclick="logoutParentAdmin()">ログアウト</button>
+      <button type="button" class="menu-btn" style="background:#6a1b9a;color:#fff;" onclick="enterParentAdminBackup()">💾 データ管理＆バックアップ（スプシ出力）</button>
+      <button type="button" class="cancel-btn" style="margin-top:8px;" onclick="logoutParentAdmin()">ログアウト</button>
     </div>
     <button type="button" class="cancel-btn" style="margin-top:24px;" onclick="showHome(JSON.parse(localStorage.getItem('app_kid_user')))">ホームにもどる</button>
   </div>
@@ -537,16 +542,6 @@
     <button type="button" class="cancel-btn" style="margin-top:24px;" onclick="backToParentAdminHub()">管理メニューにもどる</button>
   </div>
 
-  <div id="section-parent-admin-points" class="section">
-    <h1>⭐ ユーザーのポイント調整</h1>
-    <p style="max-width:440px;margin:0 auto 12px;line-height:1.5;color:#ccc;font-size:14px;">各ユーザーの現在の合計ポイントを確認し、数値を直接入力して変更できます。</p>
-    <div id="parent-admin-points-container" style="max-width:420px;margin:0 auto;display:flex;flex-direction:column;gap:12px;">
-      <p style="color:#aaa;text-align:center;">読み込み中...</p>
-    </div>
-    <div id="parent-admin-points-message" style="color:#ff8a80;margin:12px auto;min-height:1.2em;text-align:center;font-size:14px;"></div>
-    <button type="button" class="cancel-btn" style="margin-top:24px;" onclick="backToParentAdminHub()">管理メニューにもどる</button>
-  </div>
-
   <div id="section-external-admin" class="section">
     <h1>🔐 外部学習の承認</h1>
     <div id="external-admin-pin-panel" style="display:none;max-width:400px;margin:0 auto;">
@@ -598,6 +593,193 @@
       <button type="button" class="cancel-btn" style="margin:20px auto 0;display:block;" onclick="backToParentAdminHub()">管理メニューにもどる</button>
     </div>
     <button type="button" class="cancel-btn" style="margin-top:24px;" onclick="backToParentAdminHub()">管理メニューにもどる</button>
+  </div>
+
+  <!-- 👥 ユーザー管理画面 -->
+  <div id="section-parent-admin-users" class="section">
+    <h1>👥 ユーザー管理</h1>
+    <p style="max-width:440px;margin:0 auto 12px;line-height:1.5;color:#ccc;font-size:14px;">学習者（子ども・保護者）のアカウント追加、名前・PINの変更、削除を行えます。</p>
+    <div style="max-width:440px;margin:0 auto 16px;">
+      <button type="button" class="submit-btn btn-green" style="width:100%;margin:0 0 12px;" onclick="openCreateUserModal()">➕ 新しいユーザーを追加</button>
+      <div id="parent-admin-users-list" style="display:flex;flex-direction:column;gap:10px;">
+        <p style="color:#aaa;text-align:center;">読み込み中...</p>
+      </div>
+      <div id="parent-admin-users-msg" style="color:#ff8a80;margin:12px auto;min-height:1.2em;text-align:center;font-size:14px;"></div>
+    </div>
+    <button type="button" class="cancel-btn" style="margin-top:24px;" onclick="backToParentAdminHub()">管理メニューにもどる</button>
+  </div>
+
+  <!-- 🎁 ご褒美マスター管理画面 -->
+  <div id="section-parent-admin-rewards" class="section">
+    <h1>🎁 ご褒美（景品）マスター管理</h1>
+    <p style="max-width:440px;margin:0 auto 12px;line-height:1.5;color:#ccc;font-size:14px;">子どもがポイントで交換できるご褒美チケット（ゲーム時間やおやつ等）を登録・編集します。</p>
+    <div style="max-width:440px;margin:0 auto 16px;">
+      <button type="button" class="submit-btn btn-green" style="width:100%;margin:0 0 12px;" onclick="openRewardModal()">➕ 新しいご褒美を追加</button>
+      <div id="parent-admin-rewards-list" style="display:flex;flex-direction:column;gap:10px;">
+        <p style="color:#aaa;text-align:center;">読み込み中...</p>
+      </div>
+    </div>
+    <button type="button" class="cancel-btn" style="margin-top:24px;" onclick="backToParentAdminHub()">管理メニューにもどる</button>
+  </div>
+
+  <!-- 📚 外部学習メニュー管理画面 -->
+  <div id="section-parent-admin-extmenu" class="section">
+    <h1>📚 外部学習メニュー管理</h1>
+    <p style="max-width:440px;margin:0 auto 12px;line-height:1.5;color:#ccc;font-size:14px;">子どもが自分で申請できる学習メニュー（読書、プリントなど）と獲得ポイントを設定します。</p>
+    <div style="max-width:460px;margin:0 auto 16px;">
+      <div style="background:#252538;padding:12px;border-radius:8px;border:1px solid #3d3d5c;margin-bottom:14px;">
+        <h4 style="margin:0 0 8px;color:#90caf9;font-size:14px;">メニューを新しく追加</h4>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+          <input type="text" id="new-extmenu-cat" placeholder="カテゴリ (例: 読書)" style="flex:1;min-width:110px;padding:8px;background:#1e1e2f;border:1px solid #555;color:#fff;border-radius:6px;font-size:13px;">
+          <input type="text" id="new-extmenu-vol" placeholder="分量 (例: 20分)" style="flex:1;min-width:90px;padding:8px;background:#1e1e2f;border:1px solid #555;color:#fff;border-radius:6px;font-size:13px;">
+          <input type="number" id="new-extmenu-pts" placeholder="Pt" value="5" min="1" style="width:60px;padding:8px;background:#1e1e2f;border:1px solid #555;color:#fff;border-radius:6px;font-size:13px;">
+        </div>
+        <button type="button" class="submit-btn btn-green" style="width:100%;margin:0;padding:8px;" onclick="submitAddExtMenu()">追加する</button>
+      </div>
+      <div id="parent-admin-extmenu-list"></div>
+    </div>
+    <button type="button" class="cancel-btn" style="margin-top:24px;" onclick="backToParentAdminHub()">管理メニューにもどる</button>
+  </div>
+
+  <!-- ⚙️ アプリ詳細・配点設定画面 -->
+  <div id="section-parent-admin-sysconfig" class="section">
+    <h1>⚙️ アプリ詳細・配点設定</h1>
+    <p style="max-width:440px;margin:0 auto 12px;line-height:1.5;color:#ccc;font-size:14px;">手書き採点エンジンの重み付けや合否ライン、各種ボーナス倍率を直接調整できます。</p>
+    <div style="max-width:440px;margin:0 auto;text-align:left;background:#252538;padding:18px;border-radius:12px;border:1px solid #3d3d5c;">
+      <h3 style="margin:0 0 10px;color:#CE93D8;font-size:15px;">✍️ 漢字手書き採点パラメータ</h3>
+      <div style="margin-bottom:10px;">
+        <label style="display:block;color:#bbb;font-size:13px;margin-bottom:4px;">合格ライン得点 (点)</label>
+        <input type="number" id="sys-pass-score" min="1" max="100" style="width:100%;padding:8px;background:#1e1e2f;border:1px solid #555;color:#fff;border-radius:6px;box-sizing:border-box;">
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">
+        <div>
+          <label style="color:#bbb;font-size:12px;">とめ (％)</label>
+          <input type="number" id="sys-tome-weight" style="width:100%;padding:6px;background:#1e1e2f;border:1px solid #555;color:#fff;border-radius:6px;box-sizing:border-box;">
+        </div>
+        <div>
+          <label style="color:#bbb;font-size:12px;">はね (％)</label>
+          <input type="number" id="sys-hane-weight" style="width:100%;padding:6px;background:#1e1e2f;border:1px solid #555;color:#fff;border-radius:6px;box-sizing:border-box;">
+        </div>
+        <div>
+          <label style="color:#bbb;font-size:12px;">はらい (％)</label>
+          <input type="number" id="sys-harai-weight" style="width:100%;padding:6px;background:#1e1e2f;border:1px solid #555;color:#fff;border-radius:6px;box-sizing:border-box;">
+        </div>
+        <div>
+          <label style="color:#bbb;font-size:12px;">バランス (％)</label>
+          <input type="number" id="sys-balance-weight" style="width:100%;padding:6px;background:#1e1e2f;border:1px solid #555;color:#fff;border-radius:6px;box-sizing:border-box;">
+        </div>
+        <div style="grid-column:1 / -1;">
+          <label style="color:#bbb;font-size:12px;">外形・形状 (％)</label>
+          <input type="number" id="sys-shape-weight" style="width:100%;padding:6px;background:#1e1e2f;border:1px solid #555;color:#fff;border-radius:6px;box-sizing:border-box;">
+        </div>
+      </div>
+
+      <h3 style="margin:16px 0 10px;color:#90CAF9;font-size:15px;">⭐ ボーナス倍率設定</h3>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px;">
+        <div>
+          <label style="color:#bbb;font-size:12px;">ニガテ特訓倍率</label>
+          <input type="number" id="sys-weak-bonus" step="0.1" style="width:100%;padding:6px;background:#1e1e2f;border:1px solid #555;color:#fff;border-radius:6px;box-sizing:border-box;">
+        </div>
+        <div>
+          <label style="color:#bbb;font-size:12px;">ランダム倍率</label>
+          <input type="number" id="sys-random-bonus" step="0.1" style="width:100%;padding:6px;background:#1e1e2f;border:1px solid #555;color:#fff;border-radius:6px;box-sizing:border-box;">
+        </div>
+      </div>
+
+      <button type="button" class="submit-btn btn-green" style="width:100%;margin:0;" onclick="submitSaveSysConfig()">この設定を保存する</button>
+      <div id="parent-admin-sysconfig-msg" style="margin-top:10px;text-align:center;font-size:13px;min-height:1.2em;"></div>
+
+      <hr style="border:none;border-top:1px solid #3d3d5c;margin:20px 0;">
+      <h3 style="margin:0 0 10px;color:#ff8a80;font-size:15px;">🔐 管理者PINの変更</h3>
+      <div style="margin-bottom:10px;">
+        <label style="display:block;color:#bbb;font-size:13px;margin-bottom:4px;">新しい管理者PIN (4桁以上)</label>
+        <input type="password" id="sys-new-admin-pin" inputmode="numeric" placeholder="新しいPIN" style="width:100%;padding:8px;background:#1e1e2f;border:1px solid #555;color:#fff;border-radius:6px;box-sizing:border-box;">
+      </div>
+      <button type="button" class="submit-btn btn-purple" style="width:100%;margin:0;" onclick="submitChangeAdminPin()">管理者PINを変更</button>
+    </div>
+    <button type="button" class="cancel-btn" style="margin-top:24px;" onclick="backToParentAdminHub()">管理メニューにもどる</button>
+  </div>
+
+  <!-- 💾 データ管理＆バックアップ画面 -->
+  <div id="section-parent-admin-backup" class="section">
+    <h1>💾 データ管理＆バックアップ</h1>
+    <p style="max-width:460px;margin:0 auto 14px;line-height:1.6;color:#ccc;font-size:14px;">
+      Firebase版から開始した家庭でも、現在の全教材データ（英単語・英語表現・漢字・熟語）および内部設定パラメータ（ユーザー、景品、配点など）を、<b>見出し・枠線・固定行が整ったGoogleスプレッドシート群</b>としてGoogleドライブへワンクリックで一括出力できます。
+    </p>
+    <div style="max-width:440px;margin:0 auto;text-align:left;background:#252538;padding:18px;border-radius:12px;border:1px solid #3d3d5c;">
+      <h3 style="margin:0 0 8px;color:#a5d6a7;font-size:15px;">📤 スプレッドシート完全バックアップ出力</h3>
+      <p style="margin:0 0 14px;font-size:12px;color:#aaa;line-height:1.5;">
+        仲介GASを呼び出し、Googleドライブ上に専用フォルダと『学習アプリ_管理ブック』『各教材ブック（4種）』を自動生成します。
+      </p>
+      <button type="button" id="btn-mediator-backup" class="submit-btn btn-green" style="width:100%;margin:0;padding:12px;" onclick="triggerMediatorBackup()">
+        📤 Googleドライブへ完全バックアップを一括出力
+      </button>
+      <div id="parent-admin-backup-result" style="margin-top:14px;display:none;"></div>
+    </div>
+    <button type="button" class="cancel-btn" style="margin-top:24px;" onclick="backToParentAdminHub()">管理メニューにもどる</button>
+  </div>
+
+  <!-- モーダル: ユーザー新規作成 -->
+  <div id="modal-admin-user-create" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9999;align-items:center;justify-content:center;padding:16px;">
+    <div style="background:#1e1e2f;border:1px solid #3d3d5c;border-radius:12px;padding:20px;max-width:360px;width:100%;box-sizing:border-box;">
+      <h3 style="margin:0 0 14px;color:#fff;font-size:16px;">➕ 新しいユーザーを追加</h3>
+      <label style="display:block;color:#aaa;font-size:12px;margin-bottom:4px;">ユーザーID (半角英数記号)</label>
+      <input type="text" id="new-user-id" placeholder="user_5" style="width:100%;padding:8px;background:#252538;border:1px solid #555;color:#fff;border-radius:6px;margin-bottom:10px;box-sizing:border-box;">
+      <label style="display:block;color:#aaa;font-size:12px;margin-bottom:4px;">名前 (表示名)</label>
+      <input type="text" id="new-user-name" placeholder="たろう" style="width:100%;padding:8px;background:#252538;border:1px solid #555;color:#fff;border-radius:6px;margin-bottom:10px;box-sizing:border-box;">
+      <label style="display:block;color:#aaa;font-size:12px;margin-bottom:4px;">ログインPIN (数字4桁)</label>
+      <input type="text" id="new-user-pin" value="1234" style="width:100%;padding:8px;background:#252538;border:1px solid #555;color:#fff;border-radius:6px;margin-bottom:10px;box-sizing:border-box;">
+      <label style="display:block;color:#aaa;font-size:12px;margin-bottom:4px;">初期ポイント</label>
+      <input type="number" id="new-user-points" value="0" style="width:100%;padding:8px;background:#252538;border:1px solid #555;color:#fff;border-radius:6px;margin-bottom:16px;box-sizing:border-box;">
+      <div style="display:flex;gap:8px;">
+        <button type="button" class="submit-btn btn-green" style="flex:1;margin:0;" onclick="submitCreateUser()">追加</button>
+        <button type="button" class="cancel-btn" style="flex:1;margin:0;" onclick="closeCreateUserModal()">キャンセル</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- モーダル: ユーザー編集 -->
+  <div id="modal-admin-user-edit" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9999;align-items:center;justify-content:center;padding:16px;">
+    <div style="background:#1e1e2f;border:1px solid #3d3d5c;border-radius:12px;padding:20px;max-width:360px;width:100%;box-sizing:border-box;">
+      <h3 style="margin:0 0 14px;color:#fff;font-size:16px;">✏️ ユーザーの編集</h3>
+      <input type="hidden" id="edit-user-id">
+      <label style="display:block;color:#aaa;font-size:12px;margin-bottom:4px;">名前 (表示名)</label>
+      <input type="text" id="edit-user-name" style="width:100%;padding:8px;background:#252538;border:1px solid #555;color:#fff;border-radius:6px;margin-bottom:10px;box-sizing:border-box;">
+      <label style="display:block;color:#aaa;font-size:12px;margin-bottom:4px;">ログインPIN (数字4桁)</label>
+      <input type="text" id="edit-user-pin" style="width:100%;padding:8px;background:#252538;border:1px solid #555;color:#fff;border-radius:6px;margin-bottom:16px;box-sizing:border-box;">
+      <div style="display:flex;gap:8px;">
+        <button type="button" class="submit-btn btn-green" style="flex:1;margin:0;" onclick="submitEditUser()">保存</button>
+        <button type="button" class="cancel-btn" style="flex:1;margin:0;" onclick="closeEditUserModal()">キャンセル</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- モーダル: 景品追加・編集 -->
+  <div id="modal-admin-reward" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9999;align-items:center;justify-content:center;padding:16px;">
+    <div style="background:#1e1e2f;border:1px solid #3d3d5c;border-radius:12px;padding:20px;max-width:380px;width:100%;box-sizing:border-box;">
+      <h3 id="modal-reward-title" style="margin:0 0 14px;color:#fff;font-size:16px;">ご褒美の追加・編集</h3>
+      <input type="hidden" id="reward-input-id">
+      <label style="display:block;color:#aaa;font-size:12px;margin-bottom:4px;">ご褒美名</label>
+      <input type="text" id="reward-input-name" placeholder="ゲーム 30分" style="width:100%;padding:8px;background:#252538;border:1px solid #555;color:#fff;border-radius:6px;margin-bottom:10px;box-sizing:border-box;">
+      <div style="display:flex;gap:8px;margin-bottom:10px;">
+        <div style="flex:1;">
+          <label style="display:block;color:#aaa;font-size:12px;margin-bottom:4px;">必要Pt</label>
+          <input type="number" id="reward-input-points" value="100" min="0" style="width:100%;padding:8px;background:#252538;border:1px solid #555;color:#fff;border-radius:6px;box-sizing:border-box;">
+        </div>
+        <div style="flex:1;">
+          <label style="display:block;color:#aaa;font-size:12px;margin-bottom:4px;">制限時間 (分)</label>
+          <input type="number" id="reward-input-time" value="30" min="0" style="width:100%;padding:8px;background:#252538;border:1px solid #555;color:#fff;border-radius:6px;box-sizing:border-box;">
+        </div>
+      </div>
+      <label style="display:block;color:#aaa;font-size:12px;margin-bottom:4px;">アイコン (絵文字)</label>
+      <input type="text" id="reward-input-icon" value="🎮" style="width:100%;padding:8px;background:#252538;border:1px solid #555;color:#fff;border-radius:6px;margin-bottom:10px;box-sizing:border-box;">
+      <label style="display:block;color:#aaa;font-size:12px;margin-bottom:4px;">説明・おうちの約束</label>
+      <input type="text" id="reward-input-desc" placeholder="宿題を終えてから遊ぼう" style="width:100%;padding:8px;background:#252538;border:1px solid #555;color:#fff;border-radius:6px;margin-bottom:16px;box-sizing:border-box;">
+      <div style="display:flex;gap:8px;">
+        <button type="button" class="submit-btn btn-green" style="flex:1;margin:0;" onclick="submitSaveReward()">保存</button>
+        <button type="button" class="cancel-btn" style="flex:1;margin:0;" onclick="closeRewardModal()">キャンセル</button>
+      </div>
+    </div>
   </div>
   
   <div id="section-settings" class="section"><h2 id="settings-title">設定</h2>
@@ -703,8 +885,8 @@
   <script src="js/adapters/userStore.js?v=20261012-opt"></script>
   <script src="js/adapters/externalStore.js?v=20261012-opt"></script>
   <script src="js/adapters/sessionStore.js?v=20261012-opt"></script>
-  <script src="js/adapters/parentAdminStore.js?v=20261012-points-v1"></script>
-  <script src="js/adapters/appSettingsStore.js?v=20261012-v3"></script>
+  <script src="js/adapters/parentAdminStore.js?v=20261012-admin-full-v1"></script>
+  <script src="js/adapters/appSettingsStore.js?v=20261012-admin-full-v1"></script>
   <script src="js/adapters/migrateLocalOnce.js?v=20261012-opt"></script>
   <script src="js/adapters/normalizeUser.js?v=20261012-opt"></script>
   <script src="js/adapters/normalizeSettings.js?v=20261012-opt"></script>
@@ -719,9 +901,9 @@
   <script src="js/adapters/piperTtsStore.js?v=20261012-piper-v7"></script>
   <script src="js/modules/stopwatch.js?v=20261012-opt"></script>
   <script src="js/modules/externalLearning.js?v=20261012-opt"></script>
-  <script src="js/modules/parentAdmin.js?v=20261012-points-v1"></script>
+  <script src="js/modules/parentAdmin.js?v=20261012-admin-full-v1"></script>
   <script src="js/modules/authPin.js?v=20261012-opt"></script>
-  <script src="js/app.js?v=20261012-points-v1"></script>
+  <script src="js/app.js?v=20261012-admin-full-v1"></script>
 </body>
 </html>
 
