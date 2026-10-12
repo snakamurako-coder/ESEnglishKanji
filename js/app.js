@@ -4297,6 +4297,33 @@
       });
       return out;
     }
+    window.getAllEnglishBasePointCombos = getAllEnglishBasePointCombos;
+    window.getLearnerFormatOptions = getLearnerFormatOptions;
+    window.getLearnerAnswerOptions = getLearnerAnswerOptions;
+    window.getTrainingModeNameForUnit = getTrainingModeNameForUnit;
+    window.getTrainingCategoryForUnit = getTrainingCategoryForUnit;
+    window.isLegacyFillBlankAnswerType = isLegacyFillBlankAnswerType;
+    window.isValidTrainingRouteCombo = isValidTrainingRouteCombo;
+
+    function computeDefaultEnglishBasePointPair(format, ansType) {
+      if (format === "ja_to_en_sort") {
+        const m = { sort_all: 25, sort_dummy: 28, sort_missing: 30 };
+        const v = m[ansType] != null ? m[ansType] : 25;
+        return { word: v, expression: v };
+      }
+      if (ansType === "fill_4choice" || ansType === "fill_typing") {
+        return { word: 5, expression: 5 };
+      }
+      if (ansType === "4choice") {
+        const v = String(format || "").indexOf("to_en") >= 0 ? 3 : 2;
+        return { word: v, expression: v };
+      }
+      if (String(format || "").indexOf("qtext") >= 0 || String(format || "").indexOf("qaudio") >= 0) {
+        return { word: 20, expression: 30 };
+      }
+      return { word: 20, expression: 25 };
+    }
+    window.computeDefaultEnglishBasePointPair = computeDefaultEnglishBasePointPair;
 
     // ====== おうちの人：統合管理メニュー ======
     // ※ 保護者管理メニュー、PIN認証、通知メール設定、特訓メニュー管理ロジックは

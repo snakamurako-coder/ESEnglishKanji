@@ -73,7 +73,19 @@ function getDefaultAppSettingsRows_() {
     ["structure", 14],
     ["size", 18],
     ["strokeCount", 10],
-    ["strokeOrder", 20]
+    ["strokeOrder", 20],
+    ["外部学習_管理者PIN", "303707"],
+    ["漢字手書き配点", '{"tome":15,"hane":15,"harai":15,"balance":30,"shape":25}'],
+    ["漢字手書き合格ライン", 70],
+    ["ニガテ特訓ボーナス倍率", 1.4],
+    ["ランダム出題ボーナス倍率", 1.1],
+    ["基本ポイント_4択", 2],
+    ["基本ポイント_タイピング", 20],
+    ["基本ポイント_穴埋め", 5],
+    ["基本ポイント_音声", 20],
+    ["ヒント減点_イニシャル", 5],
+    ["ヒント減点_文字数", 7],
+    ["ヒント減点_音声", 10]
   ];
 }
 
@@ -4864,25 +4876,12 @@ function buildAdminManagementWorkbookInternal_(ss) {
   ];
   usersSheet.getRange(2, 1, defaultUsers.length, userHeaders.length).setValues(defaultUsers);
 
-  // アプリ設定 シート
-  const configSheet = ss.insertSheet("アプリ設定");
-  const configHeaders = ["設定名", "単語", "表現"];
-  applySheetHeaderStyleInternal_(configSheet, configHeaders, '#E8EAED');
-  const defaultConfigs = [
-    ["外部学習_管理者PIN", "303707", ""],
-    ["漢字手書き配点", '{"tome":15,"hane":15,"harai":15,"balance":30,"shape":25}', ""],
-    ["漢字手書き合格ライン", "70", ""],
-    ["ニガテ特訓ボーナス倍率", "1.4", ""],
-    ["ランダム出題ボーナス倍率", "1.1", ""],
-    ["基本Pt_英単語", "1", ""],
-    ["基本Pt_英語表現", "2", ""],
-    ["基本Pt_漢字", "1", ""],
-    ["通知メール_1", "parent@example.com", ""],
-    ["特訓メニュー1_表示名", "英検5級 基本特訓", ""],
-    ["特訓メニュー1_有効", "TRUE", ""],
-    ["特訓メニュー1_色", "#3b82f6", ""]
-  ];
-  configSheet.getRange(2, 1, defaultConfigs.length, configHeaders.length).setValues(defaultConfigs);
+  // アプリ設定 シート（全設定項目を完全生成）
+  ensureAppSettingsDefaults_(ss);
+  const configSheet = ss.getSheetByName("アプリ設定");
+  if (configSheet) {
+    applySheetHeaderStyleInternal_(configSheet, ["設定名", "単語", "表現"], '#E8EAED');
+  }
 
   // rewards シート
   const rewardsSheet = ss.insertSheet("rewards");

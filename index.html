@@ -700,6 +700,15 @@
       <div id="parent-admin-sysconfig-msg" style="margin-top:10px;text-align:center;font-size:13px;min-height:1.2em;"></div>
 
       <hr style="border:none;border-top:1px solid #3d3d5c;margin:20px 0;">
+      <h3 style="margin:0 0 6px;color:#80CBC4;font-size:15px;">🔤 英語学習：問題形式ごとの配点設定</h3>
+      <p style="color:#aaa;font-size:12px;margin:0 0 10px;line-height:1.4;">
+        出題形式・こたえ方・モード（単語 / 表現）ごとに、1問正解あたりの基本獲得ポイント（全39通り）を個別に調整できます。
+      </p>
+      <div id="sysconfig-english-points-form" class="training-admin-points-form" style="max-width:100%;margin-top:0;padding:12px;box-sizing:border-box;"></div>
+      <button type="button" id="sys-point-save-btn" class="submit-btn btn-green" style="width:100%;margin-top:10px;" onclick="saveSysConfigEnglishBasePoint(this)">英語の配点を保存する</button>
+      <div id="sysconfig-english-point-msg" style="margin-top:8px;text-align:center;font-size:13px;min-height:1.2em;"></div>
+
+      <hr style="border:none;border-top:1px solid #3d3d5c;margin:20px 0;">
       <h3 style="margin:0 0 10px;color:#ff8a80;font-size:15px;">🔐 管理者PINの変更</h3>
       <div style="margin-bottom:10px;">
         <label style="display:block;color:#bbb;font-size:13px;margin-bottom:4px;">新しい管理者PIN (4桁以上)</label>
@@ -911,9 +920,9 @@
   <script src="js/adapters/piperTtsStore.js?v=20261012-piper-v7"></script>
   <script src="js/modules/stopwatch.js?v=20261012-standalone-v1"></script>
   <script src="js/modules/externalLearning.js?v=20261012-standalone-v1"></script>
-  <script src="js/modules/parentAdmin.js?v=20261013-admin-fix"></script>
+  <script src="js/modules/parentAdmin.js?v=20261013-english-points-fix"></script>
   <script src="js/modules/authPin.js?v=20261012-standalone-v1"></script>
-  <script src="js/app.js?v=20261013-admin-fix"></script>
+  <script src="js/app.js?v=20261013-english-points-fix"></script>
 </body>
 </html>
 

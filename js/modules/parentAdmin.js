@@ -707,8 +707,10 @@
     refreshFormatOptions(initialFormat || "", initialAnsType || "");
   }
 
-  function renderTrainingAdminPointsForm() {
-    const form = document.getElementById('training-admin-points-form');
+  function renderEnglishPointsForm(containerId, prefix) {
+    containerId = containerId || 'training-admin-points-form';
+    prefix = prefix || 'train-admin-point';
+    const form = document.getElementById(containerId);
     if (!form) return;
     const fnCombos = global.getAllEnglishBasePointCombos;
     const combos = typeof fnCombos === 'function' ? fnCombos() : [];
@@ -718,28 +720,33 @@
     });
     const formatItems = Object.keys(formatMap).map(function (k) { return { value: k, label: formatMap[k] }; });
     form.innerHTML =
-      `<div class="training-admin-field"><label>1. もんだいの形式</label><select id="train-admin-point-format" class="large-select"></select></div>` +
-      `<div class="training-admin-field"><label>2. こたえ方</label><select id="train-admin-point-answer" class="large-select"></select></div>` +
-      `<div class="training-admin-field"><label>3. モード</label><select id="train-admin-point-mode" class="large-select"><option value="word">単語モード（単語列）</option><option value="expression">表現モード（表現列）</option></select></div>` +
-      `<div class="training-admin-field"><label>基本ポイント（1問あたり）</label><input type="number" id="train-admin-point-value" min="0" max="999" step="1" value="20"></div>` +
-      `<div id="train-admin-point-key" class="training-admin-points-key"></div>`;
-    const formatEl = document.getElementById('train-admin-point-format');
-    const ansEl = document.getElementById('train-admin-point-answer');
-    const modeEl = document.getElementById('train-admin-point-mode');
-    const valueEl = document.getElementById('train-admin-point-value');
-    const keyEl = document.getElementById('train-admin-point-key');
-    const settings = (trainingAdminData && trainingAdminData.basePointSettings) || {};
+      `<div class="training-admin-field"><label>1. もんだいの形式</label><select id="${prefix}-format" class="large-select"></select></div>` +
+      `<div class="training-admin-field"><label>2. こたえ方</label><select id="${prefix}-answer" class="large-select"></select></div>` +
+      `<div class="training-admin-field"><label>3. モード</label><select id="${prefix}-mode" class="large-select"><option value="word">単語モード（単語列）</option><option value="expression">表現モード（表現列）</option></select></div>` +
+      `<div class="training-admin-field"><label>基本ポイント（1問あたり）</label><input type="number" id="${prefix}-value" min="0" max="999" step="1" value="20"></div>` +
+      `<div id="${prefix}-key" class="training-admin-points-key"></div>`;
+    const formatEl = document.getElementById(prefix + '-format');
+    const ansEl = document.getElementById(prefix + '-answer');
+    const modeEl = document.getElementById(prefix + '-mode');
+    const valueEl = document.getElementById(prefix + '-value');
+    const keyEl = document.getElementById(prefix + '-key');
+    if (!formatEl || !ansEl) return;
 
-    function readPointForSelection(key, modeCategory) {
+    function readPointForSelection(key, modeCategory, format, ansType) {
       if (!key) return null;
-      const raw = settings[key];
+      const settings = (trainingAdminData && (trainingAdminData.basePointSettings || trainingAdminData.basePoints)) || {};
+      const raw = settings[key] != null ? settings[key] : (global.appSettings && global.appSettings[key]);
       if (raw != null && typeof raw === "object" && !Array.isArray(raw)) {
         const v = modeCategory === "expression" ? raw.expression : raw.word;
         if (v != null && String(v).trim() !== "") return String(v);
       } else if (raw != null && String(raw).trim() !== "") {
         return String(raw);
       }
-      return null;
+      if (typeof global.computeDefaultEnglishBasePointPair === 'function') {
+        const pair = global.computeDefaultEnglishBasePointPair(format, ansType);
+        return String(modeCategory === "expression" ? pair.expression : pair.word);
+      }
+      return "20";
     }
 
     function refreshAnswerOptions() {
@@ -760,7 +767,7 @@
       const modeCategory = modeEl ? modeEl.value : "word";
       const modeLabel = modeCategory === "expression" ? "表現列" : "単語列";
       if (keyEl) keyEl.innerText = key ? ("設定キー: " + key + " / " + modeLabel) : "";
-      const stored = readPointForSelection(key, modeCategory);
+      const stored = readPointForSelection(key, modeCategory, formatEl.value, ansEl.value);
       if (stored != null && valueEl) valueEl.value = stored;
     }
 
@@ -773,50 +780,81 @@
     refreshAnswerOptions();
   }
 
-  function saveTrainingAdminBasePoint(btn) {
-    const formatEl = document.getElementById('train-admin-point-format');
-    const ansEl = document.getElementById('train-admin-point-answer');
-    const modeEl = document.getElementById('train-admin-point-mode');
-    const valueEl = document.getElementById('train-admin-point-value');
+  function renderTrainingAdminPointsForm() {
+    renderEnglishPointsForm('training-admin-points-form', 'train-admin-point');
+  }
+
+  function saveEnglishBasePointGeneric(btn, prefix, onMessage) {
+    prefix = prefix || 'train-admin-point';
+    const formatEl = document.getElementById(prefix + '-format');
+    const ansEl = document.getElementById(prefix + '-answer');
+    const modeEl = document.getElementById(prefix + '-mode');
+    const valueEl = document.getElementById(prefix + '-value');
     if (!formatEl || !ansEl || !valueEl) return;
     const opt = ansEl.options[ansEl.selectedIndex];
     const settingKey = opt ? opt.getAttribute('data-key') : "";
     const modeCategory = modeEl ? modeEl.value : "word";
     const pointValue = valueEl.value;
     if (!settingKey) {
-      setTrainingAdminMessage("形式とこたえ方を選んでください", false);
+      onMessage("形式とこたえ方を選んでください", false);
       return;
     }
     const pin = getTrainingAdminPin();
-    const saveBtn = btn || document.getElementById('training-admin-point-save-btn');
+    const saveBtn = btn || document.getElementById(prefix + '-save-btn');
     const orig = saveBtn ? callToggleBtnLoading(saveBtn, true) : null;
 
     if (global.parentAdminStore && typeof global.parentAdminStore.saveTrainingBasePoint === 'function') {
       global.parentAdminStore.saveTrainingBasePoint(pin, settingKey, modeCategory, pointValue)
         .then(() => {
+          if (!trainingAdminData) trainingAdminData = {};
           if (!trainingAdminData.basePointSettings) trainingAdminData.basePointSettings = {};
-          const prev = trainingAdminData.basePointSettings[settingKey];
-          if (prev != null && typeof prev === "object" && !Array.isArray(prev)) {
-            if (modeCategory === "expression") prev.expression = pointValue;
-            else prev.word = pointValue;
-          } else {
-            trainingAdminData.basePointSettings[settingKey] = modeCategory === "expression"
-              ? { word: prev != null ? prev : "", expression: pointValue }
-              : { word: pointValue, expression: "" };
+          if (!trainingAdminData.basePoints) trainingAdminData.basePoints = {};
+
+          function updateMap(map) {
+            const prev = map[settingKey];
+            if (prev != null && typeof prev === "object" && !Array.isArray(prev)) {
+              if (modeCategory === "expression") prev.expression = pointValue;
+              else prev.word = pointValue;
+            } else {
+              map[settingKey] = modeCategory === "expression"
+                ? { word: prev != null ? prev : "", expression: pointValue }
+                : { word: pointValue, expression: "" };
+            }
+          }
+          updateMap(trainingAdminData.basePointSettings);
+          updateMap(trainingAdminData.basePoints);
+          if (global.appSettings) {
+            updateMap(global.appSettings);
           }
           if (typeof global.invalidateAppSettingsCache === 'function') global.invalidateAppSettingsCache();
           const modeLabel = modeCategory === "expression" ? "表現" : "単語";
-          setTrainingAdminMessage("点数を保存しました（" + settingKey + " / " + modeLabel + " = " + pointValue + "）", true);
+          onMessage("点数を保存しました（" + settingKey + " / " + modeLabel + " = " + pointValue + "点）", true);
         })
-        .catch(function (err) { setTrainingAdminMessage(err.message || "エラー", false); })
+        .catch(function (err) { onMessage(err.message || "エラー", false); })
         .finally(function () {
           if (saveBtn && saveBtn.isConnected) callToggleBtnLoading(saveBtn, false, orig);
         });
       return;
     }
 
-    setTrainingAdminMessage("管理機能が初期化されていません", false);
+    onMessage("管理機能が初期化されていません", false);
     if (saveBtn && saveBtn.isConnected) callToggleBtnLoading(saveBtn, false, orig);
+  }
+
+  function saveTrainingAdminBasePoint(btn) {
+    saveEnglishBasePointGeneric(btn, 'train-admin-point', function (msg, ok) {
+      setTrainingAdminMessage(msg, ok);
+    });
+  }
+
+  function saveSysConfigEnglishBasePoint(btn) {
+    saveEnglishBasePointGeneric(btn, 'sys-point', function (msg, ok) {
+      const el = document.getElementById('sysconfig-english-point-msg');
+      if (el) {
+        el.innerText = msg;
+        el.style.color = ok ? "#8bc34a" : "#ff8a80";
+      }
+    });
   }
 
   function openTrainingAdminRouteEditor(menuId) {
@@ -1331,6 +1369,9 @@
   function loadParentAdminSysConfig() {
     const msg = document.getElementById('parent-admin-sysconfig-msg');
     if (msg) msg.innerText = "";
+    const englishMsg = document.getElementById('sysconfig-english-point-msg');
+    if (englishMsg) englishMsg.innerText = "";
+
     global.parentAdminStore.getSysConfig().then(function (cfg) {
       document.getElementById('sys-pass-score').value = cfg.passScore || 70;
       document.getElementById('sys-tome-weight').value = cfg.tomeWeight || 15;
@@ -1341,6 +1382,18 @@
       document.getElementById('sys-weak-bonus').value = cfg.weakBonus || 1.4;
       document.getElementById('sys-random-bonus').value = cfg.randomBonus || 1.1;
     });
+
+    const pin = getTrainingAdminPin();
+    if (global.parentAdminStore && typeof global.parentAdminStore.getTrainingAdminData === 'function') {
+      global.parentAdminStore.getTrainingAdminData(pin).then(function (d) {
+        trainingAdminData = d;
+        renderEnglishPointsForm('sysconfig-english-points-form', 'sys-point');
+      }).catch(function () {
+        renderEnglishPointsForm('sysconfig-english-points-form', 'sys-point');
+      });
+    } else {
+      renderEnglishPointsForm('sysconfig-english-points-form', 'sys-point');
+    }
   }
 
   function submitSaveSysConfig() {
@@ -1453,6 +1506,8 @@
   global.addTrainingAdminRouteToDraft = addTrainingAdminRouteToDraft;
   global.saveTrainingAdminRoutesBatch = saveTrainingAdminRoutesBatch;
   global.saveTrainingAdminBasePoint = saveTrainingAdminBasePoint;
+  global.saveSysConfigEnglishBasePoint = saveSysConfigEnglishBasePoint;
+  global.renderEnglishPointsForm = renderEnglishPointsForm;
   global.deleteTrainingAdminRoute = deleteTrainingAdminRoute;
 
   // 新規公開ハンドラ

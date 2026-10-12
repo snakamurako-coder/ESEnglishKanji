@@ -71,7 +71,31 @@
     "漢字基本Pt_画数_70以上": 4,
     "漢字基本Pt_画数_60以上": 3,
     "漢字基本Pt_画数_50以上": 1,
-    "漢字書き順_画数倍率": 1
+    "漢字書き順_画数倍率": 1,
+    "漢字書き順_練習点": 5,
+    "漢字熟語読み_基礎点": 1,
+    "漢字熟語読み_選択肢倍率": 1,
+    "漢字熟語読み_無し選択肢ボーナス": 2,
+    "漢字熟語読みタイプ_基礎点": 15,
+    "ヒント減点_イニシャル": 5,
+    "ヒント減点_文字数": 7,
+    "ヒント減点_音声": 10,
+    "基本ポイント_4択": 2,
+    "基本ポイント_タイピング": 20,
+    "基本ポイント_穴埋め": 5,
+    "基本ポイント_音声": 20,
+    "外部学習_管理者PIN": "303707",
+    "漢字手書き合格ライン": 70,
+    "ニガテ特訓ボーナス倍率": 1.4,
+    "ランダム出題ボーナス倍率": 1.1,
+    "漢字手書き配点": '{"tome":15,"hane":15,"harai":15,"balance":30,"shape":25}',
+    "特訓メニュー1_表示名": "英検5級 基本特訓",
+    "特訓メニュー1_有効": "1",
+    "特訓メニュー1_色": "#9C27B0",
+    "通知メール_1": "",
+    "通知メール_2": "",
+    "通知メール_3": "",
+    "通知メール_4": ""
   };
 
   // 既定の外部学習メニュー
@@ -90,20 +114,28 @@
     return (typeof global.getFirestoreDb === 'function') ? global.getFirestoreDb() : (global.firebaseDb || null);
   }
 
+  function normalizeSettingsResult_(settings) {
+    if (!settings || typeof settings !== 'object') return {};
+    if (global.AppNormalizeSettings && typeof global.AppNormalizeSettings.normalizeSettingsMap === 'function') {
+      return global.AppNormalizeSettings.normalizeSettingsMap(settings);
+    }
+    return settings;
+  }
+
   /**
    * アプリ基本設定の取得（Firestore 優先 & 即座返却）
    */
   function getAppSettings() {
     return new Promise(function (resolve) {
       if (cachedSettings) {
-        resolve({ status: 'success', settings: cachedSettings });
+        resolve({ status: 'success', settings: normalizeSettingsResult_(cachedSettings) });
         return;
       }
 
       var db = getDb();
       if (!db) {
         cachedSettings = Object.assign({}, DEFAULT_SETTINGS);
-        resolve({ status: 'success', settings: cachedSettings });
+        resolve({ status: 'success', settings: normalizeSettingsResult_(cachedSettings) });
         return;
       }
 
@@ -112,7 +144,7 @@
           var data = doc.data();
           if (data && data.settings) {
             cachedSettings = Object.assign({}, DEFAULT_SETTINGS, data.settings);
-            resolve({ status: 'success', settings: cachedSettings });
+            resolve({ status: 'success', settings: normalizeSettingsResult_(cachedSettings) });
             return;
           }
         }
@@ -123,11 +155,11 @@
           updatedAt: (typeof firebase !== 'undefined' && firebase.firestore && firebase.firestore.FieldValue) ?
             firebase.firestore.FieldValue.serverTimestamp() : new Date().toISOString()
         }, { merge: true });
-        resolve({ status: 'success', settings: cachedSettings });
+        resolve({ status: 'success', settings: normalizeSettingsResult_(cachedSettings) });
       }).catch(function (err) {
         console.warn("Firestore getAppSettings error, fallback to default:", err);
         cachedSettings = Object.assign({}, DEFAULT_SETTINGS);
-        resolve({ status: 'success', settings: cachedSettings });
+        resolve({ status: 'success', settings: normalizeSettingsResult_(cachedSettings) });
       });
     });
   }

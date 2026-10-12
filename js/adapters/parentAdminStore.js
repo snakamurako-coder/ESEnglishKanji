@@ -185,26 +185,72 @@
     });
   }
 
+  function buildDefaultEnglishBasePointsMap() {
+    var fn = global.computeDefaultEnglishBasePointPair;
+    var combosFn = global.getAllEnglishBasePointCombos;
+    var map = {};
+    if (typeof combosFn === 'function') {
+      var combos = combosFn();
+      combos.forEach(function (c) {
+        if (!map[c.settingKey]) {
+          var pair = typeof fn === 'function' ? fn(c.format, c.ansType) : { word: 20, expression: 25 };
+          map[c.settingKey] = { word: pair.word, expression: pair.expression };
+        }
+      });
+    }
+    var defaults = {
+      "基本Pt_ja_to_en_4choice": { word: 3, expression: 3 },
+      "基本Pt_ja_to_en_typing": { word: 20, expression: 20 },
+      "基本Pt_ja_to_en_voice": { word: 20, expression: 20 },
+      "基本Pt_ja_to_en_fill_4choice": { word: 5, expression: 5 },
+      "基本Pt_ja_to_en_fill_typing": { word: 5, expression: 5 },
+      "基本Pt_en_to_ja_4choice": { word: 2, expression: 2 },
+      "基本Pt_en_to_ja_typing": { word: 20, expression: 20 },
+      "基本Pt_en_to_ja_voice": { word: 20, expression: 20 },
+      "基本Pt_en_audio_to_ja_4choice": { word: 2, expression: 2 },
+      "基本Pt_en_audio_to_ja_typing": { word: 20, expression: 20 },
+      "基本Pt_en_audio_to_ja_voice": { word: 20, expression: 20 },
+      "基本Pt_en_audio_to_en_4choice": { word: 3, expression: 3 },
+      "基本Pt_en_audio_to_en_typing": { word: 20, expression: 20 },
+      "基本Pt_en_audio_to_en_voice": { word: 20, expression: 20 },
+      "基本Pt_en_audio_to_en_fill_4choice": { word: 5, expression: 5 },
+      "基本Pt_en_audio_to_en_fill_typing": { word: 5, expression: 5 },
+      "基本Pt_en_to_en_typing": { word: 20, expression: 25 },
+      "基本Pt_en_to_en_voice": { word: 20, expression: 25 },
+      "基本Pt_en_to_en_initial_typing": { word: 20, expression: 25 },
+      "基本Pt_en_to_en_sheet_fill_typing": { word: 20, expression: 25 },
+      "基本Pt_en_to_en_initial_voice": { word: 20, expression: 25 },
+      "基本Pt_en_to_en_sheet_fill_voice": { word: 20, expression: 25 },
+      "基本Pt_en_to_en_flash_typing": { word: 20, expression: 25 },
+      "基本Pt_en_to_en_flash_voice": { word: 20, expression: 25 },
+      "基本Pt_qtext_to_en_4choice": { word: 3, expression: 3 },
+      "基本Pt_qtext_to_en_typing": { word: 20, expression: 30 },
+      "基本Pt_qtext_to_en_voice": { word: 20, expression: 30 },
+      "基本Pt_qaudio_to_en_typing": { word: 20, expression: 30 },
+      "基本Pt_qaudio_to_en_voice": { word: 20, expression: 30 },
+      "基本Pt_ja_to_en_sort_sort_all": { word: 25, expression: 25 },
+      "基本Pt_ja_to_en_sort_sort_dummy": { word: 28, expression: 28 },
+      "基本Pt_ja_to_en_sort_sort_missing": { word: 30, expression: 30 }
+    };
+    return Object.assign({}, defaults, map);
+  }
+
   function buildDefaultTrainingAdminData() {
     var menus = [];
+    var defaultColors = ["#9C27B0", "#2196F3", "#4CAF50", "#FF9800", "#F44336", "#009688", "#E91E63", "#3F51B5", "#795548", "#607D8B", "#00BCD4", "#FFC107"];
     for (var i = 1; i <= 12; i++) {
       menus.push({
         id: i,
-        displayName: "メニュー " + i,
-        color: "#4CAF50",
+        displayName: i === 1 ? "英検5級 基本特訓" : (i === 2 ? "英単語 特訓" : ("メニュー " + i)),
+        color: defaultColors[(i - 1) % defaultColors.length],
         enabled: true,
         routes: []
       });
     }
     return {
       menus: menus,
-      basePoints: {
-        "english_word": 10,
-        "english_sentence": 20,
-        "kanji_read": 10,
-        "kanji_write": 20
-      },
-      colorPresets: ["#4CAF50", "#2196F3", "#FF9800", "#E91E63", "#9C27B0", "#00BCD4"]
+      basePoints: buildDefaultEnglishBasePointsMap(),
+      colorPresets: defaultColors
     };
   }
 
@@ -796,6 +842,22 @@
             firebase.firestore.FieldValue.serverTimestamp() : new Date().toISOString()
         });
         db.collection('system').doc('scoring_config').set(payload, { merge: true }).then(function () {
+          // 同時に system/app_settings にも互換反映
+          var appPatch = {
+            "漢字手書き合格ライン": Number(config.passScore) || 70,
+            "ニガテ特訓ボーナス倍率": Number(config.weakBonus) || 1.4,
+            "ランダム出題ボーナス倍率": Number(config.randomBonus) || 1.1,
+            "漢字手書き配点": JSON.stringify({
+              tome: Number(config.tomeWeight) || 15,
+              hane: Number(config.haneWeight) || 15,
+              harai: Number(config.haraiWeight) || 15,
+              balance: Number(config.balanceWeight) || 30,
+              shape: Number(config.shapeWeight) || 25
+            })
+          };
+          if (global.appSettingsStore && typeof global.appSettingsStore.saveAppSettings === 'function') {
+            global.appSettingsStore.saveAppSettings(appPatch);
+          }
           resolve(payload);
         }).catch(reject);
       });
