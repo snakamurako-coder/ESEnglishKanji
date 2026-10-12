@@ -408,6 +408,7 @@
       <p style="color:#aaa;font-size:14px;text-align:center;margin:0 0 4px;">管理する項目を選んでください</p>
       <button type="button" class="menu-btn btn-blue" onclick="enterParentAdminExternal()">🔐 外部学習の承認</button>
       <button type="button" class="menu-btn btn-purple" onclick="enterParentAdminTraining()">🎯 特訓メニュー管理</button>
+      <button type="button" class="menu-btn" style="background:#f57c00;color:#fff;" onclick="enterParentAdminUserPoints()">⭐ ユーザーのポイント調整</button>
       <button type="button" class="menu-btn btn-green" onclick="enterParentAdminNotify()">📧 通知メール設定</button>
       <button type="button" class="menu-btn" style="background:#00838f;color:#fff;" onclick="enterParentAdminPiperTTS()">🎙️ 高音質音声（Piper TTS）設定</button>
       <button type="button" class="cancel-btn" style="margin-top:4px;" onclick="logoutParentAdmin()">ログアウト</button>
@@ -533,6 +534,16 @@
       <button type="button" class="submit-btn btn-green" style="margin-top:16px;width:100%;" onclick="saveParentNotifyEmails()">保存する</button>
       <div id="parent-notify-message" style="color:#ff8a80;margin:12px auto;min-height:1.2em;text-align:center;font-size:14px;"></div>
     </div>
+    <button type="button" class="cancel-btn" style="margin-top:24px;" onclick="backToParentAdminHub()">管理メニューにもどる</button>
+  </div>
+
+  <div id="section-parent-admin-points" class="section">
+    <h1>⭐ ユーザーのポイント調整</h1>
+    <p style="max-width:440px;margin:0 auto 12px;line-height:1.5;color:#ccc;font-size:14px;">各ユーザーの現在の合計ポイントを確認し、数値を直接入力して変更できます。</p>
+    <div id="parent-admin-points-container" style="max-width:420px;margin:0 auto;display:flex;flex-direction:column;gap:12px;">
+      <p style="color:#aaa;text-align:center;">読み込み中...</p>
+    </div>
+    <div id="parent-admin-points-message" style="color:#ff8a80;margin:12px auto;min-height:1.2em;text-align:center;font-size:14px;"></div>
     <button type="button" class="cancel-btn" style="margin-top:24px;" onclick="backToParentAdminHub()">管理メニューにもどる</button>
   </div>
 
@@ -692,7 +703,7 @@
   <script src="js/adapters/userStore.js?v=20261012-opt"></script>
   <script src="js/adapters/externalStore.js?v=20261012-opt"></script>
   <script src="js/adapters/sessionStore.js?v=20261012-opt"></script>
-  <script src="js/adapters/parentAdminStore.js?v=20261012-v3"></script>
+  <script src="js/adapters/parentAdminStore.js?v=20261012-points-v1"></script>
   <script src="js/adapters/appSettingsStore.js?v=20261012-v3"></script>
   <script src="js/adapters/migrateLocalOnce.js?v=20261012-opt"></script>
   <script src="js/adapters/normalizeUser.js?v=20261012-opt"></script>
@@ -708,9 +719,9 @@
   <script src="js/adapters/piperTtsStore.js?v=20261012-piper-v7"></script>
   <script src="js/modules/stopwatch.js?v=20261012-opt"></script>
   <script src="js/modules/externalLearning.js?v=20261012-opt"></script>
-  <script src="js/modules/parentAdmin.js?v=20261012-piper-v7"></script>
+  <script src="js/modules/parentAdmin.js?v=20261012-points-v1"></script>
   <script src="js/modules/authPin.js?v=20261012-opt"></script>
-  <script src="js/app.js?v=20261012-piper-v7"></script>
+  <script src="js/app.js?v=20261012-points-v1"></script>
 </body>
 </html>
 

@@ -170,6 +170,141 @@
     loadParentNotifyEmails();
   }
 
+  function enterParentAdminUserPoints() {
+    if (!parentAdminPinSession) { openParentAdminMenu(); return; }
+    callSwitchSection('section-parent-admin-points');
+    loadParentAdminUserPoints();
+  }
+
+  function loadParentAdminUserPoints() {
+    const container = document.getElementById('parent-admin-points-container');
+    const msg = document.getElementById('parent-admin-points-message');
+    if (msg) msg.innerText = "";
+    if (container) container.innerHTML = '<p style="color:#aaa;text-align:center;">読み込み中...</p>';
+
+    const onData = (users) => {
+      if (!container) return;
+      if (!users || !users.length) {
+        container.innerHTML = '<p style="color:#aaa;text-align:center;">ユーザーが見つかりませんでした。</p>';
+        return;
+      }
+      let html = '';
+      users.forEach(u => {
+        const uid = escapeHtml(String(u.id));
+        const uname = escapeHtml(String(u.name || ''));
+        const curPts = Number(u.points) || 0;
+        html += `
+          <div class="user-point-card" style="background:#222;border:1px solid #444;border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:10px;text-align:left;">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;">
+              <span style="font-size:17px;font-weight:bold;color:#fff;">👤 ${uname} <span style="font-size:12px;color:#888;">(${uid})</span></span>
+              <span style="font-size:16px;color:gold;font-weight:bold;">現在: <span id="current-pts-disp-${uid}">${curPts}</span> Pt</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+              <input type="number" id="input-pts-${uid}" value="${curPts}" step="any" min="0" style="flex:1;min-width:120px;padding:10px;font-size:18px;border-radius:8px;border:2px solid #555;background:#1a1a1a;color:#fff;box-sizing:border-box;">
+              <button type="button" class="submit-btn btn-orange" style="margin:0;padding:10px 16px;font-size:16px;white-space:nowrap;" onclick="submitUpdateUserPoint('${uid}', this)">変更を保存</button>
+            </div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;">
+              <button type="button" class="menu-btn btn-gray" style="width:auto;margin:0;padding:4px 10px;font-size:13px;" onclick="adjustUserPointInput('${uid}', 10)">+10</button>
+              <button type="button" class="menu-btn btn-gray" style="width:auto;margin:0;padding:4px 10px;font-size:13px;" onclick="adjustUserPointInput('${uid}', 50)">+50</button>
+              <button type="button" class="menu-btn btn-gray" style="width:auto;margin:0;padding:4px 10px;font-size:13px;" onclick="adjustUserPointInput('${uid}', 100)">+100</button>
+              <button type="button" class="menu-btn btn-gray" style="width:auto;margin:0;padding:4px 10px;font-size:13px;" onclick="adjustUserPointInput('${uid}', -10)">-10</button>
+              <button type="button" class="menu-btn btn-gray" style="width:auto;margin:0;padding:4px 10px;font-size:13px;" onclick="adjustUserPointInput('${uid}', -50)">-50</button>
+            </div>
+            <div id="user-pt-msg-${uid}" style="font-size:13px;min-height:1.2em;"></div>
+          </div>
+        `;
+      });
+      container.innerHTML = html;
+    };
+
+    if (global.parentAdminStore && typeof global.parentAdminStore.getUsersPoints === 'function') {
+      global.parentAdminStore.getUsersPoints(parentAdminPinSession)
+        .then(onData)
+        .catch(err => {
+          if (container) container.innerHTML = '<p style="color:#ff8a80;text-align:center;">' + escapeHtml(err.message || '取得に失敗しました') + '</p>';
+        });
+      return;
+    }
+
+    fetch(getGasUrl(), {
+      method: 'POST',
+      body: JSON.stringify({ action: 'get_users_points_admin', adminPin: parentAdminPinSession })
+    })
+      .then(r => r.json())
+      .then(d => {
+        if (d && d.status === 'success') onData(d.users || []);
+        else throw new Error((d && d.message) || '取得失敗');
+      })
+      .catch(err => {
+        if (container) container.innerHTML = '<p style="color:#ff8a80;text-align:center;">' + escapeHtml(err.message || '取得に失敗しました') + '</p>';
+      });
+  }
+
+  function adjustUserPointInput(userId, delta) {
+    const inp = document.getElementById('input-pts-' + userId);
+    if (!inp) return;
+    let v = Number(inp.value) || 0;
+    v = Math.max(0, Math.round((v + delta) * 100) / 100);
+    inp.value = v;
+  }
+
+  function submitUpdateUserPoint(userId, btn) {
+    const inp = document.getElementById('input-pts-' + userId);
+    const msg = document.getElementById('user-pt-msg-' + userId);
+    const disp = document.getElementById('current-pts-disp-' + userId);
+    if (!inp) return;
+    const newPts = Number(inp.value);
+    if (isNaN(newPts) || newPts < 0) {
+      if (msg) { msg.innerText = "0以上の数値を入力してください。"; msg.style.color = "#ff8a80"; }
+      return;
+    }
+    const orig = callToggleBtnLoading(btn, true, "変更を保存");
+    if (msg) { msg.innerText = "保存中..."; msg.style.color = "#aaa"; }
+
+    const onSuccess = (res) => {
+      callToggleBtnLoading(btn, false, orig);
+      const finalPts = res.newPoints != null ? res.newPoints : newPts;
+      if (disp) disp.innerText = String(finalPts);
+      if (msg) { msg.innerText = (res && res.message) || "保存しました！"; msg.style.color = "#4CAF50"; }
+      try {
+        const kid = JSON.parse(localStorage.getItem('app_kid_user') || 'null');
+        if (kid && String(kid.id) === String(userId)) {
+          kid.points = finalPts;
+          if (typeof global.saveAppKidUserToLocal === 'function') {
+            global.saveAppKidUserToLocal(kid);
+          } else {
+            localStorage.setItem('app_kid_user', JSON.stringify(kid));
+          }
+          const pEl = document.getElementById('user-points');
+          if (pEl) pEl.innerText = String(kid.points);
+        }
+      } catch (_) {}
+    };
+
+    const onError = (err) => {
+      callToggleBtnLoading(btn, false, orig);
+      if (msg) { msg.innerText = err.message || "更新に失敗しました"; msg.style.color = "#ff8a80"; }
+    };
+
+    if (global.parentAdminStore && typeof global.parentAdminStore.updateUserPoints === 'function') {
+      global.parentAdminStore.updateUserPoints(parentAdminPinSession, userId, newPts)
+        .then(onSuccess)
+        .catch(onError);
+      return;
+    }
+
+    fetch(getGasUrl(), {
+      method: 'POST',
+      body: JSON.stringify({ action: 'update_user_points_admin', adminPin: parentAdminPinSession, userId: userId, newPoints: newPts })
+    })
+      .then(r => r.json())
+      .then(d => {
+        if (d && d.status === 'success') onSuccess(d);
+        else throw new Error((d && d.message) || "更新失敗");
+      })
+      .catch(onError);
+  }
+
   function enterParentAdminPiperTTS() {
     if (!parentAdminPinSession) { openParentAdminMenu(); return; }
     callSwitchSection('section-parent-admin-piper');
@@ -989,6 +1124,10 @@
   global.enterParentAdminExternal = enterParentAdminExternal;
   global.enterParentAdminTraining = enterParentAdminTraining;
   global.enterParentAdminNotify = enterParentAdminNotify;
+  global.enterParentAdminUserPoints = enterParentAdminUserPoints;
+  global.loadParentAdminUserPoints = loadParentAdminUserPoints;
+  global.adjustUserPointInput = adjustUserPointInput;
+  global.submitUpdateUserPoint = submitUpdateUserPoint;
   global.enterParentAdminPiperTTS = enterParentAdminPiperTTS;
   global.loadParentNotifyEmails = loadParentNotifyEmails;
   global.saveParentNotifyEmails = saveParentNotifyEmails;

@@ -931,6 +931,8 @@ function doPost(e) {
     else if (action === "save_stopwatch") return handleSaveStopwatch(requestData);
     else if (action === "get_parent_notify_emails") return handleGetParentNotifyEmails(requestData);
     else if (action === "save_parent_notify_emails") return handleSaveParentNotifyEmails(requestData);
+    else if (action === "get_users_points_admin") return handleGetUsersPointsAdmin(requestData);
+    else if (action === "update_user_points_admin") return handleUpdateUserPointsAdmin(requestData);
     else if (action === "get_active_reward_ticket") return handleGetActiveRewardTicket(requestData);
     else if (action === "run_migrate_once") return handleRunMigrateOnce(requestData);
     
@@ -2382,6 +2384,57 @@ function handleSaveParentNotifyEmails(req) {
     setAppSettingValue_(adminSs, "通知メール_" + (i + 1), v);
   }
   return sendResponse({ status: "success", message: "通知メールを保存しました" });
+}
+
+function handleGetUsersPointsAdmin(req) {
+  const adminSs = getAdminSpreadsheet_();
+  const v = verifyExternalAdminPin_(adminSs, req.adminPin);
+  if (!v.ok) return sendResponse({ status: "error", message: v.message });
+  const usersSheet = adminSs.getSheetByName("users");
+  if (!usersSheet) return sendResponse({ status: "error", message: "usersシートが見つかりません" });
+  const data = usersSheet.getDataRange().getValues();
+  const users = [];
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0]) {
+      users.push({
+        id: String(data[i][0]),
+        name: String(data[i][1] || ""),
+        points: Number(data[i][3]) || 0
+      });
+    }
+  }
+  return sendResponse({ status: "success", users: users });
+}
+
+function handleUpdateUserPointsAdmin(req) {
+  const adminSs = getAdminSpreadsheet_();
+  const v = verifyExternalAdminPin_(adminSs, req.adminPin);
+  if (!v.ok) return sendResponse({ status: "error", message: v.message });
+  const userId = String(req.userId || "").trim();
+  if (!userId) return sendResponse({ status: "error", message: "ユーザーIDが指定されていません" });
+  const newPoints = Math.round((Number(req.newPoints) || 0) * 100) / 100;
+  if (isNaN(newPoints) || newPoints < 0) return sendResponse({ status: "error", message: "0以上の有効な数値を指定してください" });
+  const usersSheet = adminSs.getSheetByName("users");
+  if (!usersSheet) return sendResponse({ status: "error", message: "usersシートが見つかりません" });
+  const data = usersSheet.getDataRange().getValues();
+  let foundRow = -1;
+  let userName = "";
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]) === userId) {
+      foundRow = i + 1;
+      userName = String(data[i][1] || "");
+      break;
+    }
+  }
+  if (foundRow === -1) return sendResponse({ status: "error", message: "ユーザーが見つかりません" });
+  usersSheet.getRange(foundRow, 4).setValue(newPoints);
+  return sendResponse({
+    status: "success",
+    userId: userId,
+    userName: userName,
+    newPoints: newPoints,
+    message: userName + " さんのポイントを " + newPoints + " Pt に変更しました！"
+  });
 }
 
 function handleGetActiveRewardTicket(req) {

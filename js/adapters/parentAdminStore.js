@@ -470,11 +470,69 @@
     });
   }
 
+  /**
+   * ユーザー一覧とポイントの取得
+   */
+  function getUsersPoints(pin) {
+    return new Promise(function (resolve, reject) {
+      var gasUrl = getGasUrl();
+      fetch(gasUrl, {
+        method: 'POST',
+        body: JSON.stringify({ action: 'get_users_points_admin', adminPin: pin })
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (d && d.status === 'success' && Array.isArray(d.users)) {
+            resolve(d.users);
+          } else {
+            reject(new Error((d && d.message) || 'ユーザー一覧の取得に失敗しました'));
+          }
+        })
+        .catch(reject);
+    });
+  }
+
+  /**
+   * ユーザーポイントの更新（GAS更新 & Firestore同期）
+   */
+  function updateUserPoints(pin, userId, newPoints) {
+    return new Promise(function (resolve, reject) {
+      var gasUrl = getGasUrl();
+      var pts = Math.round(Number(newPoints) * 100) / 100;
+      fetch(gasUrl, {
+        method: 'POST',
+        body: JSON.stringify({ action: 'update_user_points_admin', adminPin: pin, userId: userId, newPoints: pts })
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (d && d.status === 'success') {
+            // Firestore にも同期
+            var db = getDb();
+            if (db) {
+              db.collection('users').doc(String(userId)).set({
+                points: pts,
+                updatedAt: (typeof firebase !== 'undefined' && firebase.firestore && firebase.firestore.FieldValue) ?
+                  firebase.firestore.FieldValue.serverTimestamp() : new Date().toISOString()
+              }, { merge: true }).catch(function (e) {
+                console.warn("Firestore user points update error:", e);
+              });
+            }
+            resolve(d);
+          } else {
+            reject(new Error((d && d.message) || 'ポイント更新に失敗しました'));
+          }
+        })
+        .catch(reject);
+    });
+  }
+
   global.parentAdminStore = {
     verifyAdminPin: verifyAdminPin,
     updateAdminPin: updateAdminPin,
     getNotifyEmails: getNotifyEmails,
     saveNotifyEmails: saveNotifyEmails,
+    getUsersPoints: getUsersPoints,
+    updateUserPoints: updateUserPoints,
     getTrainingAdminData: getTrainingAdminData,
     saveTrainingAdminDataToFirestore: saveTrainingAdminDataToFirestore,
     saveTrainingMenuMeta: saveTrainingMenuMeta,
