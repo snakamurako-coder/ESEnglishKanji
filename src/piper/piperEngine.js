@@ -4,7 +4,18 @@
  * IndexedDB と連携し、完全オフラインでのモデル即時起動を実現
  */
 
-import { saveBlob, getBlob, isVoiceCached, deleteVoice, clearCache, getStorageStats, listCachedVoices } from './piperIndexedDB.js';
+import {
+  saveBlob,
+  getBlob,
+  isVoiceCached,
+  deleteVoice,
+  clearCache,
+  getStorageStats,
+  listCachedVoices,
+  MIN_VALID_EN_DATA_SIZE,
+  MIN_VALID_EN_WASM_SIZE,
+  MIN_VALID_EN_MODEL_SIZE
+} from './piperIndexedDB.js';
 import { createPiperPhonemize } from '../../node_modules/@mintplex-labs/piper-tts-web/dist/piper-o91UDS6e.js';
 
 export const HF_BASE = 'https://huggingface.co/diffusionstudio/piper-voices/resolve/main';
@@ -191,19 +202,25 @@ export async function downloadVoice(voiceId, onProgress) {
   report('音素エンジン確認中...', 5);
 
   // 1. phonemize wasm & data が未保存なら一緒に保存（完全オフライン化）
-  const hasWasm = await getBlob('piper_phonemize.wasm');
-  if (!hasWasm) {
+  let wasmBlob = await getBlob('piper_phonemize.wasm');
+  if (!wasmBlob || wasmBlob.size < MIN_VALID_EN_WASM_SIZE) {
     report('音素エンジン (WASM) ダウンロード中...', 10);
-    const wasmBlob = await fetchBlobWithProgress(WASM_URL);
+    wasmBlob = await fetchBlobWithProgress(WASM_URL);
+    if (wasmBlob.size < MIN_VALID_EN_WASM_SIZE) {
+      throw new Error(`ダウンロードした音素エンジン(WASM)のサイズが不完全です (${wasmBlob.size} bytes)。通信環境をご確認の上、再試行してください。`);
+    }
     await saveBlob('piper_phonemize.wasm', wasmBlob);
   }
 
-  const hasData = await getBlob('piper_phonemize.data');
-  if (!hasData) {
-    report('音素辞書データ ダウンロード中...', 20);
-    const dataBlob = await fetchBlobWithProgress(DATA_URL, (p) => {
+  let dataBlob = await getBlob('piper_phonemize.data');
+  if (!dataBlob || dataBlob.size < MIN_VALID_EN_DATA_SIZE) {
+    report('音素辞書データ (~18MB) ダウンロード中...', 20);
+    dataBlob = await fetchBlobWithProgress(DATA_URL, (p) => {
       report('音素辞書データ ダウンロード中...', 20 + Math.round(p.percent * 0.25));
     });
+    if (dataBlob.size < MIN_VALID_EN_DATA_SIZE) {
+      throw new Error(`ダウンロードした音素辞書データのサイズが不完全です (${(dataBlob.size / 1024 / 1024).toFixed(1)} MB)。通信環境をご確認の上、再試行してください。`);
+    }
     await saveBlob('piper_phonemize.data', dataBlob);
   }
 
@@ -211,14 +228,23 @@ export async function downloadVoice(voiceId, onProgress) {
   report('モデル設定取得中...', 50);
   const jsonUrl = `${HF_BASE}/${meta.path}.json`;
   const jsonBlob = await fetchBlobWithProgress(jsonUrl);
+  try {
+    const jsonTxt = await jsonBlob.text();
+    JSON.parse(jsonTxt); // JSON 検証
+  } catch (e) {
+    throw new Error(`モデル設定JSONの形式が不正です: ${e.message}`);
+  }
   await saveBlob(`${voiceId}.onnx.json`, jsonBlob);
 
   // 3. ONNX モデル本体 (~30MB)
-  report('音声モデル (ONNX) ダウンロード中...', 55);
+  report('音声モデル (ONNX ~34MB) ダウンロード中...', 55);
   const onnxUrl = `${HF_BASE}/${meta.path}`;
   const onnxBlob = await fetchBlobWithProgress(onnxUrl, (p) => {
     report('音声モデル (ONNX) ダウンロード中...', 55 + Math.round(p.percent * 0.42));
   });
+  if (onnxBlob.size < MIN_VALID_EN_MODEL_SIZE) {
+    throw new Error(`ダウンロードした音声モデルのサイズが不完全です (${(onnxBlob.size / 1024 / 1024).toFixed(1)} MB)。通信環境をご確認の上、再試行してください。`);
+  }
   await saveBlob(`${voiceId}.onnx`, onnxBlob);
 
   report('IndexedDB 格納完了！', 100);
@@ -239,32 +265,38 @@ export async function initVoiceSession(voiceId) {
     throw new Error('ONNX Runtime Web (ort) がロードされていません。ort.min.js を確認してください。');
   }
 
-  // ONNX Runtime の設定
+  // ONNX Runtime の安全なスレッド設定（GitHub Pages や Safari など SharedArrayBuffer 非対応環境でのクラッシュ・OOM防止）
   if (ort.env) {
     if ('allowLocalModels' in ort.env) ort.env.allowLocalModels = false;
     if (ort.env.wasm) {
-      ort.env.wasm.numThreads = Math.min(4, navigator.hardwareConcurrency || 2);
+      const isSabSupported = typeof crossOriginIsolated !== 'undefined' && crossOriginIsolated && typeof SharedArrayBuffer !== 'undefined';
+      ort.env.wasm.numThreads = isSabSupported ? Math.min(2, navigator.hardwareConcurrency || 1) : 1;
     }
   }
 
   // IndexedDB からモデルと設定を取得
-  const [modelBlob, configBlob] = await Promise.all([
+  const [modelBlob, configBlob, wasmBlob, dataBlob] = await Promise.all([
     getBlob(`${voiceId}.onnx`),
-    getBlob(`${voiceId}.onnx.json`)
+    getBlob(`${voiceId}.onnx.json`),
+    getBlob('piper_phonemize.wasm'),
+    getBlob('piper_phonemize.data')
   ]);
 
-  if (!modelBlob || !configBlob) {
-    throw new Error(`音声モデル ${voiceId} が IndexedDB に見つかりません。ダウンロードしてください。`);
+  if (!modelBlob || modelBlob.size < MIN_VALID_EN_MODEL_SIZE || !configBlob) {
+    throw new Error(`英語音声モデル ${voiceId} が保存されていないか不完全です。保護者メニューでダウンロードしてください。`);
+  }
+  if (!wasmBlob || wasmBlob.size < MIN_VALID_EN_WASM_SIZE || !dataBlob || dataBlob.size < MIN_VALID_EN_DATA_SIZE) {
+    throw new Error('音素エンジンまたは辞書データが不完全です。保護者メニューで再ダウンロードしてください。');
   }
 
   const configText = await configBlob.text();
   const modelConfig = JSON.parse(configText);
 
-  // ONNX 推論セッションを作成 (WASM プロバイダ)
+  // ONNX 推論セッションを作成 (WASM プロバイダ / basic 最適化でメモリ抑制)
   const modelBuffer = await modelBlob.arrayBuffer();
   const ortSession = await ort.InferenceSession.create(modelBuffer, {
     executionProviders: ['wasm'],
-    graphOptimizationLevel: 'all'
+    graphOptimizationLevel: 'basic'
   });
 
   const phonemizeUrls = await getPhonemizeUrls_();
@@ -286,14 +318,41 @@ export async function initVoiceSession(voiceId) {
 async function textToPhonemeIds_(text, espeakVoice, phonemizeUrls) {
   const input = JSON.stringify([{ text: text.trim() }]);
   return new Promise(async (resolve, reject) => {
+    let settled = false;
+    const timeoutTimer = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        reject(new Error('音素化処理がタイムアウトしました (15秒)'));
+      }
+    }, 15000);
+
+    const safeResolve = (val) => {
+      if (!settled) {
+        settled = true;
+        clearTimeout(timeoutTimer);
+        resolve(val);
+      }
+    };
+    const safeReject = (err) => {
+      if (!settled) {
+        settled = true;
+        clearTimeout(timeoutTimer);
+        reject(err);
+      }
+    };
+
     try {
       const module = await createPiperPhonemize({
         print: (data) => {
           try {
             const parsed = JSON.parse(data);
-            resolve(parsed.phoneme_ids);
+            if (Array.isArray(parsed.phoneme_ids)) {
+              safeResolve(parsed.phoneme_ids);
+            } else {
+              safeReject(new Error('音素IDの取得結果が配列ではありません。'));
+            }
           } catch (e) {
-            reject(new Error(`音素パースエラー: ${e.message}`));
+            safeReject(new Error(`音素パースエラー: ${e.message}`));
           }
         },
         printErr: (msg) => {
@@ -315,7 +374,7 @@ async function textToPhonemeIds_(text, espeakVoice, phonemizeUrls) {
         '/espeak-ng-data'
       ]);
     } catch (err) {
-      reject(err);
+      safeReject(err);
     }
   });
 }
@@ -328,19 +387,23 @@ async function predictChunk_(text, session) {
   const espeakVoice = session.modelConfig.espeak?.voice || 'en-us';
   const phonemeIds = await textToPhonemeIds_(text, espeakVoice, session.phonemizeUrls);
 
+  if (!phonemeIds || phonemeIds.length === 0) {
+    throw new Error('音素列の生成に失敗しました。');
+  }
+
   const noiseScale = session.modelConfig.inference?.noise_scale ?? 0.667;
   const lengthScale = session.modelConfig.inference?.length_scale ?? 1.0;
   const noiseW = session.modelConfig.inference?.noise_w ?? 0.8;
 
   const feeds = {
-    input: new ort.Tensor('int64', BigInt64Array.from(phonemeIds.map(BigInt)), [1, phonemeIds.length]),
-    input_lengths: new ort.Tensor('int64', BigInt64Array.from([BigInt(phonemeIds.length)])),
-    scales: new ort.Tensor('float32', new Float32Array([noiseScale, lengthScale, noiseW]))
+    input: new ort.Tensor('int64', BigInt64Array.from(phonemeIds.map((id) => BigInt(id))), [1, phonemeIds.length]),
+    input_lengths: new ort.Tensor('int64', BigInt64Array.from([BigInt(phonemeIds.length)]), [1]),
+    scales: new ort.Tensor('float32', new Float32Array([noiseScale, lengthScale, noiseW]), [3])
   };
 
   const speakerIdMap = session.modelConfig.speaker_id_map || {};
   if (Object.keys(speakerIdMap).length > 0) {
-    feeds.sid = new ort.Tensor('int64', BigInt64Array.from([0n]));
+    feeds.sid = new ort.Tensor('int64', BigInt64Array.from([0n]), [1]);
   }
 
   const results = await session.ortSession.run(feeds);

@@ -362,7 +362,10 @@
 
         // 英語 テスト発音
         if (enBtnTest) {
-          enBtnTest.addEventListener('click', async () => {
+          enBtnTest.addEventListener('click', async (e) => {
+            if (e && typeof e.preventDefault === 'function') e.preventDefault();
+            if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
+
             enBtnTest.disabled = true;
             const originalText = enBtnTest.textContent;
             enBtnTest.textContent = '🔊 再生中...';
@@ -381,7 +384,13 @@
                 lang: 'en'
               });
             } catch (err) {
-              alert(`英語テスト再生エラー: ${err.message}`);
+              console.error('[PiperTtsStore] 英語テスト再生エラー:', err);
+              if (enStatusBadge) {
+                enStatusBadge.className = 'piper-badge piper-badge-danger';
+                enStatusBadge.textContent = `❌ 再生エラー: ${err.message}`;
+              }
+              alert(`英語テスト再生エラー: ${err.message}\n（モデルまたは辞書が破損している可能性があります。再ダウンロードをお試しください）`);
+              await refreshUI();
             } finally {
               enBtnTest.disabled = false;
               enBtnTest.textContent = originalText;
@@ -444,7 +453,10 @@
 
         // 日本語 テスト発音
         if (jaBtnTest) {
-          jaBtnTest.addEventListener('click', async () => {
+          jaBtnTest.addEventListener('click', async (e) => {
+            if (e && typeof e.preventDefault === 'function') e.preventDefault();
+            if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
+
             jaBtnTest.disabled = true;
             const originalText = jaBtnTest.textContent;
             jaBtnTest.textContent = '🔊 再生中...';
@@ -463,7 +475,13 @@
                 lang: 'ja'
               });
             } catch (err) {
-              alert(`日本語テスト再生エラー: ${err.message}`);
+              console.error('[PiperTtsStore] 日本語テスト再生エラー:', err);
+              if (jaStatusBadge) {
+                jaStatusBadge.className = 'piper-badge piper-badge-danger';
+                jaStatusBadge.textContent = `❌ 再生エラー: ${err.message}`;
+              }
+              alert(`日本語テスト再生エラー: ${err.message}\n（モデルまたは辞書が破損している可能性があります。再ダウンロードをお試しください）`);
+              await refreshUI();
             } finally {
               jaBtnTest.disabled = false;
               jaBtnTest.textContent = originalText;

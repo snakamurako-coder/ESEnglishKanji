@@ -120,18 +120,49 @@ export async function getAllKeys() {
   });
 }
 
+export const MIN_VALID_EN_DATA_SIZE = 17 * 1024 * 1024; // 正常時は約18.07MB (18,077,249 bytes)
+export const MIN_VALID_EN_WASM_SIZE = 500 * 1024;      // 正常時は約635KB (635,212 bytes)
+export const MIN_VALID_EN_MODEL_SIZE = 25 * 1024 * 1024; // 正常時は約32〜35MB
+
 /**
  * 特定の音声モデルが完全に保存されているか確認
- * (.onnx と .onnx.json の両方が存在すること)
+ * (.onnx, .onnx.json, 音素WASM, 音素辞書データが完全なサイズで存在すること)
+ * ※不完全な通信エラーキャッシュが存在する場合は自動破棄します
  * @param {string} voiceId 
  * @returns {Promise<boolean>}
  */
 export async function isVoiceCached(voiceId) {
-  const [hasModel, hasConfig] = await Promise.all([
-    hasBlob(`${voiceId}.onnx`),
-    hasBlob(`${voiceId}.onnx.json`)
+  const [modelBlob, hasConfig, wasmBlob, dataBlob] = await Promise.all([
+    getBlob(`${voiceId}.onnx`),
+    hasBlob(`${voiceId}.onnx.json`),
+    getBlob('piper_phonemize.wasm'),
+    getBlob('piper_phonemize.data')
   ]);
-  return hasModel && hasConfig;
+
+  // 音素化エンジンの不完全チェック
+  if (dataBlob && dataBlob.size < MIN_VALID_EN_DATA_SIZE) {
+    console.warn(`[PiperTTS] 不完全な音素辞書キャッシュ (${dataBlob.size} bytes) を検出したため削除します。`);
+    try { await deleteBlob('piper_phonemize.data'); } catch (_) {}
+    return false;
+  }
+  if (wasmBlob && wasmBlob.size < MIN_VALID_EN_WASM_SIZE) {
+    console.warn(`[PiperTTS] 不完全な音素WASMキャッシュ (${wasmBlob.size} bytes) を検出したため削除します。`);
+    try { await deleteBlob('piper_phonemize.wasm'); } catch (_) {}
+    return false;
+  }
+
+  // モデル本体の不完全チェック
+  if (modelBlob && modelBlob.size < MIN_VALID_EN_MODEL_SIZE) {
+    console.warn(`[PiperTTS] 不完全な音声モデルキャッシュ (${modelBlob.size} bytes) を検出したため削除します: ${voiceId}`);
+    try { await deleteBlob(`${voiceId}.onnx`); } catch (_) {}
+    return false;
+  }
+
+  const hasCompleteModel = !!modelBlob && modelBlob.size >= MIN_VALID_EN_MODEL_SIZE;
+  const hasCompleteWasm = !!wasmBlob && wasmBlob.size >= MIN_VALID_EN_WASM_SIZE;
+  const hasCompleteData = !!dataBlob && dataBlob.size >= MIN_VALID_EN_DATA_SIZE;
+
+  return hasCompleteModel && hasConfig && hasCompleteWasm && hasCompleteData;
 }
 
 /**

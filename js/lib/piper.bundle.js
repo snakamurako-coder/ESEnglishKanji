@@ -110,12 +110,44 @@ var PiperTTSModule = (() => {
       req.onerror = () => resolve([]);
     });
   }
+  var MIN_VALID_EN_DATA_SIZE = 17 * 1024 * 1024;
+  var MIN_VALID_EN_WASM_SIZE = 500 * 1024;
+  var MIN_VALID_EN_MODEL_SIZE = 25 * 1024 * 1024;
   async function isVoiceCached(voiceId) {
-    const [hasModel, hasConfig] = await Promise.all([
-      hasBlob(`${voiceId}.onnx`),
-      hasBlob(`${voiceId}.onnx.json`)
+    const [modelBlob, hasConfig, wasmBlob, dataBlob] = await Promise.all([
+      getBlob(`${voiceId}.onnx`),
+      hasBlob(`${voiceId}.onnx.json`),
+      getBlob("piper_phonemize.wasm"),
+      getBlob("piper_phonemize.data")
     ]);
-    return hasModel && hasConfig;
+    if (dataBlob && dataBlob.size < MIN_VALID_EN_DATA_SIZE) {
+      console.warn(`[PiperTTS] \u4E0D\u5B8C\u5168\u306A\u97F3\u7D20\u8F9E\u66F8\u30AD\u30E3\u30C3\u30B7\u30E5 (${dataBlob.size} bytes) \u3092\u691C\u51FA\u3057\u305F\u305F\u3081\u524A\u9664\u3057\u307E\u3059\u3002`);
+      try {
+        await deleteBlob("piper_phonemize.data");
+      } catch (_) {
+      }
+      return false;
+    }
+    if (wasmBlob && wasmBlob.size < MIN_VALID_EN_WASM_SIZE) {
+      console.warn(`[PiperTTS] \u4E0D\u5B8C\u5168\u306A\u97F3\u7D20WASM\u30AD\u30E3\u30C3\u30B7\u30E5 (${wasmBlob.size} bytes) \u3092\u691C\u51FA\u3057\u305F\u305F\u3081\u524A\u9664\u3057\u307E\u3059\u3002`);
+      try {
+        await deleteBlob("piper_phonemize.wasm");
+      } catch (_) {
+      }
+      return false;
+    }
+    if (modelBlob && modelBlob.size < MIN_VALID_EN_MODEL_SIZE) {
+      console.warn(`[PiperTTS] \u4E0D\u5B8C\u5168\u306A\u97F3\u58F0\u30E2\u30C7\u30EB\u30AD\u30E3\u30C3\u30B7\u30E5 (${modelBlob.size} bytes) \u3092\u691C\u51FA\u3057\u305F\u305F\u3081\u524A\u9664\u3057\u307E\u3059: ${voiceId}`);
+      try {
+        await deleteBlob(`${voiceId}.onnx`);
+      } catch (_) {
+      }
+      return false;
+    }
+    const hasCompleteModel = !!modelBlob && modelBlob.size >= MIN_VALID_EN_MODEL_SIZE;
+    const hasCompleteWasm = !!wasmBlob && wasmBlob.size >= MIN_VALID_EN_WASM_SIZE;
+    const hasCompleteData = !!dataBlob && dataBlob.size >= MIN_VALID_EN_DATA_SIZE;
+    return hasCompleteModel && hasConfig && hasCompleteWasm && hasCompleteData;
   }
   async function listCachedVoices() {
     const keys = await getAllKeys();
@@ -3421,29 +3453,44 @@ var PiperTTSModule = (() => {
       if (onProgress) onProgress({ stage, percent: pct, ...extra });
     };
     report("\u97F3\u7D20\u30A8\u30F3\u30B8\u30F3\u78BA\u8A8D\u4E2D...", 5);
-    const hasWasm = await getBlob("piper_phonemize.wasm");
-    if (!hasWasm) {
+    let wasmBlob = await getBlob("piper_phonemize.wasm");
+    if (!wasmBlob || wasmBlob.size < MIN_VALID_EN_WASM_SIZE) {
       report("\u97F3\u7D20\u30A8\u30F3\u30B8\u30F3 (WASM) \u30C0\u30A6\u30F3\u30ED\u30FC\u30C9\u4E2D...", 10);
-      const wasmBlob = await fetchBlobWithProgress(WASM_URL);
+      wasmBlob = await fetchBlobWithProgress(WASM_URL);
+      if (wasmBlob.size < MIN_VALID_EN_WASM_SIZE) {
+        throw new Error(`\u30C0\u30A6\u30F3\u30ED\u30FC\u30C9\u3057\u305F\u97F3\u7D20\u30A8\u30F3\u30B8\u30F3(WASM)\u306E\u30B5\u30A4\u30BA\u304C\u4E0D\u5B8C\u5168\u3067\u3059 (${wasmBlob.size} bytes)\u3002\u901A\u4FE1\u74B0\u5883\u3092\u3054\u78BA\u8A8D\u306E\u4E0A\u3001\u518D\u8A66\u884C\u3057\u3066\u304F\u3060\u3055\u3044\u3002`);
+      }
       await saveBlob("piper_phonemize.wasm", wasmBlob);
     }
-    const hasData = await getBlob("piper_phonemize.data");
-    if (!hasData) {
-      report("\u97F3\u7D20\u8F9E\u66F8\u30C7\u30FC\u30BF \u30C0\u30A6\u30F3\u30ED\u30FC\u30C9\u4E2D...", 20);
-      const dataBlob = await fetchBlobWithProgress(DATA_URL, (p) => {
+    let dataBlob = await getBlob("piper_phonemize.data");
+    if (!dataBlob || dataBlob.size < MIN_VALID_EN_DATA_SIZE) {
+      report("\u97F3\u7D20\u8F9E\u66F8\u30C7\u30FC\u30BF (~18MB) \u30C0\u30A6\u30F3\u30ED\u30FC\u30C9\u4E2D...", 20);
+      dataBlob = await fetchBlobWithProgress(DATA_URL, (p) => {
         report("\u97F3\u7D20\u8F9E\u66F8\u30C7\u30FC\u30BF \u30C0\u30A6\u30F3\u30ED\u30FC\u30C9\u4E2D...", 20 + Math.round(p.percent * 0.25));
       });
+      if (dataBlob.size < MIN_VALID_EN_DATA_SIZE) {
+        throw new Error(`\u30C0\u30A6\u30F3\u30ED\u30FC\u30C9\u3057\u305F\u97F3\u7D20\u8F9E\u66F8\u30C7\u30FC\u30BF\u306E\u30B5\u30A4\u30BA\u304C\u4E0D\u5B8C\u5168\u3067\u3059 (${(dataBlob.size / 1024 / 1024).toFixed(1)} MB)\u3002\u901A\u4FE1\u74B0\u5883\u3092\u3054\u78BA\u8A8D\u306E\u4E0A\u3001\u518D\u8A66\u884C\u3057\u3066\u304F\u3060\u3055\u3044\u3002`);
+      }
       await saveBlob("piper_phonemize.data", dataBlob);
     }
     report("\u30E2\u30C7\u30EB\u8A2D\u5B9A\u53D6\u5F97\u4E2D...", 50);
     const jsonUrl = `${HF_BASE}/${meta.path}.json`;
     const jsonBlob = await fetchBlobWithProgress(jsonUrl);
+    try {
+      const jsonTxt = await jsonBlob.text();
+      JSON.parse(jsonTxt);
+    } catch (e) {
+      throw new Error(`\u30E2\u30C7\u30EB\u8A2D\u5B9AJSON\u306E\u5F62\u5F0F\u304C\u4E0D\u6B63\u3067\u3059: ${e.message}`);
+    }
     await saveBlob(`${voiceId}.onnx.json`, jsonBlob);
-    report("\u97F3\u58F0\u30E2\u30C7\u30EB (ONNX) \u30C0\u30A6\u30F3\u30ED\u30FC\u30C9\u4E2D...", 55);
+    report("\u97F3\u58F0\u30E2\u30C7\u30EB (ONNX ~34MB) \u30C0\u30A6\u30F3\u30ED\u30FC\u30C9\u4E2D...", 55);
     const onnxUrl = `${HF_BASE}/${meta.path}`;
     const onnxBlob = await fetchBlobWithProgress(onnxUrl, (p) => {
       report("\u97F3\u58F0\u30E2\u30C7\u30EB (ONNX) \u30C0\u30A6\u30F3\u30ED\u30FC\u30C9\u4E2D...", 55 + Math.round(p.percent * 0.42));
     });
+    if (onnxBlob.size < MIN_VALID_EN_MODEL_SIZE) {
+      throw new Error(`\u30C0\u30A6\u30F3\u30ED\u30FC\u30C9\u3057\u305F\u97F3\u58F0\u30E2\u30C7\u30EB\u306E\u30B5\u30A4\u30BA\u304C\u4E0D\u5B8C\u5168\u3067\u3059 (${(onnxBlob.size / 1024 / 1024).toFixed(1)} MB)\u3002\u901A\u4FE1\u74B0\u5883\u3092\u3054\u78BA\u8A8D\u306E\u4E0A\u3001\u518D\u8A66\u884C\u3057\u3066\u304F\u3060\u3055\u3044\u3002`);
+    }
     await saveBlob(`${voiceId}.onnx`, onnxBlob);
     report("IndexedDB \u683C\u7D0D\u5B8C\u4E86\uFF01", 100);
     return { success: true, voiceId };
@@ -3459,22 +3506,28 @@ var PiperTTSModule = (() => {
     if (ort.env) {
       if ("allowLocalModels" in ort.env) ort.env.allowLocalModels = false;
       if (ort.env.wasm) {
-        ort.env.wasm.numThreads = Math.min(4, navigator.hardwareConcurrency || 2);
+        const isSabSupported = typeof crossOriginIsolated !== "undefined" && crossOriginIsolated && typeof SharedArrayBuffer !== "undefined";
+        ort.env.wasm.numThreads = isSabSupported ? Math.min(2, navigator.hardwareConcurrency || 1) : 1;
       }
     }
-    const [modelBlob, configBlob] = await Promise.all([
+    const [modelBlob, configBlob, wasmBlob, dataBlob] = await Promise.all([
       getBlob(`${voiceId}.onnx`),
-      getBlob(`${voiceId}.onnx.json`)
+      getBlob(`${voiceId}.onnx.json`),
+      getBlob("piper_phonemize.wasm"),
+      getBlob("piper_phonemize.data")
     ]);
-    if (!modelBlob || !configBlob) {
-      throw new Error(`\u97F3\u58F0\u30E2\u30C7\u30EB ${voiceId} \u304C IndexedDB \u306B\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3002\u30C0\u30A6\u30F3\u30ED\u30FC\u30C9\u3057\u3066\u304F\u3060\u3055\u3044\u3002`);
+    if (!modelBlob || modelBlob.size < MIN_VALID_EN_MODEL_SIZE || !configBlob) {
+      throw new Error(`\u82F1\u8A9E\u97F3\u58F0\u30E2\u30C7\u30EB ${voiceId} \u304C\u4FDD\u5B58\u3055\u308C\u3066\u3044\u306A\u3044\u304B\u4E0D\u5B8C\u5168\u3067\u3059\u3002\u4FDD\u8B77\u8005\u30E1\u30CB\u30E5\u30FC\u3067\u30C0\u30A6\u30F3\u30ED\u30FC\u30C9\u3057\u3066\u304F\u3060\u3055\u3044\u3002`);
+    }
+    if (!wasmBlob || wasmBlob.size < MIN_VALID_EN_WASM_SIZE || !dataBlob || dataBlob.size < MIN_VALID_EN_DATA_SIZE) {
+      throw new Error("\u97F3\u7D20\u30A8\u30F3\u30B8\u30F3\u307E\u305F\u306F\u8F9E\u66F8\u30C7\u30FC\u30BF\u304C\u4E0D\u5B8C\u5168\u3067\u3059\u3002\u4FDD\u8B77\u8005\u30E1\u30CB\u30E5\u30FC\u3067\u518D\u30C0\u30A6\u30F3\u30ED\u30FC\u30C9\u3057\u3066\u304F\u3060\u3055\u3044\u3002");
     }
     const configText = await configBlob.text();
     const modelConfig = JSON.parse(configText);
     const modelBuffer = await modelBlob.arrayBuffer();
     const ortSession = await ort.InferenceSession.create(modelBuffer, {
       executionProviders: ["wasm"],
-      graphOptimizationLevel: "all"
+      graphOptimizationLevel: "basic"
     });
     const phonemizeUrls = await getPhonemizeUrls_();
     activeSession_ = {
@@ -3489,14 +3542,39 @@ var PiperTTSModule = (() => {
   async function textToPhonemeIds_(text, espeakVoice, phonemizeUrls) {
     const input = JSON.stringify([{ text: text.trim() }]);
     return new Promise(async (resolve, reject) => {
+      let settled = false;
+      const timeoutTimer = setTimeout(() => {
+        if (!settled) {
+          settled = true;
+          reject(new Error("\u97F3\u7D20\u5316\u51E6\u7406\u304C\u30BF\u30A4\u30E0\u30A2\u30A6\u30C8\u3057\u307E\u3057\u305F (15\u79D2)"));
+        }
+      }, 15e3);
+      const safeResolve = (val) => {
+        if (!settled) {
+          settled = true;
+          clearTimeout(timeoutTimer);
+          resolve(val);
+        }
+      };
+      const safeReject = (err) => {
+        if (!settled) {
+          settled = true;
+          clearTimeout(timeoutTimer);
+          reject(err);
+        }
+      };
       try {
         const module = await createPiperPhonemize({
           print: (data) => {
             try {
               const parsed = JSON.parse(data);
-              resolve(parsed.phoneme_ids);
+              if (Array.isArray(parsed.phoneme_ids)) {
+                safeResolve(parsed.phoneme_ids);
+              } else {
+                safeReject(new Error("\u97F3\u7D20ID\u306E\u53D6\u5F97\u7D50\u679C\u304C\u914D\u5217\u3067\u306F\u3042\u308A\u307E\u305B\u3093\u3002"));
+              }
             } catch (e) {
-              reject(new Error(`\u97F3\u7D20\u30D1\u30FC\u30B9\u30A8\u30E9\u30FC: ${e.message}`));
+              safeReject(new Error(`\u97F3\u7D20\u30D1\u30FC\u30B9\u30A8\u30E9\u30FC: ${e.message}`));
             }
           },
           printErr: (msg) => {
@@ -3517,7 +3595,7 @@ var PiperTTSModule = (() => {
           "/espeak-ng-data"
         ]);
       } catch (err) {
-        reject(err);
+        safeReject(err);
       }
     });
   }
@@ -3526,17 +3604,20 @@ var PiperTTSModule = (() => {
     const ort = window.ort;
     const espeakVoice = ((_a = session.modelConfig.espeak) == null ? void 0 : _a.voice) || "en-us";
     const phonemeIds = await textToPhonemeIds_(text, espeakVoice, session.phonemizeUrls);
+    if (!phonemeIds || phonemeIds.length === 0) {
+      throw new Error("\u97F3\u7D20\u5217\u306E\u751F\u6210\u306B\u5931\u6557\u3057\u307E\u3057\u305F\u3002");
+    }
     const noiseScale = ((_b = session.modelConfig.inference) == null ? void 0 : _b.noise_scale) ?? 0.667;
     const lengthScale = ((_c = session.modelConfig.inference) == null ? void 0 : _c.length_scale) ?? 1;
     const noiseW = ((_d = session.modelConfig.inference) == null ? void 0 : _d.noise_w) ?? 0.8;
     const feeds = {
-      input: new ort.Tensor("int64", BigInt64Array.from(phonemeIds.map(BigInt)), [1, phonemeIds.length]),
-      input_lengths: new ort.Tensor("int64", BigInt64Array.from([BigInt(phonemeIds.length)])),
-      scales: new ort.Tensor("float32", new Float32Array([noiseScale, lengthScale, noiseW]))
+      input: new ort.Tensor("int64", BigInt64Array.from(phonemeIds.map((id) => BigInt(id))), [1, phonemeIds.length]),
+      input_lengths: new ort.Tensor("int64", BigInt64Array.from([BigInt(phonemeIds.length)]), [1]),
+      scales: new ort.Tensor("float32", new Float32Array([noiseScale, lengthScale, noiseW]), [3])
     };
     const speakerIdMap = session.modelConfig.speaker_id_map || {};
     if (Object.keys(speakerIdMap).length > 0) {
-      feeds.sid = new ort.Tensor("int64", BigInt64Array.from([0n]));
+      feeds.sid = new ort.Tensor("int64", BigInt64Array.from([0n]), [1]);
     }
     const results = await session.ortSession.run(feeds);
     const outputTensor = results.output || Object.values(results)[0];
