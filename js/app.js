@@ -6972,9 +6972,123 @@
       if (!readingSent && raw) q.contextSentenceReading = raw;
       return q;
     }
+
+    /**
+     * マニフェストが生レコード（スプレッドシート行データ）の場合でも、
+     * 「書き順チェック（stroke_order_trace）」を含む各形式の問題オブジェクトをクライアント側で動的生成する
+     */
+    function buildKanjiQuestionsFromRawRecordsIfNeeded_(rawList) {
+      const arr = Array.isArray(rawList) ? rawList : [];
+      if (!arr.length) return [];
+      // 既に type プロパティがある場合はビルド済み問題とみなす
+      if (arr[0] && arr[0].type) return arr;
+
+      const builtQuestions = [];
+      arr.forEach(function (row, idx) {
+        if (!row || typeof row !== "object") return;
+        const kanji = String(row["漢字"] || row.kanji || row["ターゲット漢字"] || "").trim();
+        if (!kanji) return;
+
+        // 音読み・訓読み・例文の解析
+        const readings = [];
+        ["訓A", "訓B", "訓C", "訓D", "音A", "音B", "音C", "音D"].forEach(function (slot) {
+          const isKun = slot.startsWith("訓");
+          const letter = slot.slice(1);
+          const rKey = (isKun ? "訓読み" : "音読み") + letter + "_読み";
+          const rVal = String(row[rKey] || "").trim();
+          if (!rVal || rVal === "×" || rVal === "x" || rVal === "X") return;
+
+          const exList = [];
+          for (let ei = 1; ei <= 5; ei++) {
+            const exKey = slot + "_例文" + ei;
+            const exVal = String(row[exKey] || "").trim();
+            if (exVal && exVal !== "×" && exVal !== "x" && exVal !== "X") {
+              exList.push(exVal);
+            }
+          }
+          readings.push({
+            label: slot,
+            kind: isKun ? "kun" : "on",
+            reading: rVal,
+            examples: exList
+          });
+        });
+
+        const setId = String(row["セット"] || "1");
+        const rowIndex = Number(row.rowIndex || idx + 1);
+
+        // 1. 書き順チェック (stroke_order_trace)
+        builtQuestions.push({
+          type: "stroke_order_trace",
+          kanji: kanji,
+          rowIndex: rowIndex,
+          prompt: "漢字練習と同じ画面で書いて、60点以上をめざそう。",
+          correctAnswer: kanji,
+          searchText: kanji + " 書き順",
+          readings: readings,
+          questionIndex: builtQuestions.length,
+          questionId: "KANJI_Q_" + setId + "_" + rowIndex + "_stroke_order_trace_" + idx
+        });
+
+        // 2. 書いて答える (ruby_to_kanji)
+        let exWithKanji = "";
+        let usedReading = null;
+        for (let ri = 0; ri < readings.length; ri++) {
+          const r = readings[ri];
+          if (r.examples && r.examples.length) {
+            for (let ej = 0; ej < r.examples.length; ej++) {
+              if (r.examples[ej].indexOf(kanji) >= 0) {
+                exWithKanji = r.examples[ej];
+                usedReading = r;
+                break;
+              }
+            }
+            if (exWithKanji) break;
+          }
+        }
+        if (exWithKanji && usedReading) {
+          const maskIdx = exWithKanji.indexOf(kanji);
+          const masked = exWithKanji.slice(0, maskIdx) + "＿" + exWithKanji.slice(maskIdx + kanji.length);
+          builtQuestions.push({
+            type: "ruby_to_kanji",
+            kanji: kanji,
+            rowIndex: rowIndex,
+            readingLabel: usedReading.label,
+            reading: usedReading.reading,
+            readingKind: usedReading.kind,
+            sentence: masked,
+            prompt: "読みと例文の空欄の漢字を書いて、60点以上をめざそう。",
+            correctAnswer: kanji,
+            searchText: [kanji, usedReading.reading, masked, exWithKanji].join(" "),
+            questionIndex: builtQuestions.length,
+            questionId: "KANJI_Q_" + setId + "_" + rowIndex + "_ruby_to_kanji_" + idx
+          });
+
+          // 3. 読みタイピング (sentence_to_ruby)
+          builtQuestions.push({
+            type: "sentence_to_ruby",
+            kanji: kanji,
+            rowIndex: rowIndex,
+            readingKind: usedReading.kind,
+            readingLabel: usedReading.label,
+            fullExample: exWithKanji,
+            sentence: masked,
+            prompt: "赤字のかんじの よみを 入力しましょう。" + (usedReading.kind === "on" ? "（音読みはカタカナ）" : "（訓読みはひらがな）"),
+            correctAnswer: usedReading.reading,
+            searchText: [kanji, usedReading.reading, masked, exWithKanji].join(" "),
+            questionIndex: builtQuestions.length,
+            questionId: "KANJI_Q_" + setId + "_" + rowIndex + "_sentence_to_ruby_" + idx
+          });
+        }
+      });
+
+      return builtQuestions;
+    }
+
     function prepareKanjiQuizQuestionsForPlay(rawList, formatModeOverride) {
       var mode = formatModeOverride || getKanjiQuizFormatMode();
-      var normalized = (Array.isArray(rawList) ? rawList : []).map(function (q) {
+      var builtList = buildKanjiQuestionsFromRawRecordsIfNeeded_(rawList);
+      var normalized = (Array.isArray(builtList) ? builtList : []).map(function (q) {
         if (!q || q.type !== "okurigana_shift") return q;
         return rebuildOkuriganaQuestionByAlgorithm_(q);
       });
@@ -7209,7 +7323,7 @@
             modeName: modeName,
             unitName: unitName,
             setId: String(sid != null ? sid : ""),
-            allQuestions: raw,
+            allQuestions: prep.questions,
             formatMode: prep.formatMode
           });
         };
@@ -9280,7 +9394,7 @@
     function strokeOrderReadingDisplayText_(reading, kind) {
       return kanjiYomiHiraganaToAnswerScript(String(reading || ""), kind === "on" ? "on" : "kun");
     }
-    /** 例文の先頭・末尾の「。」等を除き、先頭に箇条書き「●」を付ける */
+    /** 例文の先頭・末尾の「。」等を除き、先頭に箇条書き「●」を付ける（画面表示用） */
     function normalizeStrokeOrderExampleText_(ex) {
       const body = String(ex || "")
         .replace(/^[\s　]*[。．\.・•●◦‧]+/, "")
@@ -9288,6 +9402,14 @@
         .replace(/^[\s　]+|[\s　]+$/g, "")
         .trim();
       return body ? "●" + body : "";
+    }
+    /** 読み上げ用テキストから「●」などの記号を完全除去 */
+    function cleanStrokeOrderTtsText_(text) {
+      return String(text || "")
+        .replace(/[●•◦‧・]/g, "")
+        .replace(/^[\s　]*[。．\.・•●◦‧]+/, "")
+        .replace(/[。．\.・•●◦‧]+[\s　]*$/, "")
+        .trim();
     }
     function clearStrokeOrderReadings_() {
       const el = document.getElementById("kanji-stroke-order-readings");
@@ -9310,7 +9432,9 @@
       const isEnabled = getUserPref("kanji_quiz_stroke_tts_enabled", "1") === "1";
       if (!isEnabled) return;
 
-      const validPhrases = (Array.isArray(phrases) ? phrases : []).filter(function (t) { return !!t; });
+      const validPhrases = (Array.isArray(phrases) ? phrases : [])
+        .map(cleanStrokeOrderTtsText_)
+        .filter(function (t) { return !!t; });
       if (!validPhrases.length) return;
 
       const textToSpeak = validPhrases.join("、 ");
@@ -9329,8 +9453,9 @@
     function speakStrokeOrderViaSpeechSynthesis_(phrases) {
       if (!window.speechSynthesis) return;
       phrases.forEach(function (text) {
-        if (!text) return;
-        const ut = new SpeechSynthesisUtterance(text);
+        const cleanText = cleanStrokeOrderTtsText_(text);
+        if (!cleanText) return;
+        const ut = new SpeechSynthesisUtterance(cleanText);
         ut.lang = "ja-JP";
         ut.rate = 1.15;
         window.speechSynthesis.speak(ut);
@@ -9362,10 +9487,12 @@
         const kind = r.kind === "on" ? "on" : "kun";
         const kindLabel = strokeOrderReadingKindLabel_(kind);
         const examples = Array.isArray(r.examples) ? r.examples.filter(Boolean) : [];
-        const readTextForVoice = r.reading;
+        const readTextForVoice = cleanStrokeOrderTtsText_(r.reading);
         const readTextForDisplay = strokeOrderReadingDisplayText_(r.reading, kind);
         ttsPhrases.push(kindLabel);
-        ttsPhrases.push(readTextForVoice);
+        if (readTextForVoice) {
+          ttsPhrases.push(readTextForVoice);
+        }
         /* DOM順: 種別→スロット→よみ→例文。CSS direction:rtl で右から 訓読み|A|いぬ|例文 */
         html += '<div class="kanji-so-reading-group">';
         html +=
@@ -9384,7 +9511,10 @@
           examples.forEach(function (ex) {
             const exText = normalizeStrokeOrderExampleText_(ex);
             if (!exText) return;
-            ttsPhrases.push(exText);
+            const voiceText = cleanStrokeOrderTtsText_(ex);
+            if (voiceText) {
+              ttsPhrases.push(voiceText);
+            }
             html +=
               '<span class="kanji-so-reading-example">' + escapeHtml(exText) + "</span>";
           });
@@ -11703,7 +11833,8 @@
         questions = shuffleKanjiQuizQuestionsArray(ctx.questions.slice());
         allQuestionsStored = questions.slice();
       } else if (Array.isArray(ctx.allQuestions) && ctx.allQuestions.length) {
-        const filtered = filterKanjiQuizQuestionsByFormat(ctx.allQuestions, mode);
+        const built = buildKanjiQuestionsFromRawRecordsIfNeeded_(ctx.allQuestions);
+        const filtered = filterKanjiQuizQuestionsByFormat(built, mode);
         if (!filtered.length) {
           hideKanjiQuizSetLoadingOverlay_();
           alert("この しかた では もんだいがありません。\nほかの しかたを えらんでください。");
@@ -11712,7 +11843,8 @@
         allQuestionsStored = filtered.slice();
         questions = shuffleKanjiQuizQuestionsArray(filtered.slice());
       } else {
-        const base = Array.isArray(ctx.questions) ? ctx.questions.slice() : [];
+        const built = buildKanjiQuestionsFromRawRecordsIfNeeded_(ctx.questions);
+        const base = Array.isArray(built) ? built.slice() : [];
         if (!base.length) {
           hideKanjiQuizSetLoadingOverlay_();
           alert("このセットには問題がありません。");
