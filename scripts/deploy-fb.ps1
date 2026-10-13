@@ -55,19 +55,30 @@ if (-not $SkipBuild) {
   }
 }
 
-# 4. Deploy
-if ($RulesOnly) {
-  Write-Step 'Deploying Rules only (Firestore)...'
-  firebase deploy --only firestore:rules
-} elseif ($HostingOnly) {
-  Write-Step 'Deploying Hosting only...'
-  firebase deploy --only hosting
-} else {
-  Write-Step 'Deploying Full Stack (Hosting + Firestore Rules)...'
-  firebase deploy --only hosting,firestore:rules
+# 4. Clean corrupted .firebase cache if present
+if (Test-Path '.firebase') {
+  Get-ChildItem -Path '.firebase' -Filter '*.cache' -ErrorAction SilentlyContinue | ForEach-Object {
+    if ($_.Length -eq 0) {
+      Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue
+    }
+  }
 }
 
-if ($LASTEXITCODE -ne 0) { Fail-Exit 'firebase deploy' }
+# 5. Deploy
+$deployOnly = if ($RulesOnly) { 'firestore:rules' } elseif ($HostingOnly) { 'hosting' } else { 'hosting,firestore:rules' }
+$stepLabel = if ($RulesOnly) { 'Deploying Rules only (Firestore)...' } elseif ($HostingOnly) { 'Deploying Hosting only...' } else { 'Deploying Full Stack (Hosting + Firestore Rules)...' }
+
+Write-Step $stepLabel
+firebase deploy --only $deployOnly
+
+if ($LASTEXITCODE -ne 0) {
+  Write-Warning 'Deploy failed. Clearing .firebase cache and retrying once...'
+  if (Test-Path '.firebase') {
+    Remove-Item -Path '.firebase' -Recurse -Force -ErrorAction SilentlyContinue
+  }
+  firebase deploy --only $deployOnly
+  if ($LASTEXITCODE -ne 0) { Fail-Exit 'firebase deploy' }
+}
 
 Write-Host ''
 Write-Host '==> Deploy successfully finished!' -ForegroundColor Green

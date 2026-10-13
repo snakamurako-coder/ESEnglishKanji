@@ -15,7 +15,8 @@
       "コード.js",
       "migrateOnce.gs",
       "appsscript.json",
-      "codereduction/**"
+      "codereduction/**",
+      "scratch/**"
     ],
     "headers": [
       {
