@@ -191,64 +191,66 @@
       if (!index || !index.books || !index.books[modeId]) return null;
       const bMeta = index.books[modeId];
       const expectedHash = bMeta.hash;
-      const dataPath = bMeta.path.startsWith('/') ? bMeta.path : ('/' + bMeta.path);
+      const rawPath = bMeta.path || (expectedHash ? ('data/books/' + modeId + '.' + expectedHash + '.json') : null);
+      const dataPath = rawPath ? (rawPath.startsWith('/') ? rawPath : ('/' + rawPath)) : null;
 
       return idbGet(STORE_BOOKS, modeId).then(function (cached) {
-        if (cached && cached.hash === expectedHash && cached.units) {
+        if (cached && (!expectedHash || cached.hash === expectedHash) && cached.units) {
           return cached;
         }
 
-        return fetch(dataPath)
-          .then(function (res) {
-            if (!res.ok) throw new Error('Book manifest not found');
-            return res.json();
-          })
-          .then(function (data) {
-            if (data && data.units) {
-              idbPut(STORE_BOOKS, Object.assign({ modeId: modeId, hash: expectedHash }, data));
-              return data;
-            }
-            return null;
-          })
-          .catch(function () {
-            // 静的ファイルが未配置の場合、Firestore の system/manifest_book_{modeId} を確認
-            const db = getFirestoreDb_();
-            if (db) {
-              return db.collection('system').doc('manifest_book_' + modeId).get().then(function (doc) {
-                if (doc.exists) {
-                  const d = doc.data();
-                  if (d && d.isChunked && Array.isArray(d.unitNames)) {
-                    // 1MB 超え対策の分割単元ドキュメント群を並列取得して復元
-                    const unitPromises = d.unitNames.map(function (uName) {
-                      const uDocId = 'manifest_book_' + modeId + '_u_' + encodeURIComponent(uName);
-                      return db.collection('system').doc(uDocId).get().then(function (uDoc) {
-                        return { name: uName, data: uDoc.exists ? uDoc.data().data : null };
-                      });
+        const fetchStaticPromise = dataPath
+          ? fetch(dataPath).then(function (res) {
+              if (!res.ok) throw new Error('Book manifest not found');
+              return res.json();
+            }).then(function (data) {
+              if (data && data.units) {
+                idbPut(STORE_BOOKS, Object.assign({ modeId: modeId, hash: expectedHash }, data));
+                return data;
+              }
+              return null;
+            })
+          : Promise.reject(new Error('No static path'));
+
+        return fetchStaticPromise.catch(function () {
+          // 静的ファイルが未配置または取得失敗の場合、Firestore の system/manifest_book_{modeId} を確認
+          const db = getFirestoreDb_();
+          if (db) {
+            return db.collection('system').doc('manifest_book_' + modeId).get().then(function (doc) {
+              if (doc.exists) {
+                const d = doc.data();
+                if (d && d.isChunked && Array.isArray(d.unitNames)) {
+                  // 1MB 超え対策の分割単元ドキュメント群を並列取得して復元
+                  const unitPromises = d.unitNames.map(function (uName) {
+                    const uDocId = 'manifest_book_' + modeId + '_u_' + encodeURIComponent(uName);
+                    return db.collection('system').doc(uDocId).get().then(function (uDoc) {
+                      return { name: uName, data: uDoc.exists ? uDoc.data().data : null };
                     });
-                    return Promise.all(unitPromises).then(function (unitsList) {
-                      const reconstructedUnits = {};
-                      unitsList.forEach(function (it) {
-                        if (it && it.name && it.data) {
-                          reconstructedUnits[it.name] = it.data;
-                        }
-                      });
-                      d.units = reconstructedUnits;
-                      idbPut(STORE_BOOKS, Object.assign({ modeId: modeId, hash: expectedHash }, d));
-                      return d;
+                  });
+                  return Promise.all(unitPromises).then(function (unitsList) {
+                    const reconstructedUnits = {};
+                    unitsList.forEach(function (it) {
+                      if (it && it.name && it.data) {
+                        reconstructedUnits[it.name] = it.data;
+                      }
                     });
-                  }
-                  if (d && d.units) {
+                    d.units = reconstructedUnits;
                     idbPut(STORE_BOOKS, Object.assign({ modeId: modeId, hash: expectedHash }, d));
                     return d;
-                  }
+                  });
                 }
-                return (cached && cached.units) ? cached : null;
-              }).catch(function () {
-                return (cached && cached.units) ? cached : null;
-              });
-            }
-            return (cached && cached.units) ? cached : null;
-          });
+                if (d && d.units) {
+                  idbPut(STORE_BOOKS, Object.assign({ modeId: modeId, hash: expectedHash }, d));
+                  return d;
+                }
+              }
+              return (cached && cached.units) ? cached : null;
+            }).catch(function () {
+              return (cached && cached.units) ? cached : null;
+            });
+          }
+          return (cached && cached.units) ? cached : null;
+        });
       });
     });
   }
@@ -334,6 +336,12 @@
 
     const cleanMaterials = sanitizeForFirestore(manifestData.materials || []);
     const cleanBooksMeta = sanitizeForFirestore(manifestData.booksMeta || {});
+    Object.keys(cleanBooksMeta).forEach(function (mId) {
+      const bm = cleanBooksMeta[mId];
+      if (bm && !bm.path && bm.hash) {
+        bm.path = 'data/books/' + mId + '.' + bm.hash + '.json';
+      }
+    });
     const indexData = sanitizeForFirestore({
       schemaVersion: 1,
       exportedAt: manifestData.exportedAt || new Date().toISOString(),

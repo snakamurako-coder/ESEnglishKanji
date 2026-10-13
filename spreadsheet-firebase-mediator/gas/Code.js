@@ -403,6 +403,7 @@ function scanFolderMaterials_(folderId, category, materials, booksMeta, booksDat
       modeName: modeName,
       category: category,
       hash: bookHash,
+      path: 'data/books/' + modeId + '.' + bookHash + '.json',
       units: units
     };
 
