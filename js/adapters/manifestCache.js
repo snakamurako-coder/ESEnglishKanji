@@ -217,6 +217,26 @@
               return db.collection('system').doc('manifest_book_' + modeId).get().then(function (doc) {
                 if (doc.exists) {
                   const d = doc.data();
+                  if (d && d.isChunked && Array.isArray(d.unitNames)) {
+                    // 1MB 超え対策の分割単元ドキュメント群を並列取得して復元
+                    const unitPromises = d.unitNames.map(function (uName) {
+                      const uDocId = 'manifest_book_' + modeId + '_u_' + encodeURIComponent(uName);
+                      return db.collection('system').doc(uDocId).get().then(function (uDoc) {
+                        return { name: uName, data: uDoc.exists ? uDoc.data().data : null };
+                      });
+                    });
+                    return Promise.all(unitPromises).then(function (unitsList) {
+                      const reconstructedUnits = {};
+                      unitsList.forEach(function (it) {
+                        if (it && it.name && it.data) {
+                          reconstructedUnits[it.name] = it.data;
+                        }
+                      });
+                      d.units = reconstructedUnits;
+                      idbPut(STORE_BOOKS, Object.assign({ modeId: modeId, hash: expectedHash }, d));
+                      return d;
+                    });
+                  }
                   if (d && d.units) {
                     idbPut(STORE_BOOKS, Object.assign({ modeId: modeId, hash: expectedHash }, d));
                     return d;
@@ -280,6 +300,30 @@
   }
 
   /**
+   * Firestore 用データサニタイズ（空キー "" や undefined を再帰的に除外）
+   */
+  function sanitizeForFirestore(obj) {
+    if (obj === null || typeof obj !== 'object') {
+      return obj;
+    }
+    if (Array.isArray(obj)) {
+      return obj.map(function (item) {
+        return sanitizeForFirestore(item);
+      });
+    }
+    const clean = {};
+    Object.keys(obj).forEach(function (key) {
+      if (typeof key === 'string' && key.trim() !== '') {
+        const val = obj[key];
+        if (val !== undefined) {
+          clean[key] = sanitizeForFirestore(val);
+        }
+      }
+    });
+    return clean;
+  }
+
+  /**
    * 教材マニフェストの最新化（Firestore & IndexedDB 同期）
    * @param {Object} manifestData { exportedAt, materials, materialsHash, booksMeta, booksData }
    */
@@ -288,16 +332,18 @@
       return Promise.reject(new Error('不正なマニフェストデータです'));
     }
 
-    const indexData = {
+    const cleanMaterials = sanitizeForFirestore(manifestData.materials || []);
+    const cleanBooksMeta = sanitizeForFirestore(manifestData.booksMeta || {});
+    const indexData = sanitizeForFirestore({
       schemaVersion: 1,
       exportedAt: manifestData.exportedAt || new Date().toISOString(),
       materials: {
         hash: manifestData.materialsHash,
         path: `data/manifest-materials.${manifestData.materialsHash}.json`,
-        count: Array.isArray(manifestData.materials) ? manifestData.materials.length : 0
+        count: Array.isArray(cleanMaterials) ? cleanMaterials.length : 0
       },
-      books: manifestData.booksMeta
-    };
+      books: cleanBooksMeta
+    });
 
     const promises = [];
     const db = getFirestoreDb_();
@@ -305,32 +351,64 @@
     // 1. Firestore への保存
     if (db) {
       promises.push(db.collection('system').doc('manifest_index').set(indexData, { merge: true }));
-      promises.push(db.collection('system').doc('manifest_materials').set({
+      promises.push(db.collection('system').doc('manifest_materials').set(sanitizeForFirestore({
         status: 'success',
         hash: manifestData.materialsHash,
-        materials: manifestData.materials,
+        materials: cleanMaterials,
         exportedAt: indexData.exportedAt
-      }, { merge: true }));
+      }), { merge: true }));
+
       if (manifestData.booksData) {
         Object.keys(manifestData.booksData).forEach(function (mId) {
-          const bData = manifestData.booksData[mId];
-          promises.push(db.collection('system').doc('manifest_book_' + mId).set(bData, { merge: true }));
+          const rawB = manifestData.booksData[mId];
+          if (!rawB) return;
+          const bData = sanitizeForFirestore(rawB);
+          const jsonStr = JSON.stringify(bData);
+
+          // Firestore の 1 ドキュメント上限（1MB = 1,048,576 bytes）対策
+          if (jsonStr.length > 700000 && bData.units && typeof bData.units === 'object') {
+            const unitNames = Object.keys(bData.units);
+            const metaDoc = {
+              modeId: bData.modeId || mId,
+              modeName: bData.modeName || '',
+              category: bData.category || '',
+              hash: bData.hash || '',
+              exportedAt: bData.exportedAt || indexData.exportedAt,
+              isChunked: true,
+              unitNames: unitNames
+            };
+            promises.push(db.collection('system').doc('manifest_book_' + mId).set(metaDoc, { merge: true }));
+
+            // 単元ごとの分割ドキュメント
+            unitNames.forEach(function (uName) {
+              const uDocId = 'manifest_book_' + mId + '_u_' + encodeURIComponent(uName);
+              promises.push(db.collection('system').doc(uDocId).set({
+                modeId: mId,
+                unitName: uName,
+                data: bData.units[uName]
+              }, { merge: true }));
+            });
+          } else {
+            promises.push(db.collection('system').doc('manifest_book_' + mId).set(bData, { merge: true }));
+          }
         });
       }
     }
 
-    // 2. IndexedDB への即時保存
+    // 2. IndexedDB への即時保存（IndexedDB には常に全単元を含む完全オブジェクトを保存）
     promises.push(idbPut(STORE_META, { key: 'index', data: indexData, savedAt: Date.now() }));
     promises.push(idbPut(STORE_MATERIALS, {
       key: 'materials',
       hash: manifestData.materialsHash,
-      materials: manifestData.materials,
+      materials: cleanMaterials,
       updatedAt: Date.now()
     }));
     if (manifestData.booksData) {
       Object.keys(manifestData.booksData).forEach(function (mId) {
-        const b = manifestData.booksData[mId];
-        promises.push(idbPut(STORE_BOOKS, Object.assign({ modeId: mId, hash: b.hash }, b)));
+        const rawB = manifestData.booksData[mId];
+        if (!rawB) return;
+        const cleanB = sanitizeForFirestore(rawB);
+        promises.push(idbPut(STORE_BOOKS, Object.assign({ modeId: mId, hash: cleanB.hash }, cleanB)));
       });
     }
 
@@ -340,7 +418,7 @@
         status: 'success',
         exportedAt: indexData.exportedAt,
         materialsCount: indexData.materials.count,
-        booksCount: Object.keys(manifestData.booksMeta || {}).length
+        booksCount: Object.keys(cleanBooksMeta || {}).length
       };
     });
   }

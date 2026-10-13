@@ -5304,7 +5304,10 @@ function handleExportAllMaterialsAdmin(req) {
               const qList = [];
               for (let r = 1; r < vals.length; r++) {
                 const qObj = {};
-                for (let c = 0; c < headers.length; c++) qObj[headers[c]] = vals[r][c];
+                for (let c = 0; c < headers.length; c++) {
+                  const h = String(headers[c] || '').trim();
+                  if (h) qObj[h] = vals[r][c];
+                }
                 if (qObj["通し番号"]) qList.push(qObj);
               }
               bookUnits[unitName] = qList;

@@ -450,7 +450,10 @@ function extractEnglishUnitQuestions_(sheet) {
     const row = data[i];
     const qObj = {};
     for (let j = 0; j < headers.length; j++) {
-      qObj[headers[j]] = row[j];
+      const h = String(headers[j] || '').trim();
+      if (h) {
+        qObj[h] = row[j];
+      }
     }
     if (qObj['通し番号']) questions.push(qObj);
   }
