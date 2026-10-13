@@ -256,6 +256,11 @@ function handleApiRequest_(params) {
       });
     }
 
+    if (action === 'import_full_config' || action === 'fetch_backup_spreadsheet_data') {
+      const importResult = importFullConfigSpreadsheets_(body);
+      return jsonResponse_(importResult);
+    }
+
     if (action === 'ping') {
       return jsonResponse_({ status: 'ok', timestamp: new Date().toISOString() });
     }
@@ -1087,5 +1092,249 @@ function buildJukugoWorkbook_(ss) {
     [5, "森林", "しんりん", "たくさんの木が生い茂る場所", "森林浴を楽しむ。"]
   ];
   sheet.getRange(2, 1, sampleJukugo.length, headers.length).setValues(sampleJukugo);
+}
+
+/**
+ * ============================================================================
+ * 【インポート＆復元・移行】スプレッドシートから全設定・教材・ユーザーを一括抽出
+ * ============================================================================
+ */
+function safeParseJsonCellMediator_(val, fallback) {
+  if (val == null || val === "") return fallback;
+  if (typeof val === "object") return val;
+  try {
+    return JSON.parse(String(val));
+  } catch (_) {
+    return fallback;
+  }
+}
+
+function importFullConfigSpreadsheets_(body) {
+  try {
+    let ssId = String((body && (body.spreadsheetId || body.ssId)) || "").trim();
+    if (ssId.indexOf("docs.google.com") !== -1) {
+      const m = ssId.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+      if (m) ssId = m[1];
+    }
+
+    let targetSs = null;
+    if (ssId) {
+      try {
+        targetSs = SpreadsheetApp.openById(ssId);
+      } catch (eOpen) {
+        return { status: "error", message: "指定されたスプレッドシートを開けませんでした: " + eOpen.message };
+      }
+    } else {
+      const props = PropertiesService.getScriptProperties();
+      const adminSsId = props.getProperty("ADMIN_SS_ID");
+      if (adminSsId) {
+        try {
+          targetSs = SpreadsheetApp.openById(adminSsId);
+        } catch (_) {}
+      }
+      if (!targetSs) {
+        try {
+          targetSs = SpreadsheetApp.getActiveSpreadsheet();
+        } catch (_) {}
+      }
+    }
+
+    if (!targetSs) {
+      return { status: "error", message: "スプレッドシートが見つかりません。有効なURLまたはIDを指定してください。" };
+    }
+
+    // 1. users シート
+    const usersSheet = targetSs.getSheetByName("users");
+    const parsedUsers = [];
+    if (usersSheet) {
+      const vals = usersSheet.getDataRange().getValues();
+      if (vals.length > 1) {
+        const headers = vals[0].map(function (h) { return String(h || "").trim(); });
+        const idIdx = headers.indexOf("ID") >= 0 ? headers.indexOf("ID") : 0;
+        const nameIdx = headers.indexOf("名前") >= 0 ? headers.indexOf("名前") : 1;
+        const pinIdx = headers.indexOf("PIN") >= 0 ? headers.indexOf("PIN") : 2;
+        const ptIdx = headers.indexOf("合計ポイント") >= 0 ? headers.indexOf("合計ポイント") : 3;
+        const lastIdx = headers.indexOf("最終学習日時_JSON") >= 0 ? headers.indexOf("最終学習日時_JSON") : 4;
+        const histIdx = headers.indexOf("履歴_JSON") >= 0 ? headers.indexOf("履歴_JSON") : 5;
+        const dailyIdx = headers.indexOf("日別ポイント_JSON") >= 0 ? headers.indexOf("日別ポイント_JSON") : 6;
+        const trainIdx = headers.indexOf("特訓進捗_JSON") >= 0 ? headers.indexOf("特訓進捗_JSON") : 7;
+        const stopIdx = headers.indexOf("ストップウォッチ_JSON") >= 0 ? headers.indexOf("ストップウォッチ_JSON") : 8;
+
+        for (let i = 1; i < vals.length; i++) {
+          const row = vals[i];
+          const uId = String(row[idIdx] || "").trim();
+          if (!uId) continue;
+          parsedUsers.push({
+            id: uId,
+            name: String(row[nameIdx] || uId).trim(),
+            pin: String(row[pinIdx] || "1234").trim(),
+            points: Number(row[ptIdx]) || 0,
+            lastStudyJson: safeParseJsonCellMediator_(row[lastIdx], {}),
+            historyJson: safeParseJsonCellMediator_(row[histIdx], {}),
+            dailyPointsJson: safeParseJsonCellMediator_(row[dailyIdx], {}),
+            trainingProgressJson: safeParseJsonCellMediator_(row[trainIdx], {}),
+            stopwatchJson: safeParseJsonCellMediator_(row[stopIdx], {})
+          });
+        }
+      }
+    }
+
+    // 2. アプリ設定 シート
+    const configSheet = targetSs.getSheetByName("アプリ設定");
+    const appSettings = {};
+    const basePointsMap = {};
+    if (configSheet) {
+      const vals = configSheet.getDataRange().getValues();
+      for (let i = 1; i < vals.length; i++) {
+        const row = vals[i];
+        const key = String(row[0] || "").trim();
+        if (!key) continue;
+        const valWord = row[1];
+        const valPhrase = row[2];
+        if (key.startsWith("基本Pt_") && valPhrase !== undefined && String(valPhrase).trim() !== "") {
+          const pair = {
+            word: Number(valWord) || 0,
+            expression: Number(valPhrase) || 0
+          };
+          appSettings[key] = pair;
+          basePointsMap[key] = pair;
+        } else {
+          appSettings[key] = valWord !== undefined ? String(valWord).trim() : "";
+        }
+      }
+    }
+
+    // 3. rewards シート
+    const rewardsSheet = targetSs.getSheetByName("rewards");
+    const parsedRewards = [];
+    if (rewardsSheet) {
+      const vals = rewardsSheet.getDataRange().getValues();
+      if (vals.length > 1) {
+        for (let i = 1; i < vals.length; i++) {
+          const row = vals[i];
+          const rId = String(row[0] || "").trim();
+          if (!rId) continue;
+          parsedRewards.push({
+            id: rId,
+            name: String(row[1] || "").trim(),
+            points: Math.max(0, Number(row[2]) || 0),
+            timeMinutes: Math.max(0, Number(row[3]) || 0),
+            desc: String(row[4] || "").trim(),
+            icon: String(row[5] || "🎁").trim(),
+            enabled: row[6] !== false && String(row[6]).toLowerCase() !== "false"
+          });
+        }
+      }
+    }
+
+    // 4. 外部学習 シート
+    const extSheet = targetSs.getSheetByName("外部学習");
+    const parsedExtMenus = [];
+    if (extSheet) {
+      const vals = extSheet.getDataRange().getValues();
+      if (vals.length > 1) {
+        for (let i = 1; i < vals.length; i++) {
+          const row = vals[i];
+          const cat = String(row[0] || "").trim();
+          const vol = String(row[1] || "").trim();
+          if (!cat && !vol) continue;
+          parsedExtMenus.push({
+            id: "ext_" + i,
+            category: cat,
+            volume: vol,
+            points: Math.max(0, Number(row[2]) || 0)
+          });
+        }
+      }
+    }
+
+    // 5. 特訓メニュー1〜12
+    const defaultColors = ["#9C27B0", "#2196F3", "#4CAF50", "#FF9800", "#F44336", "#009688", "#E91E63", "#3F51B5", "#795548", "#607D8B", "#00BCD4", "#FFC107"];
+    const trainingMenus = [];
+    for (let m = 1; m <= 12; m++) {
+      const mName = String(appSettings["特訓メニュー" + m + "_表示名"] || ("メニュー " + m)).trim();
+      const mEnabled = String(appSettings["特訓メニュー" + m + "_有効"] || "TRUE").toUpperCase() !== "FALSE";
+      const mColor = String(appSettings["特訓メニュー" + m + "_色"] || defaultColors[(m - 1) % defaultColors.length]).trim();
+
+      const tSheet = targetSs.getSheetByName("特訓メニュー" + m);
+      const routes = [];
+      if (tSheet) {
+        const vals = tSheet.getDataRange().getValues();
+        if (vals.length > 1) {
+          for (let r = 1; r < vals.length; r++) {
+            const row = vals[r];
+            const unitName = String(row[1] || "").trim();
+            if (!unitName) continue;
+            routes.push({
+              step: Number(row[0]) || r,
+              unit: unitName,
+              format: String(row[2] || "").trim(),
+              ansType: String(row[3] || "").trim(),
+              mode: String(row[4] || "通常").trim(),
+              fillCount: row[5] ? Number(row[5]) : null,
+              targetUsers: "全員"
+            });
+          }
+        }
+      }
+      trainingMenus.push({
+        id: m,
+        displayName: mName,
+        color: mColor,
+        enabled: mEnabled,
+        routes: routes
+      });
+    }
+
+    // 6. adminConfig & scoringConfig
+    let adminPinVal = String(appSettings["外部学習_管理者PIN"] || "303707").trim();
+    const notifyEmailsList = [
+      appSettings["通知メール_1"],
+      appSettings["通知メール_2"],
+      appSettings["通知メール_3"],
+      appSettings["通知メール_4"]
+    ].map(function (s) { return String(s || "").trim(); }).filter(Boolean);
+
+    let weights = { tome: 15, hane: 15, harai: 15, balance: 30, shape: 25 };
+    if (appSettings["漢字手書き配点"]) {
+      try {
+        weights = Object.assign(weights, JSON.parse(appSettings["漢字手書き配点"]));
+      } catch (_) {}
+    }
+
+    const scoringConfigObj = {
+      passScore: Number(appSettings["漢字手書き合格ライン"]) || 70,
+      weakBonus: Number(appSettings["ニガテ特訓ボーナス倍率"]) || 1.4,
+      randomBonus: Number(appSettings["ランダム出題ボーナス倍率"]) || 1.1,
+      tomeWeight: Number(weights.tome) || 15,
+      haneWeight: Number(weights.hane) || 15,
+      haraiWeight: Number(weights.harai) || 15,
+      balanceWeight: Number(weights.balance) || 30,
+      shapeWeight: Number(weights.shape) || 25
+    };
+
+    return {
+      status: "success",
+      sourceSpreadsheetId: targetSs.getId(),
+      sourceSpreadsheetName: targetSs.getName(),
+      data: {
+        users: parsedUsers,
+        adminConfig: {
+          adminPin: adminPinVal,
+          notifyEmails: notifyEmailsList
+        },
+        scoringConfig: scoringConfigObj,
+        trainingAdmin: {
+          menus: trainingMenus,
+          basePoints: basePointsMap
+        },
+        rewards: parsedRewards,
+        externalMenus: parsedExtMenus,
+        appSettings: appSettings
+      }
+    };
+  } catch (err) {
+    return { status: "error", message: "スプレッドシートのインポートに失敗しました: " + err.message };
+  }
 }
 

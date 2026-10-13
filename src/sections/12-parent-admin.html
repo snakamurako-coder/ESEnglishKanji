@@ -17,7 +17,7 @@
       <button type="button" class="menu-btn" style="background:#546e7a;color:#fff;" onclick="enterParentAdminSysConfig()">⚙️ アプリ詳細・配点設定</button>
       <button type="button" class="menu-btn btn-green" onclick="enterParentAdminNotify()">📧 通知メール設定</button>
       <button type="button" class="menu-btn" style="background:#00838f;color:#fff;" onclick="enterParentAdminPiperTTS()">🎙️ 高音質音声（Piper TTS）設定</button>
-      <button type="button" class="menu-btn" style="background:#6a1b9a;color:#fff;" onclick="enterParentAdminBackup()">💾 データ管理＆バックアップ（スプシ出力）</button>
+      <button type="button" class="menu-btn" style="background:#6a1b9a;color:#fff;" onclick="enterParentAdminBackup()">💾 データ管理・バックアップ・移行</button>
       <button type="button" class="cancel-btn" style="margin-top:8px;" onclick="logoutParentAdmin()">ログアウト</button>
     </div>
     <button type="button" class="cancel-btn" style="margin-top:24px;" onclick="showHome(JSON.parse(localStorage.getItem('app_kid_user')))">ホームにもどる</button>
@@ -321,22 +321,91 @@
     <button type="button" class="cancel-btn" style="margin-top:24px;" onclick="backToParentAdminHub()">管理メニューにもどる</button>
   </div>
 
-  <!-- 💾 データ管理＆バックアップ画面 -->
+  <!-- 💾 データ管理・バックアップ・移行画面 -->
   <div id="section-parent-admin-backup" class="section">
-    <h1>💾 データ管理＆バックアップ</h1>
-    <p style="max-width:460px;margin:0 auto 14px;line-height:1.6;color:#ccc;font-size:14px;">
-      Firebase版から開始した家庭でも、現在の全教材データ（英単語・英語表現・漢字・熟語）および内部設定パラメータ（ユーザー、景品、配点など）を、<b>見出し・枠線・固定行が整ったGoogleスプレッドシート群</b>としてGoogleドライブへワンクリックで一括出力できます。
+    <h1>💾 データ管理・バックアップ・移行</h1>
+    <p style="max-width:500px;margin:0 auto 16px;line-height:1.6;color:#ccc;font-size:14px;">
+      Firebase版とスプレッドシート・バックアップファイル間での<b>データ移行・バックアップ出力・完全復元</b>を行います。
     </p>
-    <div style="max-width:440px;margin:0 auto;text-align:left;background:#252538;padding:18px;border-radius:12px;border:1px solid #3d3d5c;">
-      <h3 style="margin:0 0 8px;color:#a5d6a7;font-size:15px;">📤 スプレッドシート完全バックアップ出力</h3>
-      <p style="margin:0 0 14px;font-size:12px;color:#aaa;line-height:1.5;">
-        仲介GASを呼び出し、Googleドライブ上に専用フォルダと『学習アプリ_管理ブック』『各教材ブック（4種）』を自動生成します。
+
+    <!-- セクション1: 📥 データのインポート（復元 ＆ 旧版スプシからの移行） -->
+    <div style="max-width:500px;margin:0 auto 20px;text-align:left;background:#1e1e2f;padding:18px;border-radius:12px;border:1px solid #3d3d5c;">
+      <h3 style="margin:0 0 8px;color:#80d8ff;font-size:16px;display:flex;align-items:center;gap:6px;">
+        📥 データのインポート（復元 ＆ 旧版からの移行）
+      </h3>
+      <p style="margin:0 0 14px;font-size:13px;color:#aaa;line-height:1.5;">
+        旧スプレッドシートやバックアップから、ユーザー情報・特訓メニュー・ご褒美・外部学習・採点設定をFirebase（Firestore）へ一括で移行・復元します。
       </p>
-      <button type="button" id="btn-mediator-backup" class="submit-btn btn-green" style="width:100%;margin:0;padding:12px;" onclick="triggerMediatorBackup()">
-        📤 Googleドライブへ完全バックアップを一括出力
-      </button>
-      <div id="parent-admin-backup-result" style="margin-top:14px;display:none;"></div>
+
+      <!-- 方法A: スプレッドシートからインポート（復元・移行） -->
+      <div style="background:#252538;padding:14px;border-radius:8px;border:1px solid #383852;margin-bottom:14px;">
+        <div style="font-weight:bold;color:#e0e0e0;font-size:14px;margin-bottom:6px;">
+          ① スプレッドシートから復元・移行
+        </div>
+        <div style="font-size:12px;color:#9e9e9e;margin-bottom:8px;line-height:1.4;">
+          旧版の『学習アプリ_管理ブック』または出力済みバックアップスプシのURL/IDを入力して取り込みます（空欄の場合はGAS設定済みの管理スプシを参照）。
+        </div>
+        <input type="text" id="parent-admin-import-ssid" placeholder="スプレッドシートURL または ID（空欄で現在設定のスプシ）" style="width:100%;padding:10px;background:#181824;border:1px solid #555;color:#fff;border-radius:6px;font-size:13px;box-sizing:border-box;margin-bottom:10px;">
+        <button type="button" id="btn-mediator-import-ss" class="submit-btn btn-blue" style="width:100%;margin:0;padding:10px 14px;font-size:14px;" onclick="triggerSpreadsheetImport()">
+          📥 スプレッドシートからFirestoreへ一括移行・復元
+        </button>
+      </div>
+
+      <!-- 方法B: JSONバックアップファイルから復元 -->
+      <div style="background:#252538;padding:14px;border-radius:8px;border:1px solid #383852;">
+        <div style="font-weight:bold;color:#e0e0e0;font-size:14px;margin-bottom:6px;">
+          ② バックアップJSONファイルから復元
+        </div>
+        <div style="font-size:12px;color:#9e9e9e;margin-bottom:8px;line-height:1.4;">
+          ダウンロード保存したJSONバックアップファイル（.json）を読み込んで設定・ユーザーを復元します。
+        </div>
+        <input type="file" id="parent-admin-import-file" accept=".json,application/json" style="display:none;" onchange="handleBackupJsonFileSelected(event)">
+        <button type="button" id="btn-import-json-file" class="submit-btn btn-purple" style="width:100%;margin:0;padding:10px 14px;font-size:14px;" onclick="document.getElementById('parent-admin-import-file').click()">
+          📂 バックアップJSONファイルを選択して復元
+        </button>
+      </div>
+
+      <div id="parent-admin-import-result" style="margin-top:14px;display:none;"></div>
     </div>
+
+    <!-- セクション2: 📤 データのバックアップ（エクスポート） -->
+    <div style="max-width:500px;margin:0 auto;text-align:left;background:#1e1e2f;padding:18px;border-radius:12px;border:1px solid #3d3d5c;">
+      <h3 style="margin:0 0 8px;color:#a5d6a7;font-size:16px;display:flex;align-items:center;gap:6px;">
+        📤 データのバックアップ（エクスポート）
+      </h3>
+      <p style="margin:0 0 14px;font-size:13px;color:#aaa;line-height:1.5;">
+        現在のFirebase設定・ユーザー・教材データをGoogleドライブまたはローカルJSONファイルとして保存します。
+      </p>
+
+      <!-- 方法A: Googleドライブへスプレッドシート一括出力 -->
+      <div style="background:#252538;padding:14px;border-radius:8px;border:1px solid #383852;margin-bottom:14px;">
+        <div style="font-weight:bold;color:#e0e0e0;font-size:14px;margin-bottom:6px;">
+          ① Googleドライブへスプレッドシート出力
+        </div>
+        <div style="font-size:12px;color:#9e9e9e;margin-bottom:8px;line-height:1.4;">
+          仲介GASを呼び出し、Googleドライブ上に『学習アプリ_管理ブック』および4大『教材スプレッドシート群』を見出し・枠線付きで一括生成します。
+        </div>
+        <button type="button" id="btn-mediator-backup" class="submit-btn btn-green" style="width:100%;margin:0;padding:10px 14px;font-size:14px;" onclick="triggerMediatorBackup()">
+          📤 Googleドライブへ完全バックアップを一括出力
+        </button>
+        <div id="parent-admin-backup-result" style="margin-top:10px;display:none;"></div>
+      </div>
+
+      <!-- 方法B: JSONファイルダウンロード（即時・オフライン） -->
+      <div style="background:#252538;padding:14px;border-radius:8px;border:1px solid #383852;">
+        <div style="font-weight:bold;color:#e0e0e0;font-size:14px;margin-bottom:6px;">
+          ② JSONバックアップファイルをダウンロード
+        </div>
+        <div style="font-size:12px;color:#9e9e9e;margin-bottom:8px;line-height:1.4;">
+          全設定（ユーザー、特訓、ご褒美、外部学習、採点パラメータ等）を1つのJSONファイルとして端末へ即座にダウンロード保存します。
+        </div>
+        <button type="button" id="btn-download-json-backup" class="submit-btn" style="background:#00897b;color:#fff;width:100%;margin:0;padding:10px 14px;font-size:14px;" onclick="triggerDownloadJsonBackup()">
+          💾 設定バックアップJSONをダウンロード
+        </button>
+        <div id="parent-admin-download-result" style="margin-top:10px;display:none;"></div>
+      </div>
+    </div>
+
     <button type="button" class="cancel-btn" style="margin-top:24px;" onclick="backToParentAdminHub()">管理メニューにもどる</button>
   </div>
 

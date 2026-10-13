@@ -1439,8 +1439,12 @@
   // ========================================================================
   function enterParentAdminBackup() {
     if (!switchParentAdminSection('section-parent-admin-backup')) return;
-    const resBox = document.getElementById('parent-admin-backup-result');
-    if (resBox) resBox.style.display = "none";
+    const resBoxBackup = document.getElementById('parent-admin-backup-result');
+    if (resBoxBackup) resBoxBackup.style.display = "none";
+    const resBoxImport = document.getElementById('parent-admin-import-result');
+    if (resBoxImport) resBoxImport.style.display = "none";
+    const resBoxDl = document.getElementById('parent-admin-download-result');
+    if (resBoxDl) resBoxDl.style.display = "none";
   }
 
   function triggerMediatorBackup() {
@@ -1454,17 +1458,17 @@
       .then(function (res) {
         if (resBox) {
           resBox.style.display = "block";
-          resBox.innerHTML = `<div style="background:#1b5e20;border:1px solid #4caf50;color:#e8f5e9;padding:16px;border-radius:10px;line-height:1.6;">
-            <h3 style="margin:0 0 8px 0;font-size:16px;color:#a5d6a7;">🎉 バックアップスプレッドシートを生成しました！</h3>
-            <p style="margin:0 0 12px 0;font-size:13px;">Googleドライブに見出し・書式付きで全設定・全教材ブックを出力しました。</p>
-            <a href="${escapeHtml(res.folderUrl || '#')}" target="_blank" rel="noopener noreferrer" style="display:inline-block;background:#4caf50;color:#fff;text-decoration:none;font-weight:bold;padding:10px 16px;border-radius:8px;font-size:14px;">📁 ドライブのバックアップフォルダを開く</a>
+          resBox.innerHTML = `<div style="background:#1b5e20;border:1px solid #4caf50;color:#e8f5e9;padding:14px;border-radius:10px;line-height:1.6;">
+            <h3 style="margin:0 0 6px 0;font-size:15px;color:#a5d6a7;">🎉 バックアップスプレッドシートを生成しました！</h3>
+            <p style="margin:0 0 10px 0;font-size:12px;">Googleドライブに見出し・書式付きで全設定・全教材ブックを出力しました。</p>
+            <a href="${escapeHtml(res.folderUrl || '#')}" target="_blank" rel="noopener noreferrer" style="display:inline-block;background:#4caf50;color:#fff;text-decoration:none;font-weight:bold;padding:8px 14px;border-radius:6px;font-size:13px;">📁 ドライブのバックアップフォルダを開く</a>
           </div>`;
         }
       })
       .catch(function (err) {
         if (resBox) {
           resBox.style.display = "block";
-          resBox.innerHTML = `<div style="background:#b71c1c;border:1px solid #ef5350;color:#ffebee;padding:14px;border-radius:10px;font-size:13px;">
+          resBox.innerHTML = `<div style="background:#b71c1c;border:1px solid #ef5350;color:#ffebee;padding:12px;border-radius:8px;font-size:13px;">
             ⚠️ バックアップ生成に失敗しました: ${escapeHtml(err.message)}
           </div>`;
         }
@@ -1473,6 +1477,181 @@
         if (btn && btn.isConnected) callToggleBtnLoading(btn, false, orig);
       });
   }
+
+  /**
+   * ① スプレッドシート（旧版またはバックアップ）からFirestoreへ復元・移行
+   */
+  function triggerSpreadsheetImport() {
+    const pin = getTrainingAdminPin();
+    const btn = document.getElementById('btn-mediator-import-ss');
+    const ssInput = document.getElementById('parent-admin-import-ssid');
+    const resBox = document.getElementById('parent-admin-import-result');
+    const ssIdOrUrl = ssInput ? ssInput.value.trim() : '';
+
+    const confirmMsg = ssIdOrUrl ?
+      `指定されたスプレッドシート（${ssIdOrUrl}）から設定およびユーザーデータを取り込みます。\n既存のFirebase設定やユーザー情報が上書き・復元されますが、よろしいですか？` :
+      `現在GASに設定されている管理スプレッドシートから設定およびユーザーデータを取り込みます。\n既存のFirebase設定やユーザー情報が上書き・復元されますが、よろしいですか？`;
+
+    if (!confirm(confirmMsg)) return;
+
+    const orig = btn ? callToggleBtnLoading(btn, true) : null;
+    if (resBox) resBox.style.display = "none";
+
+    global.parentAdminStore.importFromSpreadsheet(pin, ssIdOrUrl)
+      .then(function (res) {
+        if (resBox) {
+          resBox.style.display = "block";
+          const counts = res.counts || {};
+          resBox.innerHTML = `<div style="background:#1b5e20;border:1px solid #4caf50;color:#e8f5e9;padding:14px;border-radius:10px;line-height:1.6;">
+            <h3 style="margin:0 0 6px 0;font-size:15px;color:#a5d6a7;">🎉 スプレッドシートからの復元・移行が完了しました！</h3>
+            <p style="margin:0 0 8px 0;font-size:12px;color:#c8e6c9;">取込元: <b>${escapeHtml(res.sourceSpreadsheetName || '管理ブック')}</b></p>
+            <ul style="margin:0;padding-left:20px;font-size:12px;line-height:1.5;">
+              <li>ユーザー: <b>${counts.usersCount || 0}</b> 件</li>
+              <li>特訓メニュー: <b>${counts.menusCount || 0}</b> 件</li>
+              <li>ご褒美アイテム: <b>${counts.rewardsCount || 0}</b> 件</li>
+              <li>外部学習メニュー: <b>${counts.extMenusCount || 0}</b> 件</li>
+              <li>詳細設定項目: <b>${counts.settingsCount || 0}</b> 件</li>
+            </ul>
+          </div>`;
+        }
+      })
+      .catch(function (err) {
+        if (resBox) {
+          resBox.style.display = "block";
+          resBox.innerHTML = `<div style="background:#b71c1c;border:1px solid #ef5350;color:#ffebee;padding:12px;border-radius:8px;font-size:13px;">
+            ⚠️ スプレッドシート取込に失敗しました: ${escapeHtml(err.message)}
+          </div>`;
+        }
+      })
+      .finally(function () {
+        if (btn && btn.isConnected) callToggleBtnLoading(btn, false, orig);
+      });
+  }
+
+  /**
+   * ② JSONバックアップファイルのダウンロード
+   */
+  function triggerDownloadJsonBackup() {
+    const pin = getTrainingAdminPin();
+    const btn = document.getElementById('btn-download-json-backup');
+    const resBox = document.getElementById('parent-admin-download-result');
+    const orig = btn ? callToggleBtnLoading(btn, true) : null;
+    if (resBox) resBox.style.display = "none";
+
+    global.parentAdminStore.exportJsonBackup(pin)
+      .then(function (backupObj) {
+        const jsonStr = JSON.stringify(backupObj, null, 2);
+        const blob = new Blob([jsonStr], { type: "application/json;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const nowStr = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
+        const filename = `ESEnglishKanji_backup_${nowStr}.json`;
+
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        if (resBox) {
+          resBox.style.display = "block";
+          resBox.innerHTML = `<div style="background:#004d40;border:1px solid #26a69a;color:#e0f2f1;padding:10px 14px;border-radius:8px;font-size:12px;">
+            💾 <b>${escapeHtml(filename)}</b> をダウンロードしました！安全な場所に保管してください。
+          </div>`;
+        }
+      })
+      .catch(function (err) {
+        if (resBox) {
+          resBox.style.display = "block";
+          resBox.innerHTML = `<div style="background:#b71c1c;border:1px solid #ef5350;color:#ffebee;padding:10px 14px;border-radius:8px;font-size:12px;">
+            ⚠️ バックアップ作成に失敗しました: ${escapeHtml(err.message)}
+          </div>`;
+        }
+      })
+      .finally(function () {
+        if (btn && btn.isConnected) callToggleBtnLoading(btn, false, orig);
+      });
+  }
+
+  /**
+   * ③ バックアップJSONファイルを選択して復元
+   */
+  function handleBackupJsonFileSelected(event) {
+    const file = event && event.target && event.target.files && event.target.files[0];
+    if (!file) return;
+
+    const pin = getTrainingAdminPin();
+    const resBox = document.getElementById('parent-admin-import-result');
+    if (resBox) resBox.style.display = "none";
+
+    const reader = new FileReader();
+    reader.onload = function (e) {
+      try {
+        const content = e.target.result;
+        const backupData = JSON.parse(content);
+
+        const confirmMsg = `選択されたバックアップファイル（${file.name}）から設定およびユーザーデータを復元します。\n既存のFirebaseデータが上書きされますがよろしいですか？`;
+        if (!confirm(confirmMsg)) {
+          if (event.target) event.target.value = '';
+          return;
+        }
+
+        if (resBox) {
+          resBox.style.display = "block";
+          resBox.innerHTML = `<div style="background:#1a237e;border:1px solid #3f51b5;color:#e8eaf6;padding:12px;border-radius:8px;font-size:13px;">
+            ⏳ バックアップデータを復元中...少々お待ちください
+          </div>`;
+        }
+
+        global.parentAdminStore.restoreBackupData(pin, backupData)
+          .then(function (counts) {
+            if (resBox) {
+              resBox.innerHTML = `<div style="background:#1b5e20;border:1px solid #4caf50;color:#e8f5e9;padding:14px;border-radius:10px;line-height:1.6;">
+                <h3 style="margin:0 0 6px 0;font-size:15px;color:#a5d6a7;">🎉 JSONバックアップからの復元が完了しました！</h3>
+                <p style="margin:0 0 8px 0;font-size:12px;color:#c8e6c9;">ファイル名: <b>${escapeHtml(file.name)}</b></p>
+                <ul style="margin:0;padding-left:20px;font-size:12px;line-height:1.5;">
+                  <li>ユーザー: <b>${counts.usersCount || 0}</b> 件</li>
+                  <li>特訓メニュー: <b>${counts.menusCount || 0}</b> 件</li>
+                  <li>ご褒美アイテム: <b>${counts.rewardsCount || 0}</b> 件</li>
+                  <li>外部学習メニュー: <b>${counts.extMenusCount || 0}</b> 件</li>
+                  <li>詳細設定項目: <b>${counts.settingsCount || 0}</b> 件</li>
+                </ul>
+              </div>`;
+            }
+          })
+          .catch(function (err) {
+            if (resBox) {
+              resBox.innerHTML = `<div style="background:#b71c1c;border:1px solid #ef5350;color:#ffebee;padding:12px;border-radius:8px;font-size:13px;">
+                ⚠️ 復元に失敗しました: ${escapeHtml(err.message)}
+              </div>`;
+            }
+          })
+          .finally(function () {
+            if (event.target) event.target.value = '';
+          });
+      } catch (err) {
+        if (resBox) {
+          resBox.style.display = "block";
+          resBox.innerHTML = `<div style="background:#b71c1c;border:1px solid #ef5350;color:#ffebee;padding:12px;border-radius:8px;font-size:13px;">
+            ⚠️ JSONファイルの読み込み・解析に失敗しました: ${escapeHtml(err.message)}
+          </div>`;
+        }
+        if (event.target) event.target.value = '';
+      }
+    };
+    reader.onerror = function () {
+      if (resBox) {
+        resBox.style.display = "block";
+        resBox.innerHTML = `<div style="background:#b71c1c;border:1px solid #ef5350;color:#ffebee;padding:12px;border-radius:8px;font-size:13px;">
+          ⚠️ ファイルの読み取りに失敗しました
+        </div>`;
+      }
+      if (event.target) event.target.value = '';
+    };
+    reader.readAsText(file);
+  }
+
 
   function openExternalAdminApproval() { openParentAdminMenu(); }
   function openTrainingMenuAdmin() { openParentAdminMenu(); }
@@ -1540,6 +1719,9 @@
 
   global.enterParentAdminBackup = enterParentAdminBackup;
   global.triggerMediatorBackup = triggerMediatorBackup;
+  global.triggerSpreadsheetImport = triggerSpreadsheetImport;
+  global.triggerDownloadJsonBackup = triggerDownloadJsonBackup;
+  global.handleBackupJsonFileSelected = handleBackupJsonFileSelected;
   global.switchParentAdminSection = switchParentAdminSection;
 
 })(window);

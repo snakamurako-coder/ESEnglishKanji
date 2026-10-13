@@ -889,6 +889,219 @@
             reject(new Error("通信エラー: " + e.message));
           });
       });
+    },
+
+    /**
+     * 現在のFirebase設定およびユーザー・マスターデータを単一オブジェクトとしてエクスポート
+     */
+    exportJsonBackup: function (pin) {
+      var self = this;
+      return new Promise(function (resolve, reject) {
+        Promise.all([
+          self.getUsersList(pin).catch(function () { return []; }),
+          self.getTrainingAdminData(pin).catch(function () { return buildDefaultTrainingAdminData(); }),
+          self.getRewardsMaster(pin).catch(function () { return []; }),
+          self.getExternalMenusMaster().catch(function () { return []; }),
+          self.getSysConfig(pin).catch(function () {
+            return {
+              passScore: 70, weakBonus: 1.4, randomBonus: 1.1,
+              tomeWeight: 15, haneWeight: 15, haraiWeight: 15, balanceWeight: 30, shapeWeight: 25
+            };
+          }),
+          self.getNotifyEmails(pin).catch(function () { return []; }),
+          (global.appSettingsStore && typeof global.appSettingsStore.getAppSettings === 'function') ?
+            global.appSettingsStore.getAppSettings().then(function (r) { return (r && r.settings) || {}; }).catch(function () { return {}; }) :
+            Promise.resolve({})
+        ]).then(function (results) {
+          var users = results[0];
+          var trainingAdmin = results[1];
+          var rewards = results[2];
+          var externalMenus = results[3];
+          var scoringConfig = results[4];
+          var notifyEmails = results[5];
+          var appSettings = results[6];
+
+          var backupObj = {
+            version: "1.0",
+            exportedAt: new Date().toISOString(),
+            appName: "ESEnglishKanji",
+            data: {
+              users: users,
+              trainingAdmin: trainingAdmin,
+              rewards: rewards,
+              externalMenus: externalMenus,
+              scoringConfig: scoringConfig,
+              adminConfig: {
+                adminPin: pin || "303707",
+                notifyEmails: notifyEmails
+              },
+              appSettings: appSettings
+            }
+          };
+          resolve(backupObj);
+        }).catch(reject);
+      });
+    },
+
+    /**
+     * バックアップオブジェクト（JSONまたはスプレッドシート抽出データ）をFirestoreへ復元・反映
+     */
+    restoreBackupData: function (pin, rawData) {
+      var self = this;
+      return new Promise(function (resolve, reject) {
+        if (!rawData || typeof rawData !== 'object') {
+          reject(new Error("無効なバックアップデータです"));
+          return;
+        }
+
+        // バージョン付きラッパー（{ data: { ... } }）か生データかを正規化
+        var data = rawData.data || rawData;
+        var db = getDb();
+        var counts = {
+          usersCount: 0,
+          menusCount: 0,
+          rewardsCount: 0,
+          extMenusCount: 0,
+          settingsCount: 0
+        };
+
+        var promises = [];
+
+        // 1. users コレクションへの復元
+        if (Array.isArray(data.users) && data.users.length > 0) {
+          if (db) {
+            var batch = db.batch();
+            data.users.forEach(function (u) {
+              if (u && u.id) {
+                var docRef = db.collection('users').doc(String(u.id));
+                var uPayload = Object.assign({}, u, {
+                  id: String(u.id),
+                  name: String(u.name || u.id).trim(),
+                  pin: String(u.pin || "1234").trim(),
+                  points: Number(u.points) || 0,
+                  updatedAt: (typeof firebase !== 'undefined' && firebase.firestore && firebase.firestore.FieldValue) ?
+                    firebase.firestore.FieldValue.serverTimestamp() : new Date().toISOString()
+                });
+                batch.set(docRef, uPayload, { merge: true });
+                counts.usersCount++;
+              }
+            });
+            promises.push(batch.commit());
+          }
+        }
+
+        // 2. system/training_admin への復元
+        if (data.trainingAdmin && typeof data.trainingAdmin === 'object') {
+          var tAdmin = Object.assign({}, data.trainingAdmin);
+          if (Array.isArray(tAdmin.menus)) counts.menusCount = tAdmin.menus.length;
+          promises.push(saveTrainingAdminDataToFirestore(tAdmin));
+        }
+
+        // 3. system/rewards_master への復元
+        if (Array.isArray(data.rewards) && data.rewards.length > 0) {
+          counts.rewardsCount = data.rewards.length;
+          if (db) {
+            promises.push(db.collection('system').doc('rewards_master').set({
+              list: data.rewards,
+              updatedAt: (typeof firebase !== 'undefined' && firebase.firestore && firebase.firestore.FieldValue) ?
+                firebase.firestore.FieldValue.serverTimestamp() : new Date().toISOString()
+            }, { merge: true }));
+          }
+        }
+
+        // 4. system/external_menus への復元
+        if (Array.isArray(data.externalMenus) && data.externalMenus.length > 0) {
+          counts.extMenusCount = data.externalMenus.length;
+          if (db) {
+            promises.push(db.collection('system').doc('external_menus').set({
+              list: data.externalMenus,
+              updatedAt: (typeof firebase !== 'undefined' && firebase.firestore && firebase.firestore.FieldValue) ?
+                firebase.firestore.FieldValue.serverTimestamp() : new Date().toISOString()
+            }, { merge: true }));
+          }
+        }
+
+        // 5. system/scoring_config への復元
+        if (data.scoringConfig && typeof data.scoringConfig === 'object') {
+          promises.push(self.saveSysConfig(pin, data.scoringConfig));
+          counts.settingsCount++;
+        }
+
+        // 6. system/admin_config (notifyEmails, adminPin) への復元
+        if (data.adminConfig && typeof data.adminConfig === 'object') {
+          var adminPatch = {};
+          if (Array.isArray(data.adminConfig.notifyEmails)) {
+            adminPatch.notifyEmails = data.adminConfig.notifyEmails;
+          }
+          if (data.adminConfig.adminPin) {
+            adminPatch.adminPin = String(data.adminConfig.adminPin).trim();
+          }
+          if (db && Object.keys(adminPatch).length > 0) {
+            adminPatch.updatedAt = (typeof firebase !== 'undefined' && firebase.firestore && firebase.firestore.FieldValue) ?
+              firebase.firestore.FieldValue.serverTimestamp() : new Date().toISOString();
+            promises.push(db.collection('system').doc('admin_config').set(adminPatch, { merge: true }));
+          }
+        }
+
+        // 7. system/app_settings への復元
+        if (data.appSettings && typeof data.appSettings === 'object') {
+          if (global.appSettingsStore && typeof global.appSettingsStore.saveAppSettings === 'function') {
+            promises.push(global.appSettingsStore.saveAppSettings(data.appSettings));
+            counts.settingsCount += Object.keys(data.appSettings).length;
+          }
+        }
+
+        Promise.all(promises).then(function () {
+          resolve(counts);
+        }).catch(reject);
+      });
+    },
+
+    /**
+     * スプレッドシート（URLまたはID）からGAS API経由でデータを取得し、Firestoreへ一括インポート・復元
+     */
+    importFromSpreadsheet: function (pin, spreadsheetIdOrUrl) {
+      var self = this;
+      return new Promise(function (resolve, reject) {
+        var gasUrl = getGasUrl();
+        if (!gasUrl) {
+          reject(new Error("GAS_API_URLが設定されていません"));
+          return;
+        }
+
+        var cleanTarget = String(spreadsheetIdOrUrl || "").trim();
+        fetch(gasUrl, {
+          method: 'POST',
+          body: JSON.stringify({
+            action: 'import_full_config',
+            adminPin: pin,
+            spreadsheetId: cleanTarget
+          })
+        })
+          .then(function (r) { return r.json(); })
+          .then(function (resp) {
+            if (!resp || resp.status !== 'success') {
+              reject(new Error((resp && resp.message) || 'スプレッドシートのインポートに失敗しました'));
+              return;
+            }
+            if (!resp.data) {
+              reject(new Error('スプレッドシートから有効なデータを取得できませんでした'));
+              return;
+            }
+
+            self.restoreBackupData(pin, resp.data).then(function (counts) {
+              resolve({
+                status: 'success',
+                sourceSpreadsheetName: resp.sourceSpreadsheetName || '学習アプリ_管理ブック',
+                sourceSpreadsheetId: resp.sourceSpreadsheetId || '',
+                counts: counts
+              });
+            }).catch(reject);
+          })
+          .catch(function (e) {
+            reject(new Error("通信エラー: " + e.message));
+          });
+      });
     }
   };
 
