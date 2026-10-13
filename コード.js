@@ -949,6 +949,7 @@ function doPost(e) {
     else if (action === "run_migrate_once") return handleRunMigrateOnce(requestData);
     else if (action === "export_full_backup" || action === "backup_spreadsheets") return handleExportFullBackupAdmin(requestData);
     else if (action === "import_full_config" || action === "fetch_backup_spreadsheet_data") return handleImportFullConfigAdmin(requestData);
+    else if (action === "export_all" || action === "export_manifest_all") return handleExportAllMaterialsAdmin(requestData);
     
     else return sendResponse({ status: "error", message: "無効なactionです" });
   } catch (error) {
@@ -5241,5 +5242,150 @@ function handleImportFullConfigAdmin(req) {
     });
   } catch (err) {
     return sendResponse({ status: "error", message: "スプレッドシートのインポートに失敗しました: " + err.message });
+  }
+}
+
+/**
+ * ============================================================================
+ * 【教材マニフェスト抽出】Google Drive上の教材を走査して完全マニフェストを一括出力
+ * ============================================================================
+ */
+function computeContentHashAdmin_(data) {
+  const jsonStr = typeof data === 'string' ? data : JSON.stringify(data);
+  const rawHash = Utilities.computeDigest(
+    Utilities.DigestAlgorithm.SHA_256,
+    jsonStr,
+    Utilities.Charset.UTF_8
+  );
+  let hashHex = '';
+  for (let i = 0; i < rawHash.length; i++) {
+    const byte = rawHash[i];
+    const hex = (byte < 0 ? byte + 256 : byte).toString(16);
+    hashHex += (hex.length === 1 ? '0' : '') + hex;
+  }
+  return hashHex.substring(0, 16);
+}
+
+function handleExportAllMaterialsAdmin(req) {
+  try {
+    const pin = String((req && req.adminPin) || "").trim();
+    if (pin && !verifyAdminPin_(pin)) {
+      return sendResponse({ status: "error", message: "管理者PINが一致しません" });
+    }
+
+    const materialsList = getMaterialsList_();
+    if (!materialsList || materialsList.length === 0) {
+      return sendResponse({ status: "error", message: "教材スプレッドシートが見つかりません。MATERIALS_FOLDER_IDを確認してください。" });
+    }
+
+    const booksData = {};
+    const booksMeta = {};
+    const now = new Date().toISOString();
+
+    for (let b = 0; b < materialsList.length; b++) {
+      const book = materialsList[b];
+      const modeId = book.modeId;
+      const category = book.category || 'english';
+      const units = book.units || [];
+      const bookUnits = {};
+
+      let ss = null;
+      try { ss = SpreadsheetApp.openById(modeId); } catch (_) {}
+      if (!ss) continue;
+
+      for (let u = 0; u < units.length; u++) {
+        const unitName = units[u];
+        if (category === 'english') {
+          const sheet = ss.getSheetByName(unitName);
+          if (sheet) {
+            const vals = sheet.getDataRange().getValues();
+            if (vals.length > 1) {
+              const headers = vals[0];
+              const qList = [];
+              for (let r = 1; r < vals.length; r++) {
+                const qObj = {};
+                for (let c = 0; c < headers.length; c++) qObj[headers[c]] = vals[r][c];
+                if (qObj["通し番号"]) qList.push(qObj);
+              }
+              bookUnits[unitName] = qList;
+            }
+          }
+        } else if (category === 'kanji') {
+          try {
+            const got = getKanjiQuizParsedFromSpreadsheet_(modeId, unitName);
+            if (!got.sheetMissing && got.parsed) {
+              const parsed = got.parsed;
+              const sheetKind = parsed.sheetKind || 'standard';
+              const sets = parsed.groups.map(function (g) {
+                if (sheetKind === 'jukugo') {
+                  const rowSeen = {};
+                  let rowCount = 0;
+                  (g.entries || []).forEach(function (e) {
+                    const rk = String(e.rowIndex);
+                    if (rowSeen[rk]) return;
+                    rowSeen[rk] = true;
+                    rowCount++;
+                  });
+                  const kanjiList = Array.isArray(g.targetKanjiList) && g.targetKanjiList.length
+                    ? g.targetKanjiList.slice()
+                    : [g.targetKanji].filter(Boolean);
+                  return { setId: g.setId, count: rowCount, kanjiList: kanjiList };
+                }
+                return { setId: g.setId, count: g.items.length, kanjiList: g.items.map(function (it) { return it.kanji; }) };
+              });
+
+              const setQuestions = {};
+              for (let sIdx = 0; sIdx < parsed.groups.length; sIdx++) {
+                const group = parsed.groups[sIdx];
+                const sid = String(group.setId);
+                if (sheetKind === 'jukugo') {
+                  setQuestions[sid] = buildJukugoQuizProblemList_(group, { choiceCount: 4, includeNoneOption: false });
+                } else {
+                  setQuestions[sid] = buildKanjiQuizProblemList_(group);
+                }
+              }
+
+              bookUnits[unitName] = {
+                sheetKind: sheetKind,
+                sets: sets,
+                setQuestions: setQuestions
+              };
+            }
+          } catch (_) {}
+        }
+      }
+
+      const bookHash = computeContentHashAdmin_(bookUnits);
+      booksData[modeId] = {
+        modeId: modeId,
+        modeName: book.modeName,
+        category: category,
+        hash: bookHash,
+        units: bookUnits,
+        exportedAt: now
+      };
+
+      booksMeta[modeId] = {
+        modeName: book.modeName,
+        category: category,
+        hash: bookHash,
+        path: "data/books/" + modeId + "." + bookHash + ".json",
+        units: Object.keys(bookUnits)
+      };
+    }
+
+    const materialsHash = computeContentHashAdmin_(materialsList);
+
+    return sendResponse({
+      status: "success",
+      schemaVersion: 1,
+      exportedAt: now,
+      materials: materialsList,
+      materialsHash: materialsHash,
+      booksMeta: booksMeta,
+      booksData: booksData
+    });
+  } catch (err) {
+    return sendResponse({ status: "error", message: "教材マニフェスト出力に失敗しました: " + err.message });
   }
 }

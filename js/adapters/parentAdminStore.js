@@ -1102,6 +1102,71 @@
             reject(new Error("通信エラー: " + e.message));
           });
       });
+    },
+
+    /**
+     * 現在の教材マニフェスト状態（インデックス）を取得
+     */
+    getMaterialsStatus: function () {
+      if (global.ESManifestCache && typeof global.ESManifestCache.fetchRemoteIndex === 'function') {
+        return global.ESManifestCache.fetchRemoteIndex().then(function (idx) {
+          if (!idx) return { ready: false, booksCount: 0, exportedAt: null };
+          var books = (idx.books && typeof idx.books === 'object') ? Object.keys(idx.books).length : 0;
+          return {
+            ready: true,
+            booksCount: books,
+            materialsCount: (idx.materials && idx.materials.count) || books,
+            exportedAt: idx.exportedAt || null,
+            materialsHash: (idx.materials && idx.materials.hash) || null,
+            booksMeta: idx.books || {}
+          };
+        }).catch(function () {
+          return { ready: false, booksCount: 0, exportedAt: null };
+        });
+      }
+      return Promise.resolve({ ready: false, booksCount: 0, exportedAt: null });
+    },
+
+    /**
+     * Google Drive上のスプレッドシートから最新教材データを抽出し、Firebase (Firestore & キャッシュ) を更新
+     */
+    updateMaterialsData: function (pin, customUrl) {
+      return new Promise(function (resolve, reject) {
+        var DEFAULT_MEDIATOR_URL = 'https://script.google.com/macros/s/AKfycbxFDQaZj3Jn3SVNF2s2WD4DvwjbHthP8mToqWOqTGV4M5IHDJKsajnrJ20BJpj898u9uw/exec';
+        var targetUrl = (customUrl && String(customUrl).trim()) || DEFAULT_MEDIATOR_URL || getGasUrl();
+
+        if (!targetUrl) {
+          reject(new Error("教材連携APIのURLが設定されていません"));
+          return;
+        }
+
+        fetch(targetUrl, {
+          method: 'POST',
+          body: JSON.stringify({ action: 'export_all', adminPin: pin })
+        })
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            if (!data || data.status !== 'success') {
+              reject(new Error((data && data.message) || '教材データの取得に失敗しました'));
+              return;
+            }
+
+            if (!global.ESManifestCache || typeof global.ESManifestCache.applyManifestUpdate !== 'function') {
+              reject(new Error('マニフェストキャッシュ層が初期化されていません'));
+              return;
+            }
+
+            global.ESManifestCache.applyManifestUpdate(data).then(function (res) {
+              resolve(Object.assign({}, res, {
+                materialsList: data.materials || [],
+                booksMeta: data.booksMeta || {}
+              }));
+            }).catch(reject);
+          })
+          .catch(function (e) {
+            reject(new Error("通信エラー: " + e.message));
+          });
+      });
     }
   };
 

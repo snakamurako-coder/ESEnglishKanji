@@ -76,30 +76,62 @@
     });
   }
 
+  function getFirestoreDb_() {
+    return (typeof global.getFirestoreDb === 'function') ? global.getFirestoreDb() : (global.firebaseDb || null);
+  }
+
   /**
-   * サーバーから最新の軽量インデックスを取得（no-cache）
+   * サーバーから最新の軽量インデックスを取得（Firestore または 静的JSON、no-cache）
    */
   function fetchRemoteIndex() {
     if (remoteIndex_) return Promise.resolve(remoteIndex_);
-    return fetch('/data/manifest-index.json', { cache: 'no-store' })
+
+    // 1. Firestore からの取得を試みる
+    const db = getFirestoreDb_();
+    const fetchFromFirestore = db ?
+      db.collection('system').doc('manifest_index').get().then(function (doc) {
+        if (doc.exists) {
+          const d = doc.data();
+          if (d && d.materials && d.books) return d;
+        }
+        return null;
+      }).catch(function () { return null; }) :
+      Promise.resolve(null);
+
+    // 2. 静的ファイル (/data/manifest-index.json) からの取得
+    const fetchFromStatic = fetch('/data/manifest-index.json', { cache: 'no-store' })
       .then(function (res) {
         if (!res.ok) return null;
         return res.json();
       })
-      .then(function (idx) {
-        if (idx && typeof idx === 'object') {
-          remoteIndex_ = idx;
-          idbPut(STORE_META, { key: 'index', data: idx, savedAt: Date.now() });
-        }
+      .catch(function () { return null; });
+
+    return Promise.all([fetchFromFirestore, fetchFromStatic]).then(function (results) {
+      const fsIdx = results[0];
+      const staticIdx = results[1];
+
+      // より新しいインデックス（または存在する方）を採用
+      let chosen = null;
+      if (fsIdx && staticIdx) {
+        const fsTime = new Date(fsIdx.exportedAt || 0).getTime();
+        const staticTime = new Date(staticIdx.exportedAt || 0).getTime();
+        chosen = fsTime >= staticTime ? fsIdx : staticIdx;
+      } else {
+        chosen = fsIdx || staticIdx;
+      }
+
+      if (chosen && typeof chosen === 'object') {
+        remoteIndex_ = chosen;
+        idbPut(STORE_META, { key: 'index', data: chosen, savedAt: Date.now() });
         return remoteIndex_;
-      })
-      .catch(function () {
-        // オフラインまたは取得失敗時は IndexedDB の保存済みインデックスを使用
-        return idbGet(STORE_META, 'index').then(function (cached) {
-          remoteIndex_ = (cached && cached.data) || null;
-          return remoteIndex_;
-        });
+      }
+
+      // オフラインまたは取得失敗時は IndexedDB の保存済みインデックスを使用
+      return idbGet(STORE_META, 'index').then(function (cached) {
+        remoteIndex_ = (cached && cached.data) || null;
+        return remoteIndex_;
       });
+    });
   }
 
   /**
@@ -179,6 +211,22 @@
             return null;
           })
           .catch(function () {
+            // 静的ファイルが未配置の場合、Firestore の system/manifest_book_{modeId} を確認
+            const db = getFirestoreDb_();
+            if (db) {
+              return db.collection('system').doc('manifest_book_' + modeId).get().then(function (doc) {
+                if (doc.exists) {
+                  const d = doc.data();
+                  if (d && d.units) {
+                    idbPut(STORE_BOOKS, Object.assign({ modeId: modeId, hash: expectedHash }, d));
+                    return d;
+                  }
+                }
+                return (cached && cached.units) ? cached : null;
+              }).catch(function () {
+                return (cached && cached.units) ? cached : null;
+              });
+            }
             return (cached && cached.units) ? cached : null;
           });
       });
@@ -231,6 +279,72 @@
     });
   }
 
+  /**
+   * 教材マニフェストの最新化（Firestore & IndexedDB 同期）
+   * @param {Object} manifestData { exportedAt, materials, materialsHash, booksMeta, booksData }
+   */
+  function applyManifestUpdate(manifestData) {
+    if (!manifestData || !manifestData.materials || !manifestData.booksMeta) {
+      return Promise.reject(new Error('不正なマニフェストデータです'));
+    }
+
+    const indexData = {
+      schemaVersion: 1,
+      exportedAt: manifestData.exportedAt || new Date().toISOString(),
+      materials: {
+        hash: manifestData.materialsHash,
+        path: `data/manifest-materials.${manifestData.materialsHash}.json`,
+        count: Array.isArray(manifestData.materials) ? manifestData.materials.length : 0
+      },
+      books: manifestData.booksMeta
+    };
+
+    const promises = [];
+    const db = getFirestoreDb_();
+
+    // 1. Firestore への保存
+    if (db) {
+      promises.push(db.collection('system').doc('manifest_index').set(indexData, { merge: true }));
+      promises.push(db.collection('system').doc('manifest_materials').set({
+        status: 'success',
+        hash: manifestData.materialsHash,
+        materials: manifestData.materials,
+        exportedAt: indexData.exportedAt
+      }, { merge: true }));
+      if (manifestData.booksData) {
+        Object.keys(manifestData.booksData).forEach(function (mId) {
+          const bData = manifestData.booksData[mId];
+          promises.push(db.collection('system').doc('manifest_book_' + mId).set(bData, { merge: true }));
+        });
+      }
+    }
+
+    // 2. IndexedDB への即時保存
+    promises.push(idbPut(STORE_META, { key: 'index', data: indexData, savedAt: Date.now() }));
+    promises.push(idbPut(STORE_MATERIALS, {
+      key: 'materials',
+      hash: manifestData.materialsHash,
+      materials: manifestData.materials,
+      updatedAt: Date.now()
+    }));
+    if (manifestData.booksData) {
+      Object.keys(manifestData.booksData).forEach(function (mId) {
+        const b = manifestData.booksData[mId];
+        promises.push(idbPut(STORE_BOOKS, Object.assign({ modeId: mId, hash: b.hash }, b)));
+      });
+    }
+
+    return Promise.all(promises).then(function () {
+      remoteIndex_ = indexData;
+      return {
+        status: 'success',
+        exportedAt: indexData.exportedAt,
+        materialsCount: indexData.materials.count,
+        booksCount: Object.keys(manifestData.booksMeta || {}).length
+      };
+    });
+  }
+
   // グローバル公開
   global.ESManifestCache = {
     init: openDb,
@@ -238,7 +352,8 @@
     getMaterialsList: getMaterialsList,
     getEnglishQuestions: getEnglishQuestions,
     getKanjiQuizSets: getKanjiQuizSets,
-    getKanjiQuizQuestions: getKanjiQuizQuestions
+    getKanjiQuizQuestions: getKanjiQuizQuestions,
+    applyManifestUpdate: applyManifestUpdate
   };
 
   // ページロード時に先行初期化とインデックス照合
@@ -251,3 +366,4 @@
   }
 
 })(typeof window !== 'undefined' ? window : this);
+

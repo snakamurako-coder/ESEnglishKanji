@@ -17,6 +17,7 @@
       <button type="button" class="menu-btn" style="background:#546e7a;color:#fff;" onclick="enterParentAdminSysConfig()">⚙️ アプリ詳細・配点設定</button>
       <button type="button" class="menu-btn btn-green" onclick="enterParentAdminNotify()">📧 通知メール設定</button>
       <button type="button" class="menu-btn" style="background:#00838f;color:#fff;" onclick="enterParentAdminPiperTTS()">🎙️ 高音質音声（Piper TTS）設定</button>
+      <button type="button" class="menu-btn" style="background:#1565c0;color:#fff;" onclick="enterParentAdminMaterialsUpdate()">📚 教材データ更新（マニフェスト最新化）</button>
       <button type="button" class="menu-btn" style="background:#6a1b9a;color:#fff;" onclick="enterParentAdminBackup()">💾 データ管理・バックアップ・移行</button>
       <button type="button" class="cancel-btn" style="margin-top:8px;" onclick="logoutParentAdmin()">ログアウト</button>
     </div>
@@ -404,6 +405,47 @@
         </button>
         <div id="parent-admin-download-result" style="margin-top:10px;display:none;"></div>
       </div>
+    </div>
+
+    <button type="button" class="cancel-btn" style="margin-top:24px;" onclick="backToParentAdminHub()">管理メニューにもどる</button>
+  </div>
+
+  <!-- 📚 教材データ更新（マニフェスト最新化）画面 -->
+  <div id="section-parent-admin-materials-update" class="section">
+    <h1>📚 教材データ更新</h1>
+    <p style="max-width:500px;margin:0 auto 16px;line-height:1.6;color:#ccc;font-size:14px;">
+      Googleドライブ上の教材フォルダ（英語・漢字スプレッドシート群）を走査し、最新の問題・単元データを<b>Firebase（Firestore & 端末キャッシュ）</b>へワンクリックで反映します。
+    </p>
+
+    <!-- カード1: 現在の教材ステータス -->
+    <div style="max-width:500px;margin:0 auto 16px;text-align:left;background:#1e1e2f;padding:18px;border-radius:12px;border:1px solid #3d3d5c;">
+      <h3 style="margin:0 0 10px;color:#81c784;font-size:15px;display:flex;align-items:center;gap:6px;">
+        📊 現在の教材マニフェスト状態
+      </h3>
+      <div id="parent-admin-materials-status-box" style="background:#252538;padding:12px;border-radius:8px;border:1px solid #383852;">
+        <div style="color:#aaa;font-size:13px;">ステータスを確認中...</div>
+      </div>
+    </div>
+
+    <!-- カード2: 教材データの更新実行 -->
+    <div style="max-width:500px;margin:0 auto;text-align:left;background:#1e1e2f;padding:18px;border-radius:12px;border:1px solid #3d3d5c;">
+      <h3 style="margin:0 0 8px;color:#80d8ff;font-size:15px;display:flex;align-items:center;gap:6px;">
+        🚀 最新教材の作成＆Firebase反映
+      </h3>
+      <p style="margin:0 0 14px;font-size:13px;color:#aaa;line-height:1.5;">
+        Googleドライブ上の英語・漢字教材スプレッドシートの全ブック・全単元を走査し、ハッシュ付きマニフェストを自動生成してFirestoreおよび端末IndexedDBへ即座に書き込みます。
+      </p>
+
+      <div style="margin-bottom:12px;">
+        <label style="display:block;color:#bbb;font-size:12px;margin-bottom:4px;">教材連携API URL (空欄で標準の仲介GASを使用)</label>
+        <input type="text" id="parent-admin-materials-gas-url" placeholder="https://script.google.com/macros/s/.../exec" style="width:100%;padding:10px;background:#181824;border:1px solid #555;color:#fff;border-radius:6px;font-size:12px;box-sizing:border-box;">
+      </div>
+
+      <button type="button" id="btn-update-materials-data" class="submit-btn btn-blue" style="width:100%;margin:0;padding:12px;font-size:14px;" onclick="triggerUpdateMaterialsData()">
+        🚀 Googleドライブから最新教材データを取得して更新
+      </button>
+
+      <div id="parent-admin-materials-update-result" style="margin-top:14px;display:none;"></div>
     </div>
 
     <button type="button" class="cancel-btn" style="margin-top:24px;" onclick="backToParentAdminHub()">管理メニューにもどる</button>

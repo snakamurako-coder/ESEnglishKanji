@@ -1653,6 +1653,119 @@
   }
 
 
+  // ========================================================================
+  // 6. 📚 教材データ更新（マニフェスト最新化）連携
+  // ========================================================================
+  function enterParentAdminMaterialsUpdate() {
+    if (!switchParentAdminSection('section-parent-admin-materials-update')) return;
+    const resBox = document.getElementById('parent-admin-materials-update-result');
+    if (resBox) resBox.style.display = 'none';
+    loadMaterialsUpdateStatus();
+  }
+
+  function loadMaterialsUpdateStatus() {
+    const statusBox = document.getElementById('parent-admin-materials-status-box');
+    if (!statusBox) return;
+
+    statusBox.innerHTML = '<div style="color:#aaa;font-size:13px;">ステータスを確認中...</div>';
+
+    global.parentAdminStore.getMaterialsStatus()
+      .then(function (st) {
+        if (!st || !st.ready) {
+          statusBox.innerHTML = `<div style="color:#ffb74d;font-size:13px;line-height:1.5;">
+            ⚠️ 教材マニフェストがまだ登録されていません。「教材データを更新」を実行すると最新データが作成されます。
+          </div>`;
+          return;
+        }
+
+        const dateStr = st.exportedAt ? new Date(st.exportedAt).toLocaleString('ja-JP') : '不明';
+        const booksCount = st.booksCount || 0;
+        const hashStr = st.materialsHash ? st.materialsHash.slice(0, 10) + '...' : '-';
+
+        let booksListHtml = '';
+        if (st.booksMeta && typeof st.booksMeta === 'object') {
+          const names = Object.values(st.booksMeta).map(function (b) {
+            return `・${escapeHtml(b.modeName || '')} (${(b.units || []).length}単元)`;
+          });
+          booksListHtml = `<div style="margin-top:6px;font-size:12px;color:#bdbdbd;line-height:1.4;">${names.join('<br>')}</div>`;
+        }
+
+        statusBox.innerHTML = `
+          <div style="font-size:13px;line-height:1.6;color:#e0e0e0;">
+            <div>最終更新日時: <b style="color:#81c784;">${escapeHtml(dateStr)}</b></div>
+            <div>登録教材数: <b style="color:#64b5f6;">${booksCount}</b> 冊</div>
+            <div>マニフェストハッシュ: <code style="background:#181824;padding:2px 6px;border-radius:4px;color:#ffcc80;">${escapeHtml(hashStr)}</code></div>
+            ${booksListHtml}
+          </div>
+        `;
+      })
+      .catch(function () {
+        statusBox.innerHTML = '<div style="color:#ef5350;font-size:13px;">ステータスの取得に失敗しました</div>';
+      });
+  }
+
+  function triggerUpdateMaterialsData() {
+    const pin = getTrainingAdminPin();
+    const btn = document.getElementById('btn-update-materials-data');
+    const customUrlInput = document.getElementById('parent-admin-materials-gas-url');
+    const resBox = document.getElementById('parent-admin-materials-update-result');
+    const customUrl = customUrlInput ? customUrlInput.value.trim() : '';
+
+    if (!confirm('Googleドライブ上の教材スプレッドシートを走査し、最新版の教材データをFirebase（Firestore & キャッシュ）へ反映します。\nよろしいですか？（10〜20秒ほどかかります）')) {
+      return;
+    }
+
+    const orig = btn ? callToggleBtnLoading(btn, true) : null;
+    if (resBox) {
+      resBox.style.display = 'block';
+      resBox.innerHTML = `<div style="background:#1a237e;border:1px solid #3f51b5;color:#e8eaf6;padding:12px;border-radius:8px;font-size:13px;">
+        ⏳ Googleドライブ上の教材を走査・検証中...（しばらくお待ちください）
+      </div>`;
+    }
+
+    global.parentAdminStore.updateMaterialsData(pin, customUrl)
+      .then(function (res) {
+        if (resBox) {
+          const mats = res.materialsList || [];
+          const booksCount = res.booksCount || mats.length;
+          const dateStr = res.exportedAt ? new Date(res.exportedAt).toLocaleString('ja-JP') : '';
+
+          let bookDetails = '';
+          if (mats.length > 0) {
+            bookDetails = mats.map(function (m) {
+              const uCount = Array.isArray(m.units) ? m.units.length : 0;
+              const catLabel = m.category === 'english' ? '🇬🇧 英語' : '🇯🇵 漢字';
+              return `<li>[${catLabel}] <b>${escapeHtml(m.modeName)}</b>: ${uCount} 単元</li>`;
+            }).join('');
+          }
+
+          resBox.innerHTML = `<div style="background:#1b5e20;border:1px solid #4caf50;color:#e8f5e9;padding:14px;border-radius:10px;line-height:1.6;">
+            <h3 style="margin:0 0 6px 0;font-size:15px;color:#a5d6a7;">🎉 教材データの更新が完了しました！</h3>
+            <p style="margin:0 0 8px 0;font-size:12px;color:#c8e6c9;">
+              更新日時: <b>${escapeHtml(dateStr)}</b> ／ 教材ブック: <b>${booksCount}</b> 冊
+            </p>
+            <ul style="margin:0;padding-left:20px;font-size:12px;line-height:1.5;">
+              ${bookDetails}
+            </ul>
+            <p style="margin:8px 0 0 0;font-size:12px;color:#a5d6a7;">
+              ✨ 最新の英語・漢字教材がFirebaseおよび端末キャッシュへ即座に反映されました。
+            </p>
+          </div>`;
+        }
+        loadMaterialsUpdateStatus();
+      })
+      .catch(function (err) {
+        if (resBox) {
+          resBox.innerHTML = `<div style="background:#b71c1c;border:1px solid #ef5350;color:#ffebee;padding:12px;border-radius:8px;font-size:13px;">
+            ⚠️ 教材データの更新に失敗しました: ${escapeHtml(err.message)}
+          </div>`;
+        }
+      })
+      .finally(function () {
+        if (btn && btn.isConnected) callToggleBtnLoading(btn, false, orig);
+      });
+  }
+
   function openExternalAdminApproval() { openParentAdminMenu(); }
   function openTrainingMenuAdmin() { openParentAdminMenu(); }
 
@@ -1722,6 +1835,11 @@
   global.triggerSpreadsheetImport = triggerSpreadsheetImport;
   global.triggerDownloadJsonBackup = triggerDownloadJsonBackup;
   global.handleBackupJsonFileSelected = handleBackupJsonFileSelected;
+
+  global.enterParentAdminMaterialsUpdate = enterParentAdminMaterialsUpdate;
+  global.triggerUpdateMaterialsData = triggerUpdateMaterialsData;
+  global.loadMaterialsUpdateStatus = loadMaterialsUpdateStatus;
+
   global.switchParentAdminSection = switchParentAdminSection;
 
 })(window);
