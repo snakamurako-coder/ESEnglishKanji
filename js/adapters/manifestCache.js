@@ -98,8 +98,16 @@
       }).catch(function () { return null; }) :
       Promise.resolve(null);
 
-    // 2. 静的ファイル (/data/manifest-index.json) からの取得
-    const fetchFromStatic = fetch('/data/manifest-index.json', { cache: 'no-store' })
+    // パスを相対パスまたはベースURL考慮で正規化
+    function normalizeDataPath_(p) {
+      if (!p) return null;
+      let s = String(p).trim();
+      if (s.startsWith('/')) s = s.slice(1);
+      return s;
+    }
+
+    // 2. 静的ファイル (data/manifest-index.json) からの取得
+    const fetchFromStatic = fetch(normalizeDataPath_('data/manifest-index.json'), { cache: 'no-store' })
       .then(function (res) {
         if (!res.ok) return null;
         return res.json();
@@ -135,64 +143,86 @@
   }
 
   /**
-   * 教材一覧（英語・漢字ブック一覧）をマニフェストキャッシュから取得
+   * 教材一覧（英語・漢字ブック一覧）をマニフェストキャッシュから取得（GAS通信ゼロ）
    */
-  function getMaterialsList(fallbackGasFn) {
+  function getMaterialsList() {
     return fetchRemoteIndex().then(function (index) {
-      if (!index || !index.materials || !index.materials.hash) {
-        if (typeof fallbackGasFn === 'function') return fallbackGasFn();
-        return null;
-      }
-
-      const expectedHash = index.materials.hash;
-      const dataPath = index.materials.path || ('/data/manifest-materials.' + expectedHash + '.json');
+      const expectedHash = (index && index.materials && index.materials.hash) || '';
+      const rawPath = (index && index.materials && index.materials.path) || (expectedHash ? ('data/manifest-materials.' + expectedHash + '.json') : 'data/manifest-materials.json');
+      const dataPath = rawPath ? (rawPath.startsWith('/') ? rawPath.slice(1) : rawPath) : null;
 
       return idbGet(STORE_MATERIALS, 'materials').then(function (cached) {
-        if (cached && cached.hash === expectedHash && Array.isArray(cached.materials)) {
+        if (cached && (!expectedHash || cached.hash === expectedHash) && Array.isArray(cached.materials)) {
           // Cache Hit: 通信ゼロ・即時返却
           return { status: 'success', materials: cached.materials, fromCache: true };
         }
 
-        // Cache Miss / 新バージョン: 静的JSONを取得
-        return fetch(dataPath)
-          .then(function (res) {
-            if (!res.ok) throw new Error('Failed to load materials manifest');
-            return res.json();
-          })
-          .then(function (payload) {
-            if (payload && payload.status === 'success' && Array.isArray(payload.materials)) {
-              idbPut(STORE_MATERIALS, {
-                key: 'materials',
-                hash: expectedHash,
-                materials: payload.materials,
-                updatedAt: Date.now()
-              });
-              return payload;
-            }
-            throw new Error('Invalid materials payload');
-          })
-          .catch(function () {
-            // エラー時は保存済みキャッシュがあればそれ、無ければ GAS フォールバック
-            if (cached && cached.materials) {
-              return { status: 'success', materials: cached.materials, fromCache: true };
-            }
-            if (typeof fallbackGasFn === 'function') return fallbackGasFn();
-            return null;
-          });
+        // Cache Miss / 新バージョン: 静的JSONまたはFirestoreを取得
+        const fetchStaticPromise = dataPath
+          ? fetch(dataPath)
+              .then(function (res) {
+                if (!res.ok) throw new Error('Failed to load materials manifest');
+                return res.json();
+              })
+              .then(function (payload) {
+                if (payload && payload.status === 'success' && Array.isArray(payload.materials)) {
+                  idbPut(STORE_MATERIALS, {
+                    key: 'materials',
+                    hash: expectedHash || payload.hash || '',
+                    materials: payload.materials,
+                    updatedAt: Date.now()
+                  });
+                  return payload;
+                }
+                throw new Error('Invalid materials payload');
+              })
+          : Promise.reject(new Error('No static path'));
+
+        return fetchStaticPromise.catch(function () {
+          // 静的ファイルが未配置の場合、Firestore の system/manifest_materials を確認
+          const db = getFirestoreDb_();
+          if (db) {
+            return db.collection('system').doc('manifest_materials').get().then(function (doc) {
+              if (doc.exists && doc.data() && Array.isArray(doc.data().materials)) {
+                const mats = doc.data().materials;
+                idbPut(STORE_MATERIALS, {
+                  key: 'materials',
+                  hash: expectedHash || (doc.data().hash || ''),
+                  materials: mats,
+                  updatedAt: Date.now()
+                });
+                return { status: 'success', materials: mats, fromCache: true };
+              }
+              if (cached && cached.materials) {
+                return { status: 'success', materials: cached.materials, fromCache: true };
+              }
+              return { status: 'success', materials: [], fromCache: false };
+            }).catch(function () {
+              if (cached && cached.materials) {
+                return { status: 'success', materials: cached.materials, fromCache: true };
+              }
+              return { status: 'success', materials: [], fromCache: false };
+            });
+          }
+          if (cached && cached.materials) {
+            return { status: 'success', materials: cached.materials, fromCache: true };
+          }
+          return { status: 'success', materials: [], fromCache: false };
+        });
       });
     });
   }
 
   /**
-   * 特定のブックの全データを取得（英語または漢字）
+   * 特定のブックの全データを取得（英語または漢字、GAS通信ゼロ）
    */
   function getBookPayload(modeId) {
+    if (!modeId) return Promise.resolve(null);
     return fetchRemoteIndex().then(function (index) {
-      if (!index || !index.books || !index.books[modeId]) return null;
-      const bMeta = index.books[modeId];
-      const expectedHash = bMeta.hash;
-      const rawPath = bMeta.path || (expectedHash ? ('data/books/' + modeId + '.' + expectedHash + '.json') : null);
-      const dataPath = rawPath ? (rawPath.startsWith('/') ? rawPath : ('/' + rawPath)) : null;
+      const bMeta = (index && index.books && index.books[modeId]) || null;
+      const expectedHash = bMeta ? bMeta.hash : '';
+      const rawPath = (bMeta && bMeta.path) || (expectedHash ? ('data/books/' + modeId + '.' + expectedHash + '.json') : null);
+      const dataPath = rawPath ? (rawPath.startsWith('/') ? rawPath.slice(1) : rawPath) : null;
 
       return idbGet(STORE_BOOKS, modeId).then(function (cached) {
         if (cached && (!expectedHash || cached.hash === expectedHash) && cached.units) {
@@ -256,22 +286,21 @@
   }
 
   /**
-   * 英語の問題一覧を取得
+   * 英語の問題一覧を取得（GAS通信ゼロ）
    */
-  function getEnglishQuestions(modeId, unitName, fallbackGasFn) {
+  function getEnglishQuestions(modeId, unitName) {
     return getBookPayload(modeId).then(function (book) {
       if (book && book.units && Array.isArray(book.units[unitName])) {
         return { status: 'success', questions: book.units[unitName], fromCache: true };
       }
-      if (typeof fallbackGasFn === 'function') return fallbackGasFn();
-      return Promise.reject(new Error('Question not found in manifest or fallback'));
+      return { status: 'success', questions: [], fromCache: false, message: '問題が見つかりません' };
     });
   }
 
   /**
-   * 漢字のセット一覧を取得
+   * 漢字のセット一覧を取得（GAS通信ゼロ）
    */
-  function getKanjiQuizSets(modeId, unitName, fallbackGasFn) {
+  function getKanjiQuizSets(modeId, unitName) {
     return getBookPayload(modeId).then(function (book) {
       if (book && book.units && book.units[unitName]) {
         const u = book.units[unitName];
@@ -279,25 +308,35 @@
           return { status: 'success', sets: u.sets, sheetKind: u.sheetKind || 'standard', fromCache: true };
         }
       }
-      if (typeof fallbackGasFn === 'function') return fallbackGasFn();
-      return Promise.reject(new Error('Kanji sets not found in manifest or fallback'));
+      return { status: 'success', sets: [], sheetKind: 'standard', fromCache: false, message: 'セットが見つかりません' };
     });
   }
 
   /**
-   * 漢字の問題一覧を取得
+   * 漢字の問題一覧を取得（GAS通信ゼロ）
    */
-  function getKanjiQuizQuestions(modeId, unitName, setId, fallbackGasFn) {
+  function getKanjiQuizQuestions(modeId, unitName, setId) {
     return getBookPayload(modeId).then(function (book) {
       if (book && book.units && book.units[unitName]) {
         const u = book.units[unitName];
-        const sid = String(setId);
-        if (u.setQuestions && Array.isArray(u.setQuestions[sid])) {
+        const sid = String(setId || '');
+        if (sid && u.setQuestions && Array.isArray(u.setQuestions[sid])) {
           return { status: 'success', questions: u.setQuestions[sid], fromCache: true };
         }
+        // setId が未指定または空文字、"ALL" の場合は全セットの質問を平坦化して返却
+        if ((!sid || sid === 'ALL') && u.setQuestions && typeof u.setQuestions === 'object') {
+          const allQuestions = [];
+          Object.keys(u.setQuestions).forEach(function (k) {
+            if (Array.isArray(u.setQuestions[k])) {
+              allQuestions.push.apply(allQuestions, u.setQuestions[k]);
+            }
+          });
+          if (allQuestions.length > 0) {
+            return { status: 'success', questions: allQuestions, fromCache: true };
+          }
+        }
       }
-      if (typeof fallbackGasFn === 'function') return fallbackGasFn();
-      return Promise.reject(new Error('Kanji questions not found in manifest or fallback'));
+      return { status: 'success', questions: [], fromCache: false, message: '漢字問題が見つかりません' };
     });
   }
 

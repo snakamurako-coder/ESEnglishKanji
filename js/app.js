@@ -32,6 +32,22 @@
       return err;
     }
     function gasApiFetchOnce(bodyStr, timeoutMs, useFetch) {
+      let isAllowed = false;
+      try {
+        const parsed = JSON.parse(bodyStr || "{}");
+        const act = parsed && parsed.action;
+        if (act === "export_full_backup" || act === "import_full_config" || act === "update_materials_manifest") {
+          isAllowed = true;
+        }
+      } catch (_) {}
+      if (!isAllowed) {
+        console.warn("[GAS Blocked] 日常通信でのスプレッドシート(GAS)アクセスは遮断されました:", bodyStr);
+        return Promise.resolve({
+          status: 200,
+          text: JSON.stringify({ status: "success", message: "ローカル完結によりGASアクセスをブロックしました" })
+        });
+      }
+
       if (!useFetch && typeof XMLHttpRequest !== "undefined") {
         return new Promise(function (resolve, reject) {
           const xhr = new XMLHttpRequest();
@@ -478,33 +494,72 @@
         });
       }
 
-      // 6. 漢字・英語問題の静的マニフェストキャッシュ自律処理（GAS通信ゼロ）
-      if (window.ESManifestCache) {
-        if (action === "get_materials_list") {
-          return window.ESManifestCache.getMaterialsList(function () {
-            return Promise.resolve({ status: "success", modes: [] });
-          });
+      // 6. 漢字・英語問題・教材一覧の静的マニフェストキャッシュ自律処理（GAS通信ゼロ・完全Firebase/IndexedDB完結）
+      if (action === "get_materials_list") {
+        if (typeof window !== "undefined" && window.ESManifestCache && typeof window.ESManifestCache.getMaterialsList === "function") {
+          return window.ESManifestCache.getMaterialsList();
         }
-        if (action === "get_kanji_quiz_sets" && bodyObj.modeId && bodyObj.unitName) {
-          return window.ESManifestCache.getKanjiQuizSets(bodyObj.modeId, bodyObj.unitName, function () {
-            return Promise.resolve({ status: "success", sets: [] });
-          });
-        }
-        if (action === "get_kanji_quiz_questions" && bodyObj.modeId && bodyObj.unitName && bodyObj.setId) {
-          return window.ESManifestCache.getKanjiQuizQuestions(bodyObj.modeId, bodyObj.unitName, bodyObj.setId, function () {
-            return Promise.resolve({ status: "success", questions: [] });
-          });
-        }
-        if (action === "get_questions" && bodyObj.modeId && bodyObj.unitName) {
-          if (typeof window.ESManifestCache.getEnglishQuestions === "function") {
-            return window.ESManifestCache.getEnglishQuestions(bodyObj.modeId, bodyObj.unitName, function () {
-              return Promise.resolve({ status: "success", questions: [] });
-            });
+        try {
+          const raw = localStorage.getItem(LS_APP_CACHED_MATERIALS);
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (parsed && Array.isArray(parsed.materials)) return Promise.resolve(parsed);
           }
+        } catch (_) {}
+        return Promise.resolve({ status: "success", materials: [] });
+      }
+
+      if (action === "get_kanji_quiz_sets") {
+        if (typeof window !== "undefined" && window.ESManifestCache && typeof window.ESManifestCache.getKanjiQuizSets === "function") {
+          return window.ESManifestCache.getKanjiQuizSets(bodyObj.modeId, bodyObj.unitName);
+        }
+        return Promise.resolve({ status: "success", sets: [], sheetKind: "standard" });
+      }
+
+      if (action === "get_kanji_quiz_questions") {
+        if (typeof window !== "undefined" && window.ESManifestCache && typeof window.ESManifestCache.getKanjiQuizQuestions === "function") {
+          return window.ESManifestCache.getKanjiQuizQuestions(bodyObj.modeId, bodyObj.unitName, bodyObj.setId);
+        }
+        return Promise.resolve({ status: "success", questions: [] });
+      }
+
+      if (action === "get_questions") {
+        if (typeof window !== "undefined" && window.ESManifestCache && typeof window.ESManifestCache.getEnglishQuestions === "function") {
+          return window.ESManifestCache.getEnglishQuestions(bodyObj.modeId, bodyObj.unitName);
+        }
+        return Promise.resolve({ status: "success", questions: [] });
+      }
+
+      // 7. 外部学習リクエスト・承認の Firestore 自律インターセプト
+      if (typeof window !== "undefined" && window.externalStore) {
+        if (action === "get_my_external_learning_requests" && bodyObj.userId) {
+          return window.externalStore.getMyRequests(bodyObj.userId).then(function (reqs) {
+            return { status: "success", requests: reqs };
+          });
+        }
+        if (action === "submit_external_learning_request") {
+          return window.externalStore.submitRequest(bodyObj).then(function () {
+            return { status: "success", message: "しんせいしました！おうちの人の承認を待ってね" };
+          });
+        }
+        if (action === "get_pending_external_requests" && bodyObj.adminPin) {
+          return window.externalStore.getPendingRequests(bodyObj.adminPin).then(function (reqs) {
+            return { status: "success", requests: reqs };
+          });
+        }
+        if (action === "approve_external_request" || action === "reject_external_request") {
+          return window.externalStore.processRequest(bodyObj.adminPin, bodyObj.rowIdx, action === "approve_external_request" ? "承認" : "却下", bodyObj.adminMemo).then(function () {
+            return { status: "success", message: "処理が完了しました" };
+          });
+        }
+        if (action === "bulk_approve_external_requests") {
+          return window.externalStore.bulkApproveRequests(bodyObj.adminPin, bodyObj.requests).then(function () {
+            return { status: "success", message: "一括承認しました" };
+          });
         }
       }
 
-      // 7. 漢字ニガテ特訓・シグナルの自律処理
+      // 8. 漢字ニガテ特訓・シグナルの自律処理（ローカル／Firestore完結）
       if (action === "append_kanji_weak_signals" || action === "record_kanji_nigate_pass") {
         return Promise.resolve({ status: "success" });
       }
@@ -513,7 +568,8 @@
         return Promise.resolve({ status: "success", questions: [] });
       }
 
-      // その他の日常 action: GAS へリクエストせずローカル成功で解決
+      // その他の日常 action: GAS へ絶対にリクエストせずローカル成功で解決
+      console.warn("[GAS Suppressed] 未マッピングの日常アクションをローカル解決しました:", action);
       return Promise.resolve({ status: "success" });
     }
 
@@ -2660,6 +2716,9 @@
     }
 
     function fetchMaterialsListFromServer() {
+      if (typeof window !== "undefined" && window.ESManifestCache && typeof window.ESManifestCache.getMaterialsList === "function") {
+        return window.ESManifestCache.getMaterialsList();
+      }
       return gasApiFetchJson({ action: "get_materials_list" }, GAS_API_OPTS_HOME_REFRESH);
     }
 
@@ -2979,13 +3038,9 @@
           }
         }
       } catch (_) {}
-      function fetchEnglishQuestionsViaGas_() {
-        return gasApiFetchJson({ action: "get_questions", modeId: modeId, unitName: unitName });
-      }
-
-      const qPromise = (window.ESManifestCache && typeof window.ESManifestCache.getEnglishQuestions === "function")
-        ? window.ESManifestCache.getEnglishQuestions(modeId, unitName, fetchEnglishQuestionsViaGas_)
-        : fetchEnglishQuestionsViaGas_();
+      const qPromise = (typeof window !== "undefined" && window.ESManifestCache && typeof window.ESManifestCache.getEnglishQuestions === "function")
+        ? window.ESManifestCache.getEnglishQuestions(modeId, unitName)
+        : gasApiFetchJson({ action: "get_questions", modeId: modeId, unitName: unitName });
 
       return qPromise
         .then(function (d) {
@@ -7494,8 +7549,11 @@
       return loadKanjiHandScoreWeightsFromLocalCache();
     }
     function fetchKanjiHandScoreWeightsFromServer(opts) {
-      const apiOpts = opts || GAS_API_OPTS_HOME_REFRESH;
-      return gasApiFetchJson({ action: "get_app_settings" }, apiOpts)
+      const getSettingsPromise = (typeof window !== "undefined" && window.appSettingsStore && typeof window.appSettingsStore.getAppSettings === "function")
+        ? window.appSettingsStore.getAppSettings()
+        : gasApiFetchJson({ action: "get_app_settings" }, opts || GAS_API_OPTS_HOME_REFRESH);
+
+      return getSettingsPromise
         .then(function (d) {
           if (!d || d.status !== "success" || !d.settings) {
             return { status: "error", message: (d && d.message) || "手書き配点の取得に失敗しました", updated: false };
