@@ -6008,3 +6008,112 @@ body { font-family: 'Hiragino Maru Gothic ProN', sans-serif; background-color: #
       box-shadow: 0 0 #b2821a;
       background: #ffd54f;
     }
+
+    /* メインビュー（ダンジョン表示 ＋ 縦型コントローラーパッド） */
+    .dungeon-main-view {
+      display: flex;
+      gap: 12px;
+      align-items: stretch;
+      justify-content: center;
+      width: 100%;
+    }
+    .dungeon-main-view.dungeon-hand-right {
+      flex-direction: row;
+    }
+    .dungeon-main-view.dungeon-hand-left {
+      flex-direction: row-reverse;
+    }
+    .dungeon-main-view .dungeon-stagewrap {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Nintendo Wii風 縦向きパッド (バーティカル・コントローラー) */
+    .dungeon-wii-pad {
+      width: 152px;
+      min-width: 144px;
+      max-width: 164px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 8px;
+      border: 2px solid var(--line);
+      border-radius: 16px;
+      background: #171624;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 4px 16px rgba(0, 0, 0, 0.6);
+      box-sizing: border-box;
+      user-select: none;
+    }
+    .dungeon-wii-top {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      width: 100%;
+      align-items: center;
+    }
+    .dungeon-hand-switch-btn {
+      width: 100%;
+      font-size: 11px !important;
+      padding: 3px 4px !important;
+      min-height: 26px !important;
+      background: #252438 !important;
+      color: #b5b3cd !important;
+      border: 1px dashed #44425f !important;
+      border-radius: 12px !important;
+      cursor: pointer;
+    }
+    .dungeon-hand-switch-btn:hover {
+      background: #33314d !important;
+      color: #fff !important;
+    }
+    .dungeon-wii-btn {
+      width: 100%;
+      font-size: 13px !important;
+      padding: 6px 4px !important;
+      min-height: 36px !important;
+      background: var(--panel);
+      border-radius: 6px;
+    }
+    .dungeon-wii-menu-btn {
+      background: var(--gold) !important;
+      color: #000 !important;
+      font-weight: bold;
+    }
+    .dungeon-wii-bottom {
+      margin-top: auto;
+      padding-top: 10px;
+      width: 100%;
+      display: flex;
+      justify-content: center;
+    }
+
+    @media(max-width: 560px) {
+      .dungeon-main-view {
+        gap: 6px;
+      }
+      .dungeon-wii-pad {
+        width: 124px;
+        min-width: 116px;
+        padding: 8px 4px;
+        border-radius: 12px;
+      }
+      .dungeon-wii-btn {
+        font-size: 11px !important;
+        padding: 4px 2px !important;
+        min-height: 30px !important;
+      }
+      .dungeon-wii-pad .dungeon-dpad {
+        grid-template-columns: repeat(3, 38px) !important;
+        grid-template-rows: repeat(3, 38px) !important;
+        gap: 2px !important;
+      }
+      .dungeon-wii-pad .dungeon-dpad button {
+        font-size: 15px !important;
+      }
+      .dungeon-wii-pad .dungeon-dpad .menu {
+        font-size: 9px !important;
+      }
+    }

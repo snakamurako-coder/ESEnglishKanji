@@ -315,6 +315,52 @@
     return list.length > 0 ? list : DEFAULT_EXPR;
   }
 
+  /* ---------- 利き手設定 (右利き: 右側配置 / 左利き: 左側配置) ---------- */
+  let dungeonHandMode = "right";
+  try {
+    const savedHand = localStorage.getItem("dungeon-hand-mode");
+    if (savedHand === "left" || savedHand === "right") {
+      dungeonHandMode = savedHand;
+    }
+  } catch(e) {}
+
+  function applyDungeonHandModeUI() {
+    const mainView = document.getElementById("dungeon-main-view");
+    if (mainView) {
+      mainView.classList.remove("dungeon-hand-right", "dungeon-hand-left");
+      mainView.classList.add(dungeonHandMode === "left" ? "dungeon-hand-left" : "dungeon-hand-right");
+    }
+    const label = document.getElementById("dungeon-hand-label");
+    if (label) {
+      label.textContent = dungeonHandMode === "left" ? "🫲 左利き" : "🫱 右利き";
+    }
+    const btnRight = document.getElementById("dungeon-hand-btn-right");
+    const btnLeft = document.getElementById("dungeon-hand-btn-left");
+    if (btnRight && btnLeft) {
+      btnRight.classList.toggle("active", dungeonHandMode === "right");
+      btnLeft.classList.toggle("active", dungeonHandMode === "left");
+      btnRight.style.background = (dungeonHandMode === "right") ? "var(--gold)" : "";
+      btnRight.style.color = (dungeonHandMode === "right") ? "#000" : "";
+      btnRight.style.fontWeight = (dungeonHandMode === "right") ? "bold" : "";
+      btnLeft.style.background = (dungeonHandMode === "left") ? "var(--gold)" : "";
+      btnLeft.style.color = (dungeonHandMode === "left") ? "#000" : "";
+      btnLeft.style.fontWeight = (dungeonHandMode === "left") ? "bold" : "";
+    }
+  }
+
+  function setDungeonHandMode(mode) {
+    dungeonHandMode = (mode === "left") ? "left" : "right";
+    try {
+      localStorage.setItem("dungeon-hand-mode", dungeonHandMode);
+    } catch(e) {}
+    applyDungeonHandModeUI();
+    try { se("select"); } catch(e) {}
+  }
+
+  function toggleDungeonHandMode() {
+    setDungeonHandMode(dungeonHandMode === "right" ? "left" : "right");
+  }
+
   /* ---------- 難易度1〜10 の定義 ---------- */
   const LV_INFO = [
     null,
@@ -1052,6 +1098,7 @@
     const modal = document.getElementById("dungeon-menu-modal");
     if (!modal) return;
     modal.style.display = "flex";
+    applyDungeonHandModeUI();
     renderStatus();
     renderLog();
     seStatus();
@@ -1080,6 +1127,7 @@
       const logEl = document.getElementById("dungeon-log");
       if (logEl) logEl.scrollTop = logEl.scrollHeight;
     } else if (tab === "sound") {
+      applyDungeonHandModeUI();
       seStatus();
     }
   }
@@ -1090,6 +1138,52 @@
     }
   }
 
+  /* ---------- Nintendo Wii風 縦向きパッド (十字キーが一番下) ---------- */
+  function updateWiiPad() {
+    const pad = document.getElementById("dungeon-wii-pad");
+    if (!pad) return;
+    pad.style.display = "flex";
+
+    // 利き手モード状態をUIに反映
+    applyDungeonHandModeUI();
+
+    // そうびボタンのNEWバッジとクリックイベント
+    const eqb = document.getElementById("dungeon-wii-eqb");
+    if (eqb) {
+      eqb.innerHTML = '🛡️ そうび' + (needEquip() ? '<span class="badge">NEW</span>' : '');
+      eqb.onclick = winEquip;
+    }
+
+    // どうぐボタン
+    const bag = document.getElementById("dungeon-wii-bag");
+    if (bag) {
+      bag.onclick = () => winItems("どちらへ すすむ？");
+    }
+
+    // メニューボタン
+    const menuBtn = document.getElementById("dungeon-wii-menu");
+    if (menuBtn) {
+      menuBtn.onclick = () => openDungeonMenu();
+    }
+    const centerBtn = document.getElementById("dungeon-dpad-center-btn");
+    if (centerBtn) {
+      centerBtn.onclick = () => openDungeonMenu();
+    }
+
+    // 十字キー (移動)
+    pad.querySelectorAll(".dungeon-dpad button[data-d]").forEach(b => {
+      b.onclick = () => {
+        const d = b.dataset.d.split(",");
+        move(+d[0], +d[1]);
+      };
+    });
+  }
+
+  function hideWiiPad() {
+    const pad = document.getElementById("dungeon-wii-pad");
+    if (pad) pad.style.display = "none";
+  }
+
   let quizKey = null, raf = 0, currentRecognition = null;
 
   function say(t) {
@@ -1098,6 +1192,7 @@
   }
 
   function winMenu(msg) {
+    hideWiiPad();
     const rec = loadTowerRec();
     const v = rec.save;
     const win = document.getElementById("dungeon-win");
@@ -1118,6 +1213,7 @@
 
   function winTitle() { winMenu("ぼうけんを はじめますか？"); }
   function winEnd() {
+    hideWiiPad();
     const rec = loadTowerRec();
     winMenu(S.screen === "clear" ? `${currentTower.name}を踏破した！` : (rec.save && !S.practice ? `ちからつきた… 地下 ${rec.save.floor} 階の はじめから やりなおせる。` : "ちからつきた…"));
   }
@@ -1141,6 +1237,7 @@
   }
 
   function winNext(t) {
+    hideWiiPad();
     const win = document.getElementById("dungeon-win");
     if (!win) return;
     win.innerHTML = `<p class="dungeon-msg">${t}</p><div class="dungeon-btns"><button id="dungeon-next" type="button">🪜 次の階へ おりる ▶</button></div>`;
@@ -1152,25 +1249,29 @@
   }
 
   function winExplore(t) {
+    updateWiiPad();
     const win = document.getElementById("dungeon-win");
     if (!win) return;
-    win.innerHTML = `<div class="dungeon-explore"><div><p class="dungeon-msg">${t}</p><div class="dungeon-btns"><button id="dungeon-bag" type="button">🎒 どうぐ</button><button id="dungeon-eqb" type="button">🛡️ そうび${needEquip() ? '<span class="badge">NEW</span>' : ''}</button><button id="dungeon-cmd-menu" type="button">📋 メニュー</button></div><p class="dungeon-note" style="margin-top:10px;font-size:12px;color:var(--muted)">スワイプ・となりのマスをタップ・矢印キーでも うごける</p></div>` +
-      `<div class="dungeon-dpad"><button class="up" data-d="0,-1" type="button" aria-label="上へ">▲</button><button class="lf" data-d="-1,0" type="button" aria-label="左へ">◀</button><button class="menu" id="dungeon-dpad-menu" type="button" aria-label="メニューを開く">メニュー</button><button class="rt" data-d="1,0" type="button" aria-label="右へ">▶</button><button class="dn" data-d="0,1" type="button" aria-label="下へ">▼</button></div></div>`;
+    win.innerHTML = `<div class="dungeon-explore-compact">` +
+      `<p class="dungeon-msg">${t}</p>` +
+      `<div class="dungeon-btns" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;">` +
+        `<button id="dungeon-bag" type="button">🎒 どうぐ</button>` +
+        `<button id="dungeon-eqb" type="button">🛡️ そうび${needEquip() ? '<span class="badge">NEW</span>' : ''}</button>` +
+        `<button id="dungeon-cmd-menu" type="button">📋 メニュー</button>` +
+      `</div>` +
+      `<p class="dungeon-note" style="margin-top:8px;font-size:12px;color:var(--muted)">縦向きパッドの十字キー・スワイプ・となりのマスをタップ・矢印キーでも動けるよ</p>` +
+    `</div>`;
     
-    document.getElementById("dungeon-bag").onclick = () => winItems("どちらへ すすむ？");
-    document.getElementById("dungeon-eqb").onclick = winEquip;
+    const bag = document.getElementById("dungeon-bag");
+    if (bag) bag.onclick = () => winItems("どちらへ すすむ？");
+    const eqb = document.getElementById("dungeon-eqb");
+    if (eqb) eqb.onclick = winEquip;
     const cmdMenu = document.getElementById("dungeon-cmd-menu");
     if (cmdMenu) cmdMenu.onclick = () => openDungeonMenu();
-    const dpadMenu = document.getElementById("dungeon-dpad-menu");
-    if (dpadMenu) dpadMenu.onclick = () => openDungeonMenu();
-
-    win.querySelectorAll(".dungeon-dpad button[data-d]").forEach(b => b.onclick = () => {
-      const d = b.dataset.d.split(",");
-      move(+d[0], +d[1]);
-    });
   }
 
   function winEquip() {
+    hideWiiPad();
     const p = S.p;
     const win = document.getElementById("dungeon-win");
     if (!win) return;
@@ -1199,6 +1300,7 @@
   }
 
   function winItems(t) {
+    hideWiiPad();
     const p = S.p, it = p.it, inB = S.screen === "battle", b = bonus(S.diff);
     const maxF = currentTower ? (currentTower.maxFloor || 100) : 100;
     const newest = Math.min(maxF, S.cleared + 1);
@@ -1226,6 +1328,7 @@
   }
 
   function winWarp(t) {
+    hideWiiPad();
     const win = document.getElementById("dungeon-win");
     if (!win) return;
     win.innerHTML = `<p class="dungeon-msg">🧭 どの階へ とぶ？（1〜${S.cleared}）</p><form class="dungeon-typed" id="wform"><input type="number" id="warpF" min="1" max="${S.cleared}" value="${S.cleared}" aria-label="ワープ先の階"><button type="submit">ワープする</button><button id="dungeon-back" type="button">もどる</button></form>`;
@@ -1245,6 +1348,7 @@
   }
 
   function winFirst() {
+    hideWiiPad();
     const m = S.b.m;
     const win = document.getElementById("dungeon-win");
     if (!win) return;
@@ -1254,6 +1358,7 @@
   }
 
   function winCmd(t) {
+    hideWiiPad();
     const p = S.p, m = S.b.m, b = bonus(S.diff), it = p.it;
     const win = document.getElementById("dungeon-win");
     if (!win) return;
@@ -1268,6 +1373,7 @@
   }
 
   function winSkill(t) {
+    hideWiiPad();
     const p = S.p;
     const win = document.getElementById("dungeon-win");
     if (!win) return;
@@ -1282,6 +1388,7 @@
   }
 
   function winDefend(t) {
+    hideWiiPad();
     const m = S.b.m, b = bonus(S.diff);
     const win = document.getElementById("dungeon-win");
     if (!win) return;
@@ -1312,6 +1419,7 @@
 
   /* ---------- クイズ本体 (ask) ---------- */
   function ask(L, kind, done, name) {
+    hideWiiPad();
     const win = document.getElementById("dungeon-win");
     if (!win) return;
     const K = KIND[kind];
@@ -1900,6 +2008,7 @@
   }
 
   function backToTowerSelect() {
+    hideWiiPad();
     if (bgmCur && BGM[bgmCur]) {
       BGM[bgmCur].pause();
       bgmCur = 0;
@@ -2340,6 +2449,8 @@
       if (el) el.classList.add("active");
     }
 
+    applyDungeonHandModeUI();
+
     if (!isManifestLoaded) {
       loadManifestMaterialsForDungeon();
     }
@@ -2353,6 +2464,7 @@
   }
 
   function exitDungeonToHome() {
+    hideWiiPad();
     if (bgmCur && BGM[bgmCur]) {
       BGM[bgmCur].pause();
       bgmCur = 0;
@@ -2383,12 +2495,23 @@
     }
   }
 
+  // 初期化時に利き手設定をDOMに反映
+  if (typeof document !== 'undefined') {
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', applyDungeonHandModeUI);
+    } else {
+      applyDungeonHandModeUI();
+    }
+  }
+
   // グローバル公開
   global.openDungeonGame = openDungeonGame;
   global.openDungeonMenu = openDungeonMenu;
   global.closeDungeonMenu = closeDungeonMenu;
   global.switchDungeonMenuTab = switchDungeonMenuTab;
   global.handleDungeonMenuOverlayClick = handleDungeonMenuOverlayClick;
+  global.setDungeonHandMode = setDungeonHandMode;
+  global.toggleDungeonHandMode = toggleDungeonHandMode;
   global.exitDungeonToHome = exitDungeonToHome;
   global.enterParentAdminDungeon = openParentAdminDungeon;
   global.exitParentAdminDungeon = exitParentAdminDungeon;
@@ -2407,6 +2530,9 @@
     closeMenu: closeDungeonMenu,
     openAdmin: openParentAdminDungeon,
     loadManifest: loadManifestMaterialsForDungeon,
+    setHandMode: setDungeonHandMode,
+    toggleHandMode: toggleDungeonHandMode,
+    getHandMode: () => dungeonHandMode,
     getPoolStatus: () => ({
       vocabUnits: ALL_VOCAB_UNITS.length,
       exprUnits: ALL_EXPR_UNITS.length,

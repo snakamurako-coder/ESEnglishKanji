@@ -30,17 +30,50 @@
       </header>
 
       <div class="dungeon-app">
-        <div class="dungeon-col" style="max-width:680px;margin:0 auto;width:100%;">
-          <div class="dungeon-stagewrap">
-            <div class="dungeon-window" id="dungeon-stage"></div>
-            <div id="dungeon-fx"></div>
+        <div class="dungeon-col" style="max-width:760px;margin:0 auto;width:100%;">
+          
+          <!-- メインビュー（ダンジョン表示 ＋ Nintendo Wii風縦向きパッド） -->
+          <div id="dungeon-main-view" class="dungeon-main-view dungeon-hand-right">
+            
+            <!-- ダンジョン表示 (マップ / バトル / リザルト) -->
+            <div class="dungeon-stagewrap">
+              <div class="dungeon-window" id="dungeon-stage"></div>
+              <div id="dungeon-fx"></div>
+            </div>
+
+            <!-- Nintendo Wii風 縦向きパッド (十字キーが一番下) -->
+            <div id="dungeon-wii-pad" class="dungeon-window dungeon-wii-pad" style="display:none;">
+              <!-- パッド上部: 利き手切り替え & アクションボタン -->
+              <div class="dungeon-wii-top">
+                <button type="button" class="dungeon-btn dungeon-hand-switch-btn" id="dungeon-hand-switch" onclick="toggleDungeonHandMode()" title="右利き / 左利き 切り替え" aria-label="利き手切り替え">
+                  <span id="dungeon-hand-label">🫱 右利き</span> ⇄
+                </button>
+                <button type="button" id="dungeon-wii-bag" class="dungeon-btn dungeon-wii-btn">🎒 どうぐ</button>
+                <button type="button" id="dungeon-wii-eqb" class="dungeon-btn dungeon-wii-btn">🛡️ そうび</button>
+                <button type="button" id="dungeon-wii-menu" class="dungeon-btn dungeon-wii-btn dungeon-wii-menu-btn" onclick="openDungeonMenu()">📋 メニュー</button>
+              </div>
+
+              <!-- パッド下部: 十字キー (Nintendo Wiiのように一番下に配置) -->
+              <div class="dungeon-wii-bottom">
+                <div class="dungeon-dpad">
+                  <button class="up" data-d="0,-1" type="button" aria-label="上へ">▲</button>
+                  <button class="lf" data-d="-1,0" type="button" aria-label="左へ">◀</button>
+                  <button class="menu" id="dungeon-dpad-center-btn" type="button" aria-label="メニュー" onclick="openDungeonMenu()">メニュー</button>
+                  <button class="rt" data-d="1,0" type="button" aria-label="右へ">▶</button>
+                  <button class="dn" data-d="0,1" type="button" aria-label="下へ">▼</button>
+                </div>
+              </div>
+            </div>
+
           </div>
+
+          <!-- コマンド・メッセージウィンドウ -->
           <div class="dungeon-window" id="dungeon-win"></div>
         </div>
       </div>
     </div>
 
-    <!-- 冒険メニュー モーダル (ステータス・きろく・音声設定) -->
+    <!-- 冒険メニュー モーダル (ステータス・きろく・音声設定・パッド設定) -->
     <div id="dungeon-menu-modal" class="dungeon-modal-overlay" style="display:none;" onclick="handleDungeonMenuOverlayClick(event)">
       <div class="dungeon-window dungeon-menu-dialog" onclick="event.stopPropagation()">
         
@@ -54,7 +87,7 @@
         <div class="dungeon-menu-tabs" style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;">
           <button type="button" id="dungeon-tab-btn-stat" class="dungeon-btn active" style="flex:1;min-width:100px;font-size:13px;" onclick="switchDungeonMenuTab('stat')">📊 ステータス</button>
           <button type="button" id="dungeon-tab-btn-log" class="dungeon-btn" style="flex:1;min-width:100px;font-size:13px;" onclick="switchDungeonMenuTab('log')">📜 きろく</button>
-          <button type="button" id="dungeon-tab-btn-sound" class="dungeon-btn" style="flex:1;min-width:100px;font-size:13px;" onclick="switchDungeonMenuTab('sound')">🔊 音声・サウンド</button>
+          <button type="button" id="dungeon-tab-btn-sound" class="dungeon-btn" style="flex:1;min-width:100px;font-size:13px;" onclick="switchDungeonMenuTab('sound')">⚙️ 設定・音声</button>
         </div>
 
         <!-- タブ内容1: ステータス -->
@@ -67,14 +100,25 @@
           <div class="dungeon-log" id="dungeon-log" style="max-height:320px;overflow-y:auto;"></div>
         </div>
 
-        <!-- タブ内容3: 音声・サウンド -->
+        <!-- タブ内容3: 設定・音声 -->
         <div id="dungeon-tab-panel-sound" class="dungeon-menu-panel" style="display:none;">
           <div style="display:grid;gap:12px;">
             <div style="background:#1b1a2a;padding:12px;border-radius:6px;border:1px solid #333048;">
+              <h3 style="margin:0 0 6px;font-size:14px;color:var(--gold);font-family:var(--game);">🎮 操作パッド設定（利き手）</h3>
+              <p style="font-size:12px;color:var(--muted);margin:0 0 8px;line-height:1.5;">
+                探索コントローラー（Wii風縦型パッド）の配置位置を変更できます。
+              </p>
+              <div style="display:flex;gap:8px;">
+                <button type="button" id="dungeon-hand-btn-right" class="dungeon-btn active" style="flex:1;font-size:13px;" onclick="setDungeonHandMode('right')">🫱 右利き用（右側配置）</button>
+                <button type="button" id="dungeon-hand-btn-left" class="dungeon-btn" style="flex:1;font-size:13px;" onclick="setDungeonHandMode('left')">🫲 左利き用（左側配置）</button>
+              </div>
+            </div>
+
+            <div style="background:#1b1a2a;padding:12px;border-radius:6px;border:1px solid #333048;">
               <h3 style="margin:0 0 8px;font-size:14px;color:var(--gold);font-family:var(--game);">🔊 ミュート切り替え</h3>
               <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-                <button id="dungeon-seMute" class="dungeon-btn" type="button" aria-label="効果音のオン・オフ">🔊</button>
-                <button id="dungeon-bgmMute" class="dungeon-btn" type="button" aria-label="BGMのオン・オフ">🎵</button>
+                <button id="dungeon-seMute" class="dungeon-btn" type="button" aria-label="効果音のオン・オフ">🔊 効果音: ON</button>
+                <button id="dungeon-bgmMute" class="dungeon-btn" type="button" aria-label="BGMのオン・オフ">🎵 BGM: ON</button>
                 <span id="dungeon-seStat" style="font-size:12px;color:var(--muted);">効果音なし</span>
               </div>
             </div>
