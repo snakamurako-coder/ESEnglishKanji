@@ -1211,6 +1211,10 @@
   function hideWiiPad() {
     const pad = document.getElementById("dungeon-wii-pad");
     if (pad) pad.style.display = "none";
+    const secEl = document.getElementById("section-dungeon");
+    if (secEl && !document.querySelector(".dungeon-keyboard-wrap")) {
+      secEl.classList.remove("dungeon-keyboard-active");
+    }
   }
 
   let quizKey = null, raf = 0, currentRecognition = null;
@@ -1278,6 +1282,8 @@
   }
 
   function winExplore(t) {
+    const secEl = document.getElementById("section-dungeon");
+    if (secEl) secEl.classList.remove("dungeon-keyboard-active");
     updateWiiPad();
     const win = document.getElementById("dungeon-win");
     if (!win) return;
@@ -1471,6 +1477,9 @@
 
   /* ---------- ダンジョン専用オンスクリーンキーボード連携 ---------- */
   function mountDungeonKeyboard(targetInputId, containerId, isSortMissing, onEnter, onAddCard) {
+    const secEl = document.getElementById("section-dungeon");
+    if (secEl) secEl.classList.add("dungeon-keyboard-active");
+
     if (typeof global.renderCustomKeyboard === "function") {
       try {
         global.renderCustomKeyboard(
@@ -1481,6 +1490,11 @@
           onEnter,
           onAddCard
         );
+        const container = document.getElementById(containerId);
+        if (container) {
+          container.style.width = "100%";
+          container.style.maxWidth = "100%";
+        }
       } catch(err) {
         console.warn("Failed to mount dungeon keyboard:", err);
       }
@@ -1544,6 +1558,8 @@
       fin = true;
       cancelAnimationFrame(raf);
       quizKey = null;
+      const secEl = document.getElementById("section-dungeon");
+      if (secEl) secEl.classList.remove("dungeon-keyboard-active");
       if (currentRecognition) {
         try { currentRecognition.abort(); } catch(e) {}
         currentRecognition = null;
