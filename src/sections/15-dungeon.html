@@ -1,0 +1,59 @@
+  <div id="section-dungeon" class="section" style="padding:0;background:#12111c;min-height:100vh;color:#eeece2;">
+    
+    <!-- 塔の選択画面 -->
+    <div id="dungeon-tower-select" class="dungeon-wrap" style="padding:20px 14px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:16px;">
+        <h1 class="dungeon-h1" style="font-size:24px;">🏰 挑戦する塔をえらぼう！</h1>
+        <button type="button" class="dungeon-btn dungeon-home-btn" onclick="exitDungeonToHome()">🏠 ホーム</button>
+      </div>
+      <p style="color:var(--muted);font-size:14px;margin:0 0 16px;">
+        塔によって出題される問題セット（単語・表現）や階数が変わるよ。好きな塔に挑戦しよう！
+      </p>
+      
+      <div id="dungeon-tower-list" style="display:grid;gap:14px;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));">
+        <!-- JSで塔カードが動的に生成される -->
+      </div>
+    </div>
+
+    <!-- ダンジョン本編画面 -->
+    <div id="dungeon-game-main" class="dungeon-wrap" style="display:none;padding:12px 14px;">
+      <header class="dungeon-header">
+        <div class="dungeon-title-row">
+          <button type="button" class="dungeon-btn dungeon-home-btn" onclick="exitDungeonToHome()">🏠 ホーム</button>
+          <button type="button" class="dungeon-btn dungeon-home-btn" style="background:#2b2942;" onclick="backToTowerSelect()">🏰 塔選択</button>
+          <h1 class="dungeon-h1" id="dungeon-tower-title">単語迷宮<small id="dungeon-tower-subtitle">百階</small></h1>
+        </div>
+        <div class="dungeon-best">この塔の記録 <b id="dungeon-best">—</b></div>
+        <div class="dungeon-sebar">
+          <button id="dungeon-seDirBtn" type="button">📁 フォルダから音読込</button>
+          <button id="dungeon-seFileBtn" type="button">🎶 ファイル選択</button>
+          <button id="dungeon-seMute" type="button" aria-label="効果音のオン・オフ">🔊</button>
+          <button id="dungeon-bgmMute" type="button" aria-label="BGMのオン・オフ">🎵</button>
+          <span id="dungeon-seStat">効果音なし</span>
+          <input type="file" id="dungeon-seDir" webkitdirectory multiple hidden>
+          <input type="file" id="dungeon-seFiles" accept="audio/*,.mp3,.m4a,.ogg,.wav" multiple hidden>
+        </div>
+      </header>
+
+      <div class="dungeon-app">
+        <div class="dungeon-col">
+          <div class="dungeon-stagewrap">
+            <div class="dungeon-window" id="dungeon-stage"></div>
+            <div id="dungeon-fx"></div>
+          </div>
+          <div class="dungeon-window" id="dungeon-win"></div>
+        </div>
+        <div class="dungeon-col">
+          <div class="dungeon-window">
+            <h2 class="dungeon-h2">ステータス</h2>
+            <dl class="dungeon-stat" id="dungeon-status"></dl>
+          </div>
+          <div class="dungeon-window">
+            <h2 class="dungeon-h2">きろく</h2>
+            <div class="dungeon-log" id="dungeon-log"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>

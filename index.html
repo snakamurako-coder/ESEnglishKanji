@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>学習アプリ</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap">
   <link rel="stylesheet" href="css/app.css?v=20260810-footer-progress">
 </head>
 <body>
@@ -33,6 +34,7 @@
       <p id="home-materials-sync-status" style="text-align:center;color:#8bc34a;font-size:13px;max-width:400px;margin:6px auto 0;min-height:1.3em;"></p>
       <button type="button" class="menu-btn btn-gray" onclick="refreshMaterialsManualFromHome(this)" style="margin-top:6px;width:auto;padding:10px 18px;font-size:15px;">📚 英語・漢字の教材一覧を更新</button>
       <button class="menu-btn btn-purple" onclick="openTrainingMenu()">🎯 特訓メニューへ</button>
+      <button type="button" class="menu-btn" style="background: linear-gradient(135deg, #1b1a2a, #2b2942); border: 2px solid #f2b632; color: #f2b632; font-weight: bold; font-size: 17px; margin-top: 10px; box-shadow: 0 4px 12px rgba(242,182,50,0.25);" onclick="openDungeonGame()">🗡️ 単語迷宮 百階（ダンジョンRPG）</button>
       <button class="menu-btn btn-blue" onclick="loadExternalLearning(this)">📚 アプリ以外の勉強を記録</button>
       <button type="button" class="menu-btn btn-gray" style="margin-top:8px; font-size:15px; padding:12px 16px;" onclick="openParentAdminMenu()">⚙ おうちの人：管理メニュー</button>
       <hr style="border-color:#444; width: 90%; max-width:350px; margin: 15px 0;">
@@ -417,6 +419,7 @@
       <button type="button" class="menu-btn" style="background:#00838f;color:#fff;" onclick="enterParentAdminPiperTTS()">🎙️ 高音質音声（Piper TTS）設定</button>
       <button type="button" class="menu-btn" style="background:#1565c0;color:#fff;" onclick="enterParentAdminMaterialsUpdate()">📚 教材データ更新（マニフェスト最新化）</button>
       <button type="button" class="menu-btn" style="background:#6a1b9a;color:#fff;" onclick="enterParentAdminBackup()">💾 データ管理・バックアップ・移行</button>
+      <button type="button" class="menu-btn" style="background:#311b92;color:#ffd54f;border:1px solid #7c4dff;" onclick="enterParentAdminDungeon()">🗡️ 単語迷宮（バランス調整・試走）</button>
       <button type="button" class="cancel-btn" style="margin-top:8px;" onclick="logoutParentAdmin()">ログアウト</button>
     </div>
     <button type="button" class="cancel-btn" style="margin-top:24px;" onclick="showHome(JSON.parse(localStorage.getItem('app_kid_user')))">ホームにもどる</button>
@@ -1006,6 +1009,198 @@
       </div>
     </div>
   </div>
+  
+  <div id="section-dungeon" class="section" style="padding:0;background:#12111c;min-height:100vh;color:#eeece2;">
+    
+    <!-- 塔の選択画面 -->
+    <div id="dungeon-tower-select" class="dungeon-wrap" style="padding:20px 14px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:16px;">
+        <h1 class="dungeon-h1" style="font-size:24px;">🏰 挑戦する塔をえらぼう！</h1>
+        <button type="button" class="dungeon-btn dungeon-home-btn" onclick="exitDungeonToHome()">🏠 ホーム</button>
+      </div>
+      <p style="color:var(--muted);font-size:14px;margin:0 0 16px;">
+        塔によって出題される問題セット（単語・表現）や階数が変わるよ。好きな塔に挑戦しよう！
+      </p>
+      
+      <div id="dungeon-tower-list" style="display:grid;gap:14px;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));">
+        <!-- JSで塔カードが動的に生成される -->
+      </div>
+    </div>
+
+    <!-- ダンジョン本編画面 -->
+    <div id="dungeon-game-main" class="dungeon-wrap" style="display:none;padding:12px 14px;">
+      <header class="dungeon-header">
+        <div class="dungeon-title-row">
+          <button type="button" class="dungeon-btn dungeon-home-btn" onclick="exitDungeonToHome()">🏠 ホーム</button>
+          <button type="button" class="dungeon-btn dungeon-home-btn" style="background:#2b2942;" onclick="backToTowerSelect()">🏰 塔選択</button>
+          <h1 class="dungeon-h1" id="dungeon-tower-title">単語迷宮<small id="dungeon-tower-subtitle">百階</small></h1>
+        </div>
+        <div class="dungeon-best">この塔の記録 <b id="dungeon-best">—</b></div>
+        <div class="dungeon-sebar">
+          <button id="dungeon-seDirBtn" type="button">📁 フォルダから音読込</button>
+          <button id="dungeon-seFileBtn" type="button">🎶 ファイル選択</button>
+          <button id="dungeon-seMute" type="button" aria-label="効果音のオン・オフ">🔊</button>
+          <button id="dungeon-bgmMute" type="button" aria-label="BGMのオン・オフ">🎵</button>
+          <span id="dungeon-seStat">効果音なし</span>
+          <input type="file" id="dungeon-seDir" webkitdirectory multiple hidden>
+          <input type="file" id="dungeon-seFiles" accept="audio/*,.mp3,.m4a,.ogg,.wav" multiple hidden>
+        </div>
+      </header>
+
+      <div class="dungeon-app">
+        <div class="dungeon-col">
+          <div class="dungeon-stagewrap">
+            <div class="dungeon-window" id="dungeon-stage"></div>
+            <div id="dungeon-fx"></div>
+          </div>
+          <div class="dungeon-window" id="dungeon-win"></div>
+        </div>
+        <div class="dungeon-col">
+          <div class="dungeon-window">
+            <h2 class="dungeon-h2">ステータス</h2>
+            <dl class="dungeon-stat" id="dungeon-status"></dl>
+          </div>
+          <div class="dungeon-window">
+            <h2 class="dungeon-h2">きろく</h2>
+            <div class="dungeon-log" id="dungeon-log"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+  
+  <div id="section-parent-admin-dungeon" class="section" style="padding:16px 10px;background:#12111c;min-height:100vh;color:#eeece2;">
+    <div style="max-width:960px;margin:0 auto;">
+      
+      <!-- ヘッダー -->
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:12px;border-bottom:2px solid #333048;padding-bottom:12px;">
+        <h1 style="font-family:'DotGothic16',monospace;font-weight:400;font-size:24px;margin:0;color:#f2b632;">
+          ⚙️ 単語迷宮：塔管理・バランス調整
+        </h1>
+        <button type="button" class="cancel-btn" style="margin:0;padding:8px 16px;font-size:14px;" onclick="exitParentAdminDungeon()">
+          ← 管理メニューにもどる
+        </button>
+      </div>
+
+      <!-- タブ切り替えボタン -->
+      <div style="display:flex;gap:8px;margin-bottom:16px;">
+        <button type="button" id="dungeon-tab-towers-btn" class="dungeon-btn" style="background:var(--gold);color:#000;font-weight:bold;" onclick="switchAdminDungeonTab('towers')">
+          🏰 塔・出題問題セット設定
+        </button>
+        <button type="button" id="dungeon-tab-params-btn" class="dungeon-btn" style="background:var(--panel);color:var(--fg);" onclick="switchAdminDungeonTab('params')">
+          ⚙️ パラメータ・バランス調整
+        </button>
+      </div>
+
+      <!-- ================= タブ1: 塔の管理・出題問題セット設定 ================= -->
+      <div id="dungeon-admin-tab-towers">
+        <div class="dungeon-window" style="margin-bottom:16px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:12px;">
+            <h2 class="dungeon-h2" style="font-size:16px;color:var(--gold);margin:0;">登録されている塔の一覧</h2>
+            <button type="button" class="dungeon-btn" style="background:#2e7d32;color:#fff;" onclick="openTowerEditModal(null)">
+              ＋ 新しい塔を追加する
+            </button>
+          </div>
+          <p style="color:var(--muted);font-size:13px;line-height:1.6;margin:0 0 12px;">
+            プレイヤーが挑戦できる「塔（ダンジョン）」を作成・編集できます。各塔について、教材マニフェストのどの単元（問題セット）から出題するかを自由に組み合わせられます。
+          </p>
+
+          <div id="dungeon-admin-tower-cards" style="display:grid;gap:12px;">
+            <!-- JSで動的に塔管理カードを生成 -->
+          </div>
+
+          <div style="margin-top:16px;display:flex;gap:8px;">
+            <button type="button" class="dungeon-btn" style="font-size:12px;padding:4px 10px;" onclick="resetTowersToDefault()">
+              初期の塔設定にもどす
+            </button>
+          </div>
+        </div>
+
+        <!-- 塔の編集パネル (モーダル風フォーム) -->
+        <div id="dungeon-tower-edit-panel" class="dungeon-window" style="display:none;margin-top:16px;border-color:var(--gold);">
+          <h2 class="dungeon-h2" id="dungeon-tower-edit-title" style="font-size:16px;color:var(--gold);">塔の編集</h2>
+          <form id="dungeon-tower-edit-form" style="display:grid;gap:12px;">
+            <input type="hidden" id="tower-edit-id">
+            
+            <div>
+              <label style="display:block;font-size:13px;color:var(--muted);margin-bottom:4px;">塔の名前</label>
+              <input type="text" id="tower-edit-name" required placeholder="例: はじまりの塔" style="width:100%;font-size:16px;padding:8px;background:#000;color:#fff;border:1px solid var(--line);border-radius:4px;">
+            </div>
+
+            <div>
+              <label style="display:block;font-size:13px;color:var(--muted);margin-bottom:4px;">説明・ヒント文</label>
+              <input type="text" id="tower-edit-desc" placeholder="例: 数字と色を中心に学ぶ入門の塔" style="width:100%;font-size:14px;padding:8px;background:#000;color:#fff;border:1px solid var(--line);border-radius:4px;">
+            </div>
+
+            <div>
+              <label style="display:block;font-size:13px;color:var(--muted);margin-bottom:4px;">最大階数（10〜100）</label>
+              <input type="number" id="tower-edit-maxfloor" min="10" max="100" step="10" value="100" style="width:100px;font-size:15px;padding:6px;background:#000;color:#fff;border:1px solid var(--line);border-radius:4px;">
+            </div>
+
+            <!-- 単元チェックボックス群 -->
+            <div style="background:#1b1a2a;padding:12px;border-radius:6px;border:1px solid #333048;">
+              <h3 style="font-family:'DotGothic16',monospace;font-size:15px;margin:0 0 8px;color:#90caf9;">
+                📚 単語練習モードの出題単元（Lv 1〜5）
+              </h3>
+              <div style="display:flex;gap:8px;margin-bottom:8px;">
+                <button type="button" class="dungeon-btn" style="min-height:30px;padding:2px 8px;font-size:12px;" onclick="toggleAllUnits('vocab', true)">全選択</button>
+                <button type="button" class="dungeon-btn" style="min-height:30px;padding:2px 8px;font-size:12px;" onclick="toggleAllUnits('vocab', false)">全解除</button>
+              </div>
+              <div id="tower-edit-vocab-units" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:6px;">
+                <!-- チェックボックス生成 -->
+              </div>
+            </div>
+
+            <div style="background:#1b1a2a;padding:12px;border-radius:6px;border:1px solid #333048;">
+              <h3 style="font-family:'DotGothic16',monospace;font-size:15px;margin:0 0 8px;color:#ce93d8;">
+                💬 表現練習モードの出題単元（Lv 6〜10）
+              </h3>
+              <div style="display:flex;gap:8px;margin-bottom:8px;">
+                <button type="button" class="dungeon-btn" style="min-height:30px;padding:2px 8px;font-size:12px;" onclick="toggleAllUnits('expr', true)">全選択</button>
+                <button type="button" class="dungeon-btn" style="min-height:30px;padding:2px 8px;font-size:12px;" onclick="toggleAllUnits('expr', false)">全解除</button>
+              </div>
+              <div id="tower-edit-expr-units" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:6px;">
+                <!-- チェックボックス生成 -->
+              </div>
+            </div>
+
+            <div style="display:flex;gap:10px;margin-top:12px;">
+              <button type="submit" class="dungeon-btn" style="background:#2e7d32;color:#fff;flex:1;">保存する</button>
+              <button type="button" class="dungeon-btn" style="background:#424242;color:#fff;" onclick="closeTowerEditModal()">キャンセル</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- ================= タブ2: パラメータ・バランス調整 ================= -->
+      <div id="dungeon-admin-tab-params" style="display:none;">
+        <div class="dungeon-window" style="margin-bottom:16px;">
+          <p style="color:#aaa;font-size:13px;line-height:1.6;margin:0 0 10px;">
+            数値を変えるとすぐ反映され、ブラウザに保存されます。敵のHPと攻撃力は直接決めず、「標準の攻撃 何発で倒せるか」「無防備で何発耐えられるか」から逆算しています。
+          </p>
+          <div id="dungeon-admin-params"></div>
+          <div class="dungeon-tw" style="margin-top:16px;"><table id="dungeon-admin-ttable"></table></div>
+          
+          <div class="dungeon-try" style="margin-top:16px;">
+            <button id="dungeon-cfgReset" type="button" class="dungeon-btn">初期値にもどす</button>
+            <button id="dungeon-cfgOut" type="button" class="dungeon-btn">設定を書き出す</button>
+            <button id="dungeon-cfgIn" type="button" class="dungeon-btn">設定を読み込む</button>
+          </div>
+          <textarea id="dungeon-cfgText" rows="4" style="margin-top:10px;" aria-label="設定データ" placeholder="書き出した設定がここに出ます。読み込むときは、ここに貼り付けて「設定を読み込む」を押します。"></textarea>
+          <p class="dungeon-note" id="dungeon-cfgMsg" style="margin:6px 0;"></p>
+          
+          <div class="dungeon-try" style="margin-top:16px;padding:12px;background:#1b1a2a;border-radius:6px;border:1px solid #333048;">
+            <label for="dungeon-tryF" style="display:inline;font-family:'DotGothic16',monospace;color:#f2b632;">この階からテストプレイする：</label>
+            <input type="number" id="dungeon-tryF" min="1" max="100" value="50" style="width:90px;font-size:16px;padding:4px 8px;background:#000;color:#fff;border:1px solid #eeece2;border-radius:4px;">
+            <button id="dungeon-tryBtn" type="button" class="dungeon-btn" style="background:#546e7a;">練習モードで試走する ▶</button>
+          </div>
+          <p class="dungeon-note" style="margin-top:6px;">※練習開始は想定レベルで始まり、記録にもセーブデータにも残りません。</p>
+        </div>
+      </div>
+
+    </div>
+  </div>
 
   <div class="footer">Kojiro Nakamura all rights reserved</div>
   <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
@@ -1033,7 +1228,8 @@
   <script src="js/modules/externalLearning.js?v=20261012-standalone-v1"></script>
   <script src="js/modules/parentAdmin.js?v=20261013-materials-fix-v2"></script>
   <script src="js/modules/authPin.js?v=20261012-standalone-v1"></script>
-  <script src="js/app.js?v=20261014-stroke-order-v1"></script>
+  <script src="js/modules/dungeonGame.js?v=20261014-dungeon-towers-v2"></script>
+  <script src="js/app.js?v=20261014-dungeon-gamification-v2"></script>
 </body>
 </html>
 

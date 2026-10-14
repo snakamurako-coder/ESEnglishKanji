@@ -15449,3 +15449,29 @@
         else if (e.key.length === 1 && /^[a-zA-Z]$/.test(e.key)) { handleFillInput(e.key); }
       }
     });
+
+    // 単語迷宮 百階 (Dungeon RPG Gamification) 連携
+    global.openDungeonGame = function(startFloor, isPractice) {
+      if (global.DungeonGame && typeof global.DungeonGame.open === 'function') {
+        global.DungeonGame.open(startFloor, isPractice);
+      } else {
+        switchSection('section-dungeon');
+      }
+    };
+
+    global.enterParentAdminDungeon = function() {
+      if (global.DungeonGame && typeof global.DungeonGame.openAdmin === 'function') {
+        global.DungeonGame.openAdmin();
+      } else {
+        switchSection('section-parent-admin-dungeon');
+      }
+    };
+
+    global.exitParentAdminDungeon = function() {
+      switchSection('section-parent-admin');
+    };
+
+    global.exitDungeonToHome = function() {
+      const user = JSON.parse(localStorage.getItem('app_kid_user') || 'null');
+      showHome(user);
+    };
