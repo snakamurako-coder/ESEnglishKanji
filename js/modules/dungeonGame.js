@@ -901,12 +901,12 @@
     const nb = Object.keys(BGM).length;
     const statEl = document.getElementById("dungeon-seStat");
     if (statEl) {
-      statEl.textContent = (n || nb) ? `効果音 ${n}/${SE_TOTAL}・BGM ${nb}/${BGM_TOTAL}` : "効果音なし";
+      statEl.textContent = (n || nb) ? `読込済: 効果音 ${n}/${SE_TOTAL}・BGM ${nb}/${BGM_TOTAL}` : "効果音なし";
     }
     const seMuteBtn = document.getElementById("dungeon-seMute");
     const bgmMuteBtn = document.getElementById("dungeon-bgmMute");
-    if (seMuteBtn) seMuteBtn.textContent = seOn ? "🔊" : "🔇";
-    if (bgmMuteBtn) bgmMuteBtn.textContent = bgmOn ? "🎵" : "🚫";
+    if (seMuteBtn) seMuteBtn.textContent = seOn ? "🔊 効果音: ON" : "🔇 効果音: OFF";
+    if (bgmMuteBtn) bgmMuteBtn.textContent = bgmOn ? "🎵 BGM: ON" : "🚫 BGM: OFF";
   }
 
   const SKEY = {
@@ -1047,6 +1047,49 @@
     el.scrollTop = el.scrollHeight;
   }
 
+  /* ---------- 冒険メニュー (ステータス・きろく・音声設定) ---------- */
+  function openDungeonMenu(defaultTab) {
+    const modal = document.getElementById("dungeon-menu-modal");
+    if (!modal) return;
+    modal.style.display = "flex";
+    renderStatus();
+    renderLog();
+    seStatus();
+    switchDungeonMenuTab(defaultTab || "stat");
+    se("select");
+  }
+
+  function closeDungeonMenu() {
+    const modal = document.getElementById("dungeon-menu-modal");
+    if (!modal) return;
+    modal.style.display = "none";
+    se("cancel");
+  }
+
+  function switchDungeonMenuTab(tab) {
+    const tabs = ["stat", "log", "sound"];
+    tabs.forEach(t => {
+      const btn = document.getElementById("dungeon-tab-btn-" + t);
+      const panel = document.getElementById("dungeon-tab-panel-" + t);
+      if (btn) btn.classList.toggle("active", t === tab);
+      if (panel) panel.style.display = (t === tab) ? "block" : "none";
+    });
+    if (tab === "stat") renderStatus();
+    else if (tab === "log") {
+      renderLog();
+      const logEl = document.getElementById("dungeon-log");
+      if (logEl) logEl.scrollTop = logEl.scrollHeight;
+    } else if (tab === "sound") {
+      seStatus();
+    }
+  }
+
+  function handleDungeonMenuOverlayClick(e) {
+    if (e.target && e.target.id === "dungeon-menu-modal") {
+      closeDungeonMenu();
+    }
+  }
+
   let quizKey = null, raf = 0, currentRecognition = null;
 
   function say(t) {
@@ -1111,12 +1154,17 @@
   function winExplore(t) {
     const win = document.getElementById("dungeon-win");
     if (!win) return;
-    win.innerHTML = `<div class="dungeon-explore"><div><p class="dungeon-msg">${t}</p><div class="dungeon-btns"><button id="dungeon-bag" type="button">🎒 どうぐ</button><button id="dungeon-eqb" type="button">🛡️ そうび${needEquip() ? '<span class="badge">NEW</span>' : ''}</button></div><p class="dungeon-note" style="margin-top:10px;font-size:12px;color:var(--muted)">スワイプ・となりのマスをタップ・矢印キーでも うごける</p></div>` +
-      `<div class="dungeon-dpad"><button class="up" data-d="0,-1" type="button" aria-label="上へ">▲</button><button class="lf" data-d="-1,0" type="button" aria-label="左へ">◀</button><button class="rt" data-d="1,0" type="button" aria-label="右へ">▶</button><button class="dn" data-d="0,1" type="button" aria-label="下へ">▼</button></div></div>`;
+    win.innerHTML = `<div class="dungeon-explore"><div><p class="dungeon-msg">${t}</p><div class="dungeon-btns"><button id="dungeon-bag" type="button">🎒 どうぐ</button><button id="dungeon-eqb" type="button">🛡️ そうび${needEquip() ? '<span class="badge">NEW</span>' : ''}</button><button id="dungeon-cmd-menu" type="button">📋 メニュー</button></div><p class="dungeon-note" style="margin-top:10px;font-size:12px;color:var(--muted)">スワイプ・となりのマスをタップ・矢印キーでも うごける</p></div>` +
+      `<div class="dungeon-dpad"><button class="up" data-d="0,-1" type="button" aria-label="上へ">▲</button><button class="lf" data-d="-1,0" type="button" aria-label="左へ">◀</button><button class="menu" id="dungeon-dpad-menu" type="button" aria-label="メニューを開く">メニュー</button><button class="rt" data-d="1,0" type="button" aria-label="右へ">▶</button><button class="dn" data-d="0,1" type="button" aria-label="下へ">▼</button></div></div>`;
     
     document.getElementById("dungeon-bag").onclick = () => winItems("どちらへ すすむ？");
     document.getElementById("dungeon-eqb").onclick = winEquip;
-    win.querySelectorAll(".dungeon-dpad button").forEach(b => b.onclick = () => {
+    const cmdMenu = document.getElementById("dungeon-cmd-menu");
+    if (cmdMenu) cmdMenu.onclick = () => openDungeonMenu();
+    const dpadMenu = document.getElementById("dungeon-dpad-menu");
+    if (dpadMenu) dpadMenu.onclick = () => openDungeonMenu();
+
+    win.querySelectorAll(".dungeon-dpad button[data-d]").forEach(b => b.onclick = () => {
       const d = b.dataset.d.split(",");
       move(+d[0], +d[1]);
     });
@@ -2221,6 +2269,17 @@
       if (document.getElementById("dungeon-game-main").style.display === "none") return;
       if (e.isComposing || e.key === 'Process') return;
 
+      // メニューモーダルが開いている場合
+      const menuModal = document.getElementById("dungeon-menu-modal");
+      const isMenuOpen = menuModal && menuModal.style.display !== "none";
+      if (isMenuOpen) {
+        if (e.key === "Escape" || e.key === "m" || e.key === "M") {
+          e.preventDefault();
+          closeDungeonMenu();
+          return;
+        }
+      }
+
       // クイズ出題中のテキスト入力判定 (dungeon-qin, dungeon-sort-missing-in, dungeon-voice-in)
       const activeInput = document.getElementById("dungeon-qin") ||
                           document.getElementById("dungeon-sort-missing-in") ||
@@ -2253,6 +2312,13 @@
 
       if (e.target.tagName === "INPUT") return;
       if (quizKey) { quizKey(e.key); return; }
+
+      if ((e.key === "m" || e.key === "M") && S.screen === "explore") {
+        e.preventDefault();
+        openDungeonMenu();
+        return;
+      }
+
       const k = {
         ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0],
         w: [0, -1], s: [0, 1], a: [-1, 0], d: [1, 0]
@@ -2319,6 +2385,10 @@
 
   // グローバル公開
   global.openDungeonGame = openDungeonGame;
+  global.openDungeonMenu = openDungeonMenu;
+  global.closeDungeonMenu = closeDungeonMenu;
+  global.switchDungeonMenuTab = switchDungeonMenuTab;
+  global.handleDungeonMenuOverlayClick = handleDungeonMenuOverlayClick;
   global.exitDungeonToHome = exitDungeonToHome;
   global.enterParentAdminDungeon = openParentAdminDungeon;
   global.exitParentAdminDungeon = exitParentAdminDungeon;
@@ -2333,6 +2403,8 @@
 
   global.DungeonGame = {
     open: openDungeonGame,
+    openMenu: openDungeonMenu,
+    closeMenu: closeDungeonMenu,
     openAdmin: openParentAdminDungeon,
     loadManifest: loadManifestMaterialsForDungeon,
     getPoolStatus: () => ({

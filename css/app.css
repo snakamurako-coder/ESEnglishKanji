@@ -5714,11 +5714,8 @@ body { font-family: 'Hiragino Maru Gothic ProN', sans-serif; background-color: #
     .dungeon-best b { color: var(--gold); font-weight: 400; }
     .dungeon-sebar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; width: 100%; font-family: var(--game); font-size: 13px; color: var(--muted); }
     .dungeon-sebar button { min-height: 36px; padding: 4px 10px; font-size: 13px; }
-    .dungeon-app { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); }
-    @media(min-width: 840px) {
-      .dungeon-app { grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); align-items: start; }
-    }
-    .dungeon-col { display: grid; gap: 12px; min-width: 0; }
+    .dungeon-app { display: grid; gap: 16px; justify-content: center; width: 100%; }
+    .dungeon-col { display: grid; gap: 12px; min-width: 0; width: 100%; max-width: 680px; margin: 0 auto; }
     .dungeon-window { border: 2px solid var(--line); border-radius: 6px; background: #000; padding: 12px 14px; font-family: var(--game); min-width: 0; }
     .dungeon-h2 { font-family: var(--game); font-weight: 400; font-size: 14px; margin: 0 0 8px; color: var(--muted); letter-spacing: .1em; }
     .dungeon-floorbar { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 16px; }
@@ -5777,8 +5774,45 @@ body { font-family: 'Hiragino Maru Gothic ProN', sans-serif; background-color: #
     .dungeon-dpad button { padding: 0 !important; font-size: 18px !important; }
     .dungeon-dpad .up { grid-area: 1/2; }
     .dungeon-dpad .lf { grid-area: 2/1; }
+    .dungeon-dpad .menu { grid-area: 2/2; font-size: 11px !important; background: var(--gold) !important; color: #000 !important; font-weight: bold; border-color: var(--line) !important; border-radius: 4px; padding: 0 !important; cursor: pointer; letter-spacing: -0.5px; }
+    .dungeon-dpad .menu:hover { background: #ffd54f !important; }
     .dungeon-dpad .rt { grid-area: 2/3; }
     .dungeon-dpad .dn { grid-area: 3/2; }
+
+    /* 冒険メニュー モーダル */
+    .dungeon-modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.78);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10000;
+      padding: 16px;
+      box-sizing: border-box;
+      backdrop-filter: blur(3px);
+    }
+    .dungeon-menu-dialog {
+      width: 100%;
+      max-width: 580px;
+      max-height: 88vh;
+      overflow-y: auto;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.9);
+      border: 2px solid var(--gold) !important;
+      animation: dungeonPopIn 0.2s ease-out;
+    }
+    @keyframes dungeonPopIn {
+      from { opacity: 0; transform: scale(0.96); }
+      to { opacity: 1; transform: scale(1); }
+    }
+    .dungeon-menu-tabs .dungeon-btn.active {
+      background: var(--gold) !important;
+      color: #000 !important;
+      font-weight: bold;
+    }
+    .dungeon-menu-panel {
+      padding: 4px 0;
+    }
     
     .dungeon-qhead { display: flex; justify-content: space-between; color: var(--muted); font-size: 13px; }
     .dungeon-tbar { height: 8px; border: 1px solid var(--line); margin: 6px 0 12px; }
