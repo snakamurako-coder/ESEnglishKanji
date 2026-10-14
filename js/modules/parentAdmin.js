@@ -1508,8 +1508,10 @@
             <ul style="margin:0;padding-left:20px;font-size:12px;line-height:1.5;">
               <li>ユーザー: <b>${counts.usersCount || 0}</b> 件</li>
               <li>特訓メニュー: <b>${counts.menusCount || 0}</b> 件</li>
-              <li>ご褒美アイテム: <b>${counts.rewardsCount || 0}</b> 件</li>
+              <li>ご褒美マスター: <b>${counts.rewardsCount || 0}</b> 件</li>
+              <li>ご褒美履歴: <b>${counts.inventoryCount || 0}</b> 件</li>
               <li>外部学習メニュー: <b>${counts.extMenusCount || 0}</b> 件</li>
+              <li>外部学習申請記録: <b>${counts.extRequestsCount || 0}</b> 件</li>
               <li>詳細設定項目: <b>${counts.settingsCount || 0}</b> 件</li>
             </ul>
           </div>`;

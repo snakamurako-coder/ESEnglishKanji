@@ -962,6 +962,8 @@
           menusCount: 0,
           rewardsCount: 0,
           extMenusCount: 0,
+          extRequestsCount: 0,
+          inventoryCount: 0,
           settingsCount: 0
         };
 
@@ -1049,6 +1051,54 @@
             promises.push(global.appSettingsStore.saveAppSettings(data.appSettings));
             counts.settingsCount += Object.keys(data.appSettings).length;
           }
+        }
+
+        // 8. externalRequests コレクションへの復元（過去の申請・承認履歴）
+        if (Array.isArray(data.externalRequests) && data.externalRequests.length > 0 && db) {
+          counts.extRequestsCount = data.externalRequests.length;
+          var batches = [];
+          var currentBatch = db.batch();
+          var batchCount = 0;
+
+          for (var ei = 0; ei < data.externalRequests.length; ei++) {
+            var reqItem = data.externalRequests[ei];
+            var docId = reqItem.id || ("legacy_ext_" + ei);
+            var docRef = db.collection('externalRequests').doc(docId);
+            currentBatch.set(docRef, {
+              userId: String(reqItem.userId || '').trim(),
+              userName: String(reqItem.userName || '').trim(),
+              category: String(reqItem.category || '').trim(),
+              volume: String(reqItem.volume || '').trim(),
+              points: Number(reqItem.points) || 0,
+              childMemo: String(reqItem.childMemo || '').trim(),
+              adminMemo: String(reqItem.adminMemo || '').trim(),
+              status: String(reqItem.status || 'approved').trim(),
+              requestedAt: String(reqItem.requestedAt || '').trim(),
+              processedAt: String(reqItem.processedAt || '').trim(),
+              createdAt: reqItem.requestedAt || (typeof firebase !== 'undefined' && firebase.firestore && firebase.firestore.FieldValue ? firebase.firestore.FieldValue.serverTimestamp() : new Date().toISOString())
+            }, { merge: true });
+            batchCount++;
+
+            if (batchCount >= 400) {
+              batches.push(currentBatch.commit());
+              currentBatch = db.batch();
+              batchCount = 0;
+            }
+          }
+          if (batchCount > 0) {
+            batches.push(currentBatch.commit());
+          }
+          promises.push(Promise.all(batches));
+        }
+
+        // 9. inventory（ごほうび所持・利用履歴アーカイブ）の復元
+        if (Array.isArray(data.inventory) && data.inventory.length > 0 && db) {
+          counts.inventoryCount = data.inventory.length;
+          promises.push(db.collection('system').doc('inventory_backup').set({
+            list: data.inventory,
+            updatedAt: (typeof firebase !== 'undefined' && firebase.firestore && firebase.firestore.FieldValue) ?
+              firebase.firestore.FieldValue.serverTimestamp() : new Date().toISOString()
+          }, { merge: true }));
         }
 
         Promise.all(promises).then(function () {

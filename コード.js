@@ -949,6 +949,7 @@ function doPost(e) {
     else if (action === "run_migrate_once") return handleRunMigrateOnce(requestData);
     else if (action === "export_full_backup" || action === "backup_spreadsheets") return handleExportFullBackupAdmin(requestData);
     else if (action === "import_full_config" || action === "fetch_backup_spreadsheet_data") return handleImportFullConfigAdmin(requestData);
+    else if (action === "inspect_spreadsheet") return handleInspectSpreadsheetAdmin(requestData);
     else if (action === "export_all" || action === "export_manifest_all") return handleExportAllMaterialsAdmin(requestData);
     
     else return sendResponse({ status: "error", message: "無効なactionです" });
@@ -5011,6 +5012,78 @@ function safeParseJsonCellInternal_(val, fallback) {
   }
 }
 
+function handleInspectSpreadsheetAdmin(req) {
+  try {
+    const pin = String((req && req.adminPin) || "").trim();
+    if (!verifyAdminPin_(pin)) {
+      return sendResponse({ status: "error", message: "管理者PINが一致しません" });
+    }
+
+    let ssId = String((req && req.spreadsheetId) || "").trim();
+    if (ssId.indexOf("docs.google.com") !== -1) {
+      const m = ssId.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+      if (m) ssId = m[1];
+    }
+
+    let targetSs = null;
+    if (ssId) {
+      try {
+        targetSs = SpreadsheetApp.openById(ssId);
+      } catch (eOpen) {
+        return sendResponse({ status: "error", message: "指定されたスプレッドシートを開けませんでした: " + eOpen.message });
+      }
+    } else {
+      const props = PropertiesService.getScriptProperties();
+      const adminSsId = props.getProperty("ADMIN_SS_ID");
+      if (adminSsId) {
+        try { targetSs = SpreadsheetApp.openById(adminSsId); } catch (_) {}
+      }
+      if (!targetSs) {
+        try { targetSs = SpreadsheetApp.getActiveSpreadsheet(); } catch (_) {}
+      }
+    }
+
+    if (!targetSs) {
+      return sendResponse({ status: "error", message: "スプレッドシートが見つかりません。" });
+    }
+
+    const sheets = targetSs.getSheets();
+    const result = [];
+    for (let i = 0; i < sheets.length; i++) {
+      const sh = sheets[i];
+      const name = sh.getName();
+      const lastRow = sh.getLastRow();
+      const lastCol = sh.getLastColumn();
+      let headers = [];
+      let sampleRows = [];
+      if (lastRow > 0 && lastCol > 0) {
+        const numSample = Math.min(3, lastRow);
+        const data = sh.getRange(1, 1, numSample, lastCol).getValues();
+        headers = data[0].map(function (v) { return String(v !== null && v !== undefined ? v : "").trim(); });
+        for (let r = 1; r < data.length; r++) {
+          sampleRows.push(data[r]);
+        }
+      }
+      result.push({
+        name: name,
+        lastRow: lastRow,
+        lastCol: lastCol,
+        headers: headers,
+        samples: sampleRows
+      });
+    }
+
+    return sendResponse({
+      status: "success",
+      ssId: targetSs.getId(),
+      ssName: targetSs.getName(),
+      sheets: result
+    });
+  } catch (err) {
+    return sendResponse({ status: "error", message: "診断エラー: " + err.message });
+  }
+}
+
 function handleImportFullConfigAdmin(req) {
   try {
     const pin = String((req && req.adminPin) || "").trim();
@@ -5117,24 +5190,40 @@ function handleImportFullConfigAdmin(req) {
     if (rewardsSheet) {
       const vals = rewardsSheet.getDataRange().getValues();
       if (vals.length > 1) {
+        const headers = vals[0].map(function (h) { return String(h || "").trim(); });
+        const idIdx = headers.indexOf("ID") >= 0 ? headers.indexOf("ID") : 0;
+        const nameIdx = headers.indexOf("名前") >= 0 ? headers.indexOf("名前") : 1;
+        const ptIdx = headers.indexOf("必要ポイント") >= 0 ? headers.indexOf("必要ポイント") : 2;
+        const descIdx = headers.indexOf("説明") >= 0 ? headers.indexOf("説明") : 3;
+        let timeIdx = -1;
+        for (let hi = 0; hi < headers.length; hi++) {
+          if (headers[hi].indexOf("時間") !== -1 || headers[hi].indexOf("分") !== -1) {
+            timeIdx = hi;
+            break;
+          }
+        }
+        if (timeIdx < 0) timeIdx = 4;
+        const iconIdx = headers.indexOf("アイコン") >= 0 ? headers.indexOf("アイコン") : 5;
+        const enabledIdx = headers.indexOf("有効") >= 0 ? headers.indexOf("有効") : 6;
+
         for (let i = 1; i < vals.length; i++) {
           const row = vals[i];
-          const rId = String(row[0] || "").trim();
+          const rId = String(row[idIdx] || "").trim();
           if (!rId) continue;
           parsedRewards.push({
             id: rId,
-            name: String(row[1] || "").trim(),
-            points: Math.max(0, Number(row[2]) || 0),
-            timeMinutes: Math.max(0, Number(row[3]) || 0),
-            desc: String(row[4] || "").trim(),
-            icon: String(row[5] || "🎁").trim(),
-            enabled: row[6] !== false && String(row[6]).toLowerCase() !== "false"
+            name: String(row[nameIdx] || "").trim(),
+            points: Math.max(0, Number(row[ptIdx]) || 0),
+            timeMinutes: Math.max(0, Number(row[timeIdx]) || 0),
+            desc: String(row[descIdx] || "").trim(),
+            icon: String(row[iconIdx] || "🎁").trim(),
+            enabled: row[enabledIdx] !== false && String(row[enabledIdx]).toLowerCase() !== "false"
           });
         }
       }
     }
 
-    // 4. 外部学習 シート
+    // 4. 外部学習 シート（メニューマスタ）
     const extSheet = targetSs.getSheetByName("外部学習");
     const parsedExtMenus = [];
     if (extSheet) {
@@ -5220,6 +5309,112 @@ function handleImportFullConfigAdmin(req) {
       shapeWeight: Number(weights.shape) || 25
     };
 
+    // 7. 外部学習申請 シート
+    const extReqSheet = targetSs.getSheetByName("外部学習申請");
+    const parsedExtRequests = [];
+    if (extReqSheet) {
+      const vals = extReqSheet.getDataRange().getValues();
+      if (vals.length > 1) {
+        const headers = vals[0].map(function (h) { return String(h || "").trim(); });
+        const reqAtIdx = headers.indexOf("申請日時") >= 0 ? headers.indexOf("申請日時") : 0;
+        const uIdIdx = headers.indexOf("ユーザーID") >= 0 ? headers.indexOf("ユーザーID") : 1;
+        const uNameIdx = headers.indexOf("ユーザー名") >= 0 ? headers.indexOf("ユーザー名") : 2;
+        const catIdx = headers.indexOf("カテゴリ") >= 0 ? headers.indexOf("カテゴリ") : 3;
+        const volIdx = headers.indexOf("分量") >= 0 ? headers.indexOf("分量") : 4;
+        const ptIdx = headers.indexOf("ポイント") >= 0 ? headers.indexOf("ポイント") : 5;
+        const cMemoIdx = headers.indexOf("こどもメモ") >= 0 ? headers.indexOf("こどもメモ") : (headers.indexOf("メモ") >= 0 ? headers.indexOf("メモ") : 6);
+        const statusIdx = headers.indexOf("状態") >= 0 ? headers.indexOf("状態") : 7;
+        const procAtIdx = headers.indexOf("処理日時") >= 0 ? headers.indexOf("処理日時") : (headers.indexOf("承認日時") >= 0 ? headers.indexOf("承認日時") : 8);
+        const aMemoIdx = headers.indexOf("おとなメモ") >= 0 ? headers.indexOf("おとなメモ") : 9;
+
+        for (let i = 1; i < vals.length; i++) {
+          const row = vals[i];
+          const uId = String(row[uIdIdx] || "").trim();
+          if (!uId) continue;
+          const rawStatus = String(row[statusIdx] || "").trim();
+          let normStatus = "approved";
+          if (rawStatus === "未承認" || rawStatus === "pending") {
+            normStatus = "pending";
+          } else if (rawStatus === "却下" || rawStatus === "rejected") {
+            normStatus = "rejected";
+          } else if (rawStatus === "承認" || rawStatus === "承認済み" || rawStatus === "approved") {
+            normStatus = "approved";
+          }
+
+          let reqAtStr = row[reqAtIdx];
+          if (reqAtStr instanceof Date) {
+            reqAtStr = reqAtStr.toISOString();
+          } else {
+            reqAtStr = String(reqAtStr || "").trim();
+          }
+
+          let procAtStr = row[procAtIdx];
+          if (procAtStr instanceof Date) {
+            procAtStr = procAtStr.toISOString();
+          } else {
+            procAtStr = String(procAtStr || "").trim();
+          }
+
+          parsedExtRequests.push({
+            id: "legacy_ext_req_" + i,
+            userId: uId,
+            userName: String(row[uNameIdx] || "").trim(),
+            category: String(row[catIdx] || "").trim(),
+            volume: String(row[volIdx] || "").trim(),
+            points: Number(row[ptIdx]) || 0,
+            childMemo: String(row[cMemoIdx] || "").trim(),
+            status: normStatus,
+            requestedAt: reqAtStr,
+            processedAt: procAtStr,
+            adminMemo: String(row[aMemoIdx] || "").trim()
+          });
+        }
+      }
+    }
+
+    // 8. inventory シート（ごほうび所持・利用履歴）
+    const invSheet = targetSs.getSheetByName("inventory");
+    const parsedInventory = [];
+    if (invSheet) {
+      const vals = invSheet.getDataRange().getValues();
+      if (vals.length > 1) {
+        const headers = vals[0].map(function (h) { return String(h || "").trim(); });
+        const exAtIdx = headers.indexOf("交換日時") >= 0 ? headers.indexOf("交換日時") : (headers.indexOf("日時") >= 0 ? headers.indexOf("日時") : 0);
+        const uIdIdx = headers.indexOf("ユーザーID") >= 0 ? headers.indexOf("ユーザーID") : 1;
+        const rIdIdx = headers.indexOf("景品ID") >= 0 ? headers.indexOf("景品ID") : (headers.indexOf("アイテムID") >= 0 ? headers.indexOf("アイテムID") : 2);
+        const rNameIdx = headers.indexOf("景品名") >= 0 ? headers.indexOf("景品名") : (headers.indexOf("アイテム名") >= 0 ? headers.indexOf("アイテム名") : 3);
+        const statusIdx = headers.indexOf("状態") >= 0 ? headers.indexOf("状態") : 4;
+        const usedAtIdx = headers.indexOf("使用日時") >= 0 ? headers.indexOf("使用日時") : 5;
+        const notifIdx = headers.indexOf("終了通知状態") >= 0 ? headers.indexOf("終了通知状態") : (headers.indexOf("終了通知済") >= 0 ? headers.indexOf("終了通知済") : 6);
+
+        for (let i = 1; i < vals.length; i++) {
+          const row = vals[i];
+          const uId = String(row[uIdIdx] || "").trim();
+          if (!uId) continue;
+
+          let exAtStr = row[exAtIdx];
+          if (exAtStr instanceof Date) exAtStr = exAtStr.toISOString();
+          else exAtStr = String(exAtStr || "").trim();
+
+          let usedAtStr = row[usedAtIdx];
+          if (usedAtStr instanceof Date) usedAtStr = usedAtStr.toISOString();
+          else usedAtStr = String(usedAtStr || "").trim();
+
+          parsedInventory.push({
+            id: "legacy_inv_" + i,
+            rowIdx: i + 1,
+            userId: uId,
+            rewardId: String(row[rIdIdx] || "").trim(),
+            rewardName: String(row[rNameIdx] || "").trim(),
+            status: String(row[statusIdx] || "未使用").trim(),
+            exchangedAt: exAtStr,
+            usedAt: usedAtStr,
+            notificationSent: String(row[notifIdx] || "").trim()
+          });
+        }
+      }
+    }
+
     return sendResponse({
       status: "success",
       sourceSpreadsheetId: targetSs.getId(),
@@ -5237,6 +5432,8 @@ function handleImportFullConfigAdmin(req) {
         },
         rewards: parsedRewards,
         externalMenus: parsedExtMenus,
+        externalRequests: parsedExtRequests,
+        inventory: parsedInventory,
         appSettings: appSettings
       }
     });
