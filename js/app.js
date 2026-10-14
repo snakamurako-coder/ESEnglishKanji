@@ -13511,6 +13511,8 @@
       return document.body.classList.contains('quiz-answer-submitting');
     }
     function isQuizEnglishTypingKeyboardActive() {
+      const dungeonSection = document.getElementById('section-dungeon');
+      if (dungeonSection && dungeonSection.classList.contains('active')) return true;
       const quizSection = document.getElementById('section-quiz');
       if (!quizSection || !quizSection.classList.contains('active')) return false;
       if (inputMethodMode === 'pen') return false;
@@ -13534,7 +13536,7 @@
       opts = opts || {};
       if (isQuizAnswerSubmitting()) return;
       if (opts.sortMissingMode) {
-        const inp = document.getElementById('sort-missing-input');
+        const inp = document.getElementById(opts.targetInputId || 'sort-missing-input');
         if (inp) inp.value += inputChar;
         return;
       }
@@ -13550,7 +13552,7 @@
       opts = opts || {};
       if (isQuizAnswerSubmitting()) return;
       if (opts.sortMissingMode) {
-        const inp = document.getElementById('sort-missing-input');
+        const inp = document.getElementById(opts.targetInputId || 'sort-missing-input');
         if (inp) inp.value = inp.value.slice(0, -1);
         return;
       }
@@ -13568,10 +13570,10 @@
       if (!inp) return;
       try { inp.focus({ preventScroll: true }); } catch (_) { inp.focus(); }
     }
-    function renderCustomKeyboard(isFillMode = false, sortMissingMode = false, containerId = 'keyboard-container', targetInputId = 'type-answer', onEnterSubmit = null) {
+    function renderCustomKeyboard(isFillMode = false, sortMissingMode = false, containerId = 'keyboard-container', targetInputId = 'type-answer', onEnterSubmit = null, onCardAdd = null) {
       const container = document.getElementById(containerId); if(!container) return; container.innerHTML = "";
       window.__sortMissingModeActive = !!sortMissingMode;
-      const keyOpts = { isFillMode: isFillMode, sortMissingMode: sortMissingMode, targetInputId: targetInputId };
+      const keyOpts = { isFillMode: isFillMode, sortMissingMode: sortMissingMode, targetInputId: targetInputId, onCardAdd: onCardAdd };
       const scalePct = parseInt(getUserPref(LS_KBD_SCALE, '100'), 10);
       const fontPx = parseInt(getUserPref(LS_KBD_FONT, '18'), 10);
       const padPx = Math.max(8, Math.round(fontPx * 0.72));
@@ -13620,7 +13622,13 @@
       
       if (sortMissingMode) {
         const cardBtn = document.createElement('button'); cardBtn.type = 'button'; cardBtn.className = 'key key-action'; cardBtn.innerText = "カードにする";
-        bindQuizKeyHandler(cardBtn, function () { addSortMissingWordCard(); });
+        bindQuizKeyHandler(cardBtn, function () {
+          if (typeof onCardAdd === "function") {
+            onCardAdd();
+          } else {
+            addSortMissingWordCard();
+          }
+        });
         bottomRow.appendChild(spaceBtn); bottomRow.appendChild(cardBtn);
       } else if (!isFillMode) {
         const enterBtn = document.createElement('button'); enterBtn.type = 'button'; enterBtn.className = 'key key-action'; enterBtn.innerText = "けってい";
@@ -13644,6 +13652,7 @@
       container.appendChild(wrap);
       updateKeyboardDisplay();
     }
+    global.renderCustomKeyboard = renderCustomKeyboard;
 
     function getPenTargetInput() {
       const ansTypeEl = document.getElementById('setting-answer-type');

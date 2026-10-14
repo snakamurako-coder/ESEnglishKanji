@@ -222,6 +222,7 @@
       name: "はじまりの塔",
       desc: "数字・色・あかりの自己紹介で基礎をかためる入門の塔",
       maxFloor: 30,
+      timeMultiplier: 1.0,
       vocabUnits: ["数字1_50", "色_50"],
       exprUnits: ["あかり自己紹介"]
     },
@@ -230,6 +231,7 @@
       name: "自己紹介の塔",
       desc: "自己紹介の単語と様々な表現フレーズをマスターする塔",
       maxFloor: 50,
+      timeMultiplier: 1.0,
       vocabUnits: ["自己紹介用１", "自己紹介用２"],
       exprUnits: ["あかり自己紹介", "ひかり自己紹介", "ひかりを紹介"]
     },
@@ -238,6 +240,7 @@
       name: "覇王迷宮 百階",
       desc: "すべての単語と表現からランダムに出題される究極の百階ダンジョン",
       maxFloor: 100,
+      timeMultiplier: 1.0,
       vocabUnits: [], // 空 = 全単元
       exprUnits: []   // 空 = 全単元
     }
@@ -248,7 +251,10 @@
     try {
       const v = JSON.parse(localStorage.getItem(TOWERS_KEY));
       if (Array.isArray(v) && v.length > 0) {
-        TOWERS = v;
+        TOWERS = v.map(t => ({
+          ...t,
+          timeMultiplier: (typeof t.timeMultiplier === "number" && t.timeMultiplier > 0) ? t.timeMultiplier : 1.0
+        }));
         return;
       }
     } catch(e) {}
@@ -325,13 +331,23 @@
   ];
 
   function tlim(L) {
-    let baseTime = 10;
-    if (L === 1 || L === 2) baseTime = CFG.tC || 10;
-    else if (L === 3) baseTime = CFG.tS || 15;
-    else if (L === 4 || L === 9) baseTime = CFG.tV || 16;
-    else if (L === 5 || L === 10) baseTime = CFG.tT || 22;
-    else if (L === 6 || L === 7 || L === 8) baseTime = CFG.tK || 25;
-    return baseTime * (CFG.time || 1);
+    const key = "t_lv" + L;
+    let baseTime = CFG[key];
+    if (typeof baseTime !== "number" || !isFinite(baseTime)) {
+      if (L === 1) baseTime = 10;
+      else if (L === 2) baseTime = 12;
+      else if (L === 3) baseTime = 15;
+      else if (L === 4) baseTime = 16;
+      else if (L === 5) baseTime = 22;
+      else if (L === 6) baseTime = 25;
+      else if (L === 7) baseTime = 28;
+      else if (L === 8) baseTime = 30;
+      else if (L === 9) baseTime = 18;
+      else if (L === 10) baseTime = 25;
+      else baseTime = 15;
+    }
+    const towerMul = (currentTower && typeof currentTower.timeMultiplier === "number" && currentTower.timeMultiplier > 0) ? currentTower.timeMultiplier : 1;
+    return baseTime * (CFG.time || 1) * towerMul;
   }
 
   /* ---------- 問題生成 (makeQ) ---------- */
@@ -565,9 +581,17 @@
       ["sp1", "速さ補正：残り80%以上", 15, -100, 100, 1], ["sp2", "速さ補正：残り60%以上", 10, -100, 100, 1],
       ["sp3", "速さ補正：残り40%以上", 5, -100, 100, 1], ["sp4", "速さ補正：残り20%以上", 0, -100, 100, 1],
       ["sp5", "速さ補正：残り20%未満", -5, -100, 100, 1],
-      ["tC", "制限時間：四択（秒）", 10, 1, 300, 1], ["tS", "制限時間：スペル補う（秒）", 15, 1, 300, 1],
-      ["tV", "制限時間：音声入力（秒）", 16, 1, 300, 1], ["tT", "制限時間：タイピング（秒）", 22, 1, 300, 1],
-      ["tK", "制限時間：並び替え（秒）", 25, 1, 300, 1], ["time", "制限時間の全体倍率", 1, 0.2, 10, 0.1]
+      ["t_lv1", "制限時間：Lv1 単語四択（秒）", 10, 1, 300, 1],
+      ["t_lv2", "制限時間：Lv2 単語四択＋なし（秒）", 12, 1, 300, 1],
+      ["t_lv3", "制限時間：Lv3 単語スペル補う（秒）", 15, 1, 300, 1],
+      ["t_lv4", "制限時間：Lv4 単語音声入力（秒）", 16, 1, 300, 1],
+      ["t_lv5", "制限時間：Lv5 単語タイピング（秒）", 22, 1, 300, 1],
+      ["t_lv6", "制限時間：Lv6 表現並び替え過不足なし（秒）", 25, 1, 300, 1],
+      ["t_lv7", "制限時間：Lv7 表現並び替え不要語排除（秒）", 28, 1, 300, 1],
+      ["t_lv8", "制限時間：Lv8 表現並び替え＋1補う（秒）", 30, 1, 300, 1],
+      ["t_lv9", "制限時間：Lv9 表現音声入力（秒）", 18, 1, 300, 1],
+      ["t_lv10", "制限時間：Lv10 表現タイピング（秒）", 25, 1, 300, 1],
+      ["time", "制限時間の全体倍率", 1, 0.2, 10, 0.1]
     ]],
     ["必殺技・とくぎ", [
       ["spPow", "必殺技の威力（通常の何倍か）", 3, 0.5, 50, 0.1], ["spSureLv", "必殺技が必中になるLv", 10, 1, 999, 1],
@@ -1220,6 +1244,24 @@
     document.getElementById("dE").onclick = () => ask(S.diff, "evade", r => doDefend("evade", r));
   }
 
+  /* ---------- ダンジョン専用オンスクリーンキーボード連携 ---------- */
+  function mountDungeonKeyboard(targetInputId, containerId, isSortMissing, onEnter, onAddCard) {
+    if (typeof global.renderCustomKeyboard === "function") {
+      try {
+        global.renderCustomKeyboard(
+          false, // isFillMode: false (ダンジョンは直接 input 要素に書き込むため)
+          !!isSortMissing, // sortMissingMode (true の場合「カードにする」ボタンが表示される)
+          containerId,
+          targetInputId,
+          onEnter,
+          onAddCard
+        );
+      } catch(err) {
+        console.warn("Failed to mount dungeon keyboard:", err);
+      }
+    }
+  }
+
   /* ---------- クイズ本体 (ask) ---------- */
   function ask(L, kind, done, name) {
     const win = document.getElementById("dungeon-win");
@@ -1239,7 +1281,8 @@
       h += `<div class="dungeon-choices${q.is5Choice ? ' choices-5' : ''}">${q.choices.map((c, i) => `<button data-c="${i}" type="button">${i + 1}. ${c}</button>`).join("")}</div>`;
     } else if (q.type === "spell") {
       h += `<div class="dungeon-spell-display">${q.hint}</div>` +
-        `<form class="dungeon-typed" id="dungeon-qform"><input type="text" id="dungeon-qin" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="単語または抜けた文字を入力" aria-label="英語で入力"><button type="submit" class="dungeon-btn">こたえる</button></form>`;
+        `<form class="dungeon-typed" id="dungeon-qform"><input type="text" id="dungeon-qin" readonly inputmode="none" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="抜けた文字または単語を入力" aria-label="英語で入力"><button type="submit" class="dungeon-btn" style="display:none;">こたえる</button></form>` +
+        `<div id="dungeon-keyboard-container" class="dungeon-keyboard-wrap"></div>`;
     } else if (q.type === "voice") {
       h += `<div class="dungeon-voice-box">` +
         `<button type="button" id="dungeon-voice-btn" class="dungeon-voice-btn">🎙️ マイクを押して英語で発音</button>` +
@@ -1247,13 +1290,13 @@
         `<div id="dungeon-voice-fallback" style="margin-top:8px;">` +
         `<button type="button" id="dungeon-voice-switch" class="dungeon-btn" style="font-size:12px;padding:4px 8px;min-height:32px;">⌨️ 文字入力に切り替え</button>` +
         `</div>` +
-        `<form class="dungeon-typed" id="dungeon-voice-form" style="display:none;width:100%;margin-top:8px;"><input type="text" id="dungeon-voice-in" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="英語で入力"><button type="submit" class="dungeon-btn">決定</button></form>` +
+        `<form class="dungeon-typed" id="dungeon-voice-form" style="display:none;width:100%;margin-top:8px;flex-direction:column;"><input type="text" id="dungeon-voice-in" readonly inputmode="none" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="英語で入力"><button type="submit" class="dungeon-btn" style="display:none;">決定</button><div id="dungeon-voice-keyboard-container" class="dungeon-keyboard-wrap" style="margin-top:8px;"></div></form>` +
         `</div>`;
     } else if (q.type === "sort") {
       const showMissing = q.variant === "missing";
       const showDummy = q.variant === "dummy";
       h += `<div class="dungeon-sort-area">` +
-        (showMissing ? `<div style="display:flex;gap:6px;margin-bottom:8px;"><input type="text" id="dungeon-sort-missing-in" placeholder="足りない単語を入力" style="font-size:15px;padding:6px;"><button type="button" id="dungeon-sort-add-btn" class="dungeon-btn" style="min-height:36px;padding:4px 10px;">＋カード追加</button></div>` : '') +
+        (showMissing ? `<div style="display:flex;gap:6px;margin-bottom:6px;"><input type="text" id="dungeon-sort-missing-in" readonly inputmode="none" placeholder="足りない単語を入力" style="font-size:15px;padding:6px;flex:1;"><button type="button" id="dungeon-sort-add-btn" class="dungeon-btn" style="min-height:36px;padding:4px 10px;">＋カード追加</button></div><div id="dungeon-sort-keyboard-container" class="dungeon-keyboard-wrap" style="margin-bottom:8px;"></div>` : '') +
         `<div class="dungeon-sort-label"><span>回答枠（タップして並べる）</span><button type="button" id="dungeon-sort-clear-btn" class="dungeon-btn" style="min-height:28px;padding:2px 8px;font-size:11px;">クリア</button></div>` +
         `<div id="dungeon-sort-slot" class="dungeon-sort-slot"></div>` +
         `<div class="dungeon-sort-label" style="margin-top:8px;"><span>単語カード${showDummy ? '（1つ使わないカードがあるよ）' : ''}</span></div>` +
@@ -1261,7 +1304,8 @@
         `<button type="button" id="dungeon-sort-submit" class="dungeon-btn" style="width:100%;margin-top:10px;background:#2e7d32;display:none;">これで回答する ▶</button>` +
         `</div>`;
     } else {
-      h += `<form class="dungeon-typed" id="dungeon-qform"><input type="text" id="dungeon-qin" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="英語で入力" aria-label="英語で入力"><button type="submit" class="dungeon-btn">こたえる</button></form>`;
+      h += `<form class="dungeon-typed" id="dungeon-qform"><input type="text" id="dungeon-qin" readonly inputmode="none" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="英語で入力" aria-label="英語で入力"><button type="submit" class="dungeon-btn" style="display:none;">こたえる</button></form>` +
+        `<div id="dungeon-keyboard-container" class="dungeon-keyboard-wrap"></div>`;
     }
 
     win.innerHTML = h + '<p class="dungeon-qres" id="dungeon-qres"></p>';
@@ -1310,14 +1354,18 @@
       };
     } else if (q.type === "spell") {
       const inp = document.getElementById("dungeon-qin");
-      if (inp) inp.focus();
       const form = document.getElementById("dungeon-qform");
-      if (form) form.addEventListener("submit", e => {
-        e.preventDefault();
-        const val = normalizeText(inp.value);
+      const submitSpell = () => {
+        if (fin) return;
+        const val = normalizeText(inp ? inp.value : "");
         const ok = (val === normalizeText(q.rawWord)) || (val === normalizeText(q.missingChars));
         finish(ok, false, null);
+      };
+      if (form) form.addEventListener("submit", e => {
+        e.preventDefault();
+        submitSpell();
       });
+      mountDungeonKeyboard("dungeon-qin", "dungeon-keyboard-container", false, submitSpell, null);
     } else if (q.type === "voice") {
       const voiceBtn = document.getElementById("dungeon-voice-btn");
       const vStatus = document.getElementById("dungeon-voice-status");
@@ -1325,22 +1373,29 @@
       const vForm = document.getElementById("dungeon-voice-form");
       const vIn = document.getElementById("dungeon-voice-in");
 
+      const submitVoiceFallback = () => {
+        if (fin) return;
+        const val = normalizeText(vIn ? vIn.value : "");
+        const ok = q.validAnswers
+          ? q.validAnswers.some(ans => normalizeText(ans) === val)
+          : normalizeText(q.answer) === val;
+        finish(ok, false, null);
+      };
+
+      if (vForm) {
+        vForm.addEventListener("submit", e => {
+          e.preventDefault();
+          submitVoiceFallback();
+        });
+      }
+
       switchBtn.onclick = () => {
         voiceBtn.style.display = "none";
         vStatus.style.display = "none";
         switchBtn.style.display = "none";
         vForm.style.display = "flex";
-        vIn.focus();
+        mountDungeonKeyboard("dungeon-voice-in", "dungeon-voice-keyboard-container", false, submitVoiceFallback, null);
       };
-
-      vForm.addEventListener("submit", e => {
-        e.preventDefault();
-        const val = normalizeText(vIn.value);
-        const ok = q.validAnswers
-          ? q.validAnswers.some(ans => normalizeText(ans) === val)
-          : normalizeText(q.answer) === val;
-        finish(ok, false, null);
-      });
 
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (!SpeechRecognition) {
@@ -1435,6 +1490,7 @@
         };
         addBtn.onclick = addCard;
         missingIn.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); addCard(); } });
+        mountDungeonKeyboard("dungeon-sort-missing-in", "dungeon-sort-keyboard-container", true, null, addCard);
       }
 
       if (clearBtn) {
@@ -1455,16 +1511,20 @@
       };
     } else {
       const inp = document.getElementById("dungeon-qin");
-      if (inp) inp.focus();
       const form = document.getElementById("dungeon-qform");
-      if (form) form.addEventListener("submit", e => {
-        e.preventDefault();
-        const val = normalizeText(inp.value);
+      const submitType = () => {
+        if (fin) return;
+        const val = normalizeText(inp ? inp.value : "");
         const ok = q.validAnswers
           ? q.validAnswers.some(ans => normalizeText(ans) === val)
           : normalizeText(q.answer) === val;
         finish(ok, false, null);
+      };
+      if (form) form.addEventListener("submit", e => {
+        e.preventDefault();
+        submitType();
       });
+      mountDungeonKeyboard("dungeon-qin", "dungeon-keyboard-container", false, submitType, null);
     }
 
     (function tick() {
@@ -1755,7 +1815,7 @@
         `<div>` +
         `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">` +
         `<h2 style="font-family:'DotGothic16',monospace;font-size:18px;margin:0;color:var(--gold);">🏰 ${t.name}</h2>` +
-        `<span style="font-size:12px;color:var(--muted);">${t.maxFloor || 100}階建て</span>` +
+        `<span style="font-size:12px;color:var(--muted);">${t.maxFloor || 100}階建て${(t.timeMultiplier && t.timeMultiplier !== 1) ? '・時間 ' + Math.round(t.timeMultiplier * 100) + '%' : ''}</span>` +
         `</div>` +
         `<p style="font-size:13px;color:#ccc;margin:0 0 10px;line-height:1.4;">${t.desc || ''}</p>` +
         `<div style="font-size:11px;color:var(--muted);background:#12111c;padding:6px 8px;border-radius:4px;margin-bottom:10px;line-height:1.5;">` +
@@ -1832,12 +1892,13 @@
     container.innerHTML = TOWERS.map((t, idx) => {
       const vUnitStr = (t.vocabUnits && t.vocabUnits.length) ? t.vocabUnits.join(", ") : "全単元から出題";
       const eUnitStr = (t.exprUnits && t.exprUnits.length) ? t.exprUnits.join(", ") : "全単元から出題";
+      const timeMulStr = (t.timeMultiplier && t.timeMultiplier !== 1) ? ` ・ 時間 ${Math.round(t.timeMultiplier * 100)}%` : '';
 
       return `<div style="background:#1b1a2a;border:1px solid #333048;border-radius:6px;padding:12px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">` +
         `<div style="flex:1;min-width:240px;">` +
         `<div style="display:flex;align-items:center;gap:8px;">` +
         `<h3 style="margin:0;font-family:'DotGothic16',monospace;font-size:17px;color:var(--gold);">🏰 ${t.name}</h3>` +
-        `<span style="font-size:12px;color:var(--muted);">${t.maxFloor || 100}階</span>` +
+        `<span style="font-size:12px;color:var(--muted);">${t.maxFloor || 100}階${timeMulStr}</span>` +
         `</div>` +
         `<p style="font-size:13px;color:#aaa;margin:4px 0 6px;">${t.desc || ''}</p>` +
         `<div style="font-size:12px;color:var(--muted);line-height:1.4;">` +
@@ -1867,12 +1928,16 @@
       document.getElementById("tower-edit-name").value = t.name;
       document.getElementById("tower-edit-desc").value = t.desc || "";
       document.getElementById("tower-edit-maxfloor").value = t.maxFloor || 100;
+      const timemulEl = document.getElementById("tower-edit-timemul");
+      if (timemulEl) timemulEl.value = Math.round(((t && t.timeMultiplier) || 1.0) * 100);
     } else {
       document.getElementById("dungeon-tower-edit-title").textContent = "新しい塔の追加";
       document.getElementById("tower-edit-id").value = "tower_" + Date.now();
       document.getElementById("tower-edit-name").value = "";
       document.getElementById("tower-edit-desc").value = "";
       document.getElementById("tower-edit-maxfloor").value = 100;
+      const timemulEl = document.getElementById("tower-edit-timemul");
+      if (timemulEl) timemulEl.value = 100;
     }
 
     // 単語チェックボックス生成
@@ -1939,6 +2004,9 @@
       const name = document.getElementById("tower-edit-name").value.trim();
       const desc = document.getElementById("tower-edit-desc").value.trim();
       const maxFloor = parseInt(document.getElementById("tower-edit-maxfloor").value, 10) || 100;
+      const timemulEl = document.getElementById("tower-edit-timemul");
+      const timeMulPct = parseInt(timemulEl ? timemulEl.value : "100", 10) || 100;
+      const timeMultiplier = Math.max(0.3, Math.min(3.0, timeMulPct / 100));
 
       const checkedVocab = Array.from(document.querySelectorAll('input[name="tower_vocab_unit"]:checked')).map(cb => cb.value);
       const checkedExpr = Array.from(document.querySelectorAll('input[name="tower_expr_unit"]:checked')).map(cb => cb.value);
@@ -1949,7 +2017,7 @@
 
       const existingIdx = TOWERS.findIndex(x => x.id === id);
       const newTower = {
-        id, name, desc, maxFloor,
+        id, name, desc, maxFloor, timeMultiplier,
         vocabUnits: finalVocab,
         exprUnits: finalExpr
       };
@@ -2151,6 +2219,38 @@
       const activeSec = document.querySelector(".section.active");
       if (!activeSec || activeSec.id !== "section-dungeon") return;
       if (document.getElementById("dungeon-game-main").style.display === "none") return;
+      if (e.isComposing || e.key === 'Process') return;
+
+      // クイズ出題中のテキスト入力判定 (dungeon-qin, dungeon-sort-missing-in, dungeon-voice-in)
+      const activeInput = document.getElementById("dungeon-qin") ||
+                          document.getElementById("dungeon-sort-missing-in") ||
+                          ((() => { const vi = document.getElementById("dungeon-voice-in"); return (vi && vi.offsetParent !== null) ? vi : null; })());
+
+      if (activeInput) {
+        if (['Enter', 'Backspace', ' ', 'Shift'].includes(e.key) || (e.key.length === 1 && /^[\x20-\x7E¥]$/.test(e.key))) {
+          e.preventDefault();
+        }
+        if (e.key === 'Enter') {
+          if (activeInput.id === "dungeon-sort-missing-in") {
+            const addBtn = document.getElementById("dungeon-sort-add-btn");
+            if (addBtn) addBtn.click();
+          } else if (activeInput.id === "dungeon-voice-in") {
+            const form = document.getElementById("dungeon-voice-form");
+            if (form) form.requestSubmit ? form.requestSubmit() : form.dispatchEvent(new Event('submit', { cancelable: true }));
+          } else {
+            const form = document.getElementById("dungeon-qform");
+            if (form) form.requestSubmit ? form.requestSubmit() : form.dispatchEvent(new Event('submit', { cancelable: true }));
+          }
+        } else if (e.key === 'Backspace') {
+          activeInput.value = activeInput.value.slice(0, -1);
+        } else if (e.key === ' ') {
+          activeInput.value += ' ';
+        } else if (e.key.length === 1 && /^[\x20-\x7E¥]$/.test(e.key)) {
+          activeInput.value += e.key;
+        }
+        return;
+      }
+
       if (e.target.tagName === "INPUT") return;
       if (quizKey) { quizKey(e.key); return; }
       const k = {
