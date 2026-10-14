@@ -315,51 +315,69 @@
     return list.length > 0 ? list : DEFAULT_EXPR;
   }
 
-  /* ---------- 利き手設定 (右利き: 右側配置 / 左利き: 左側配置) ---------- */
-  let dungeonHandMode = "right";
+  /* ---------- 操作パッド設定 (right: 右利き・右側縦 / left: 左利き・左側縦 / bottom: スマホモード・下部) ---------- */
+  let dungeonPadMode = "right";
   try {
-    const savedHand = localStorage.getItem("dungeon-hand-mode");
-    if (savedHand === "left" || savedHand === "right") {
-      dungeonHandMode = savedHand;
+    const saved = localStorage.getItem("dungeon-pad-mode") || localStorage.getItem("dungeon-hand-mode");
+    if (saved === "left" || saved === "right" || saved === "bottom") {
+      dungeonPadMode = saved;
     }
   } catch(e) {}
 
-  function applyDungeonHandModeUI() {
+  function applyDungeonPadModeUI() {
     const mainView = document.getElementById("dungeon-main-view");
     if (mainView) {
-      mainView.classList.remove("dungeon-hand-right", "dungeon-hand-left");
-      mainView.classList.add(dungeonHandMode === "left" ? "dungeon-hand-left" : "dungeon-hand-right");
+      mainView.classList.remove("dungeon-hand-right", "dungeon-hand-left", "dungeon-mode-bottom");
+      if (dungeonPadMode === "left") mainView.classList.add("dungeon-hand-left");
+      else if (dungeonPadMode === "bottom") mainView.classList.add("dungeon-mode-bottom");
+      else mainView.classList.add("dungeon-hand-right");
     }
     const label = document.getElementById("dungeon-hand-label");
     if (label) {
-      label.textContent = dungeonHandMode === "left" ? "🫲 左利き" : "🫱 右利き";
+      if (dungeonPadMode === "left") label.textContent = "🫲 左利き";
+      else if (dungeonPadMode === "bottom") label.textContent = "📱 スマホ";
+      else label.textContent = "🫱 右利き";
     }
-    const btnRight = document.getElementById("dungeon-hand-btn-right");
-    const btnLeft = document.getElementById("dungeon-hand-btn-left");
-    if (btnRight && btnLeft) {
-      btnRight.classList.toggle("active", dungeonHandMode === "right");
-      btnLeft.classList.toggle("active", dungeonHandMode === "left");
-      btnRight.style.background = (dungeonHandMode === "right") ? "var(--gold)" : "";
-      btnRight.style.color = (dungeonHandMode === "right") ? "#000" : "";
-      btnRight.style.fontWeight = (dungeonHandMode === "right") ? "bold" : "";
-      btnLeft.style.background = (dungeonHandMode === "left") ? "var(--gold)" : "";
-      btnLeft.style.color = (dungeonHandMode === "left") ? "#000" : "";
-      btnLeft.style.fontWeight = (dungeonHandMode === "left") ? "bold" : "";
-    }
+    const btnRight = document.getElementById("dungeon-pad-btn-right") || document.getElementById("dungeon-hand-btn-right");
+    const btnLeft = document.getElementById("dungeon-pad-btn-left") || document.getElementById("dungeon-hand-btn-left");
+    const btnBottom = document.getElementById("dungeon-pad-btn-bottom");
+    
+    [
+      [btnRight, dungeonPadMode === "right"],
+      [btnLeft, dungeonPadMode === "left"],
+      [btnBottom, dungeonPadMode === "bottom"]
+    ].forEach(([b, active]) => {
+      if (!b) return;
+      b.classList.toggle("active", !!active);
+      b.style.background = active ? "var(--gold)" : "";
+      b.style.color = active ? "#000" : "";
+      b.style.fontWeight = active ? "bold" : "";
+    });
   }
 
-  function setDungeonHandMode(mode) {
-    dungeonHandMode = (mode === "left") ? "left" : "right";
+  function setDungeonPadMode(mode) {
+    dungeonPadMode = (mode === "left" || mode === "bottom") ? mode : "right";
     try {
-      localStorage.setItem("dungeon-hand-mode", dungeonHandMode);
+      localStorage.setItem("dungeon-pad-mode", dungeonPadMode);
+      localStorage.setItem("dungeon-hand-mode", dungeonPadMode);
     } catch(e) {}
-    applyDungeonHandModeUI();
+    applyDungeonPadModeUI();
     try { se("select"); } catch(e) {}
+    if (typeof S !== "undefined" && S && S.screen === "explore") {
+      winExplore("どちらへ すすむ？");
+    }
   }
 
-  function toggleDungeonHandMode() {
-    setDungeonHandMode(dungeonHandMode === "right" ? "left" : "right");
+  function toggleDungeonPadMode() {
+    const next = dungeonPadMode === "right" ? "left" : (dungeonPadMode === "left" ? "bottom" : "right");
+    setDungeonPadMode(next);
   }
+
+  // 互換用エイリアス
+  const setDungeonHandMode = setDungeonPadMode;
+  const toggleDungeonHandMode = toggleDungeonPadMode;
+  const applyDungeonHandModeUI = applyDungeonPadModeUI;
+  const dungeonHandMode = dungeonPadMode;
 
   /* ---------- 難易度1〜10 の定義 ---------- */
   const LV_INFO = [
@@ -1098,7 +1116,7 @@
     const modal = document.getElementById("dungeon-menu-modal");
     if (!modal) return;
     modal.style.display = "flex";
-    applyDungeonHandModeUI();
+    applyDungeonPadModeUI();
     renderStatus();
     renderLog();
     seStatus();
@@ -1127,7 +1145,7 @@
       const logEl = document.getElementById("dungeon-log");
       if (logEl) logEl.scrollTop = logEl.scrollHeight;
     } else if (tab === "sound") {
-      applyDungeonHandModeUI();
+      applyDungeonPadModeUI();
       seStatus();
     }
   }
@@ -1142,10 +1160,17 @@
   function updateWiiPad() {
     const pad = document.getElementById("dungeon-wii-pad");
     if (!pad) return;
+
+    // スマホモード（下部）のときはWiiパッドは表示しない（二重化防止）
+    if (dungeonPadMode === "bottom") {
+      pad.style.display = "none";
+      return;
+    }
+
     pad.style.display = "flex";
 
-    // 利き手モード状態をUIに反映
-    applyDungeonHandModeUI();
+    // モードUI反映
+    applyDungeonPadModeUI();
 
     // そうびボタンのNEWバッジとクリックイベント
     const eqb = document.getElementById("dungeon-wii-eqb");
@@ -1172,7 +1197,11 @@
 
     // 十字キー (移動)
     pad.querySelectorAll(".dungeon-dpad button[data-d]").forEach(b => {
-      b.onclick = () => {
+      b.onclick = (e) => {
+        if (e) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
         const d = b.dataset.d.split(",");
         move(+d[0], +d[1]);
       };
@@ -1252,15 +1281,56 @@
     updateWiiPad();
     const win = document.getElementById("dungeon-win");
     if (!win) return;
-    win.innerHTML = `<div class="dungeon-explore-compact">` +
-      `<p class="dungeon-msg">${t}</p>` +
-      `<div class="dungeon-btns" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;">` +
-        `<button id="dungeon-bag" type="button">🎒 どうぐ</button>` +
-        `<button id="dungeon-eqb" type="button">🛡️ そうび${needEquip() ? '<span class="badge">NEW</span>' : ''}</button>` +
-        `<button id="dungeon-cmd-menu" type="button">📋 メニュー</button>` +
-      `</div>` +
-      `<p class="dungeon-note" style="margin-top:8px;font-size:12px;color:var(--muted)">縦向きパッドの十字キー・スワイプ・となりのマスをタップ・矢印キーでも動けるよ</p>` +
-    `</div>`;
+
+    if (dungeonPadMode === "bottom") {
+      // スマホモード（下部に以前の配置で十字キーを表示）
+      win.innerHTML = `<div class="dungeon-explore">` +
+        `<div>` +
+          `<p class="dungeon-msg">${t}</p>` +
+          `<div class="dungeon-btns">` +
+            `<button id="dungeon-bag" type="button">🎒 どうぐ</button>` +
+            `<button id="dungeon-eqb" type="button">🛡️ そうび${needEquip() ? '<span class="badge">NEW</span>' : ''}</button>` +
+            `<button id="dungeon-cmd-menu" type="button">📋 メニュー</button>` +
+          `</div>` +
+          `<div style="margin-top:8px;">` +
+            `<button type="button" class="dungeon-btn dungeon-hand-switch-btn" style="width:auto;display:inline-block;padding:2px 8px;font-size:11px;" onclick="toggleDungeonPadMode()">` +
+              `<span>📱 スマホモード（下部）</span> ⇄ 切替` +
+            `</button>` +
+          `</div>` +
+        `</div>` +
+        `<div class="dungeon-dpad">` +
+          `<button class="up" data-d="0,-1" type="button" aria-label="上へ">▲</button>` +
+          `<button class="lf" data-d="-1,0" type="button" aria-label="左へ">◀</button>` +
+          `<button class="menu" id="dungeon-dpad-menu-bottom" type="button" aria-label="メニューを開く">メニュー</button>` +
+          `<button class="rt" data-d="1,0" type="button" aria-label="右へ">▶</button>` +
+          `<button class="dn" data-d="0,1" type="button" aria-label="下へ">▼</button>` +
+        `</div>` +
+      `</div>`;
+
+      win.querySelectorAll(".dungeon-dpad button[data-d]").forEach(b => {
+        b.onclick = (e) => {
+          if (e) {
+            e.preventDefault();
+            e.stopPropagation();
+          }
+          const d = b.dataset.d.split(",");
+          move(+d[0], +d[1]);
+        };
+      });
+      const dpadMenu = document.getElementById("dungeon-dpad-menu-bottom");
+      if (dpadMenu) dpadMenu.onclick = () => openDungeonMenu();
+    } else {
+      // 右利き（右側縦パッド）または左利き（左側縦パッド）のときは下部にD-padは出さない（二重化防止）
+      win.innerHTML = `<div class="dungeon-explore-compact">` +
+        `<p class="dungeon-msg">${t}</p>` +
+        `<div class="dungeon-btns" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;">` +
+          `<button id="dungeon-bag" type="button">🎒 どうぐ</button>` +
+          `<button id="dungeon-eqb" type="button">🛡️ そうび${needEquip() ? '<span class="badge">NEW</span>' : ''}</button>` +
+          `<button id="dungeon-cmd-menu" type="button">📋 メニュー</button>` +
+        `</div>` +
+        `<p class="dungeon-note" style="margin-top:8px;font-size:12px;color:var(--muted)">縦向きパッドの十字キー・スワイプ・となりのマスをタップ・矢印キーでも動けるよ</p>` +
+      `</div>`;
+    }
     
     const bag = document.getElementById("dungeon-bag");
     if (bag) bag.onclick = () => winItems("どちらへ すすむ？");
@@ -1900,8 +1970,7 @@
   }
 
   function move(dx, dy) {
-    const win = document.getElementById("dungeon-win");
-    if (S.screen !== "explore" || !win || !win.querySelector(".dungeon-dpad")) return;
+    if (S.screen !== "explore") return;
     const m = S.map, nx = m.px + dx, ny = m.py + dy, i = ny * W + nx;
     if (nx < 0 || ny < 0 || nx >= W || ny >= H || m.cells[i] !== 0) {
       se("disabled"); return;
@@ -2449,7 +2518,7 @@
       if (el) el.classList.add("active");
     }
 
-    applyDungeonHandModeUI();
+    applyDungeonPadModeUI();
 
     if (!isManifestLoaded) {
       loadManifestMaterialsForDungeon();
@@ -2495,12 +2564,12 @@
     }
   }
 
-  // 初期化時に利き手設定をDOMに反映
+  // 初期化時に操作パッド設定をDOMに反映
   if (typeof document !== 'undefined') {
     if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', applyDungeonHandModeUI);
+      document.addEventListener('DOMContentLoaded', applyDungeonPadModeUI);
     } else {
-      applyDungeonHandModeUI();
+      applyDungeonPadModeUI();
     }
   }
 
@@ -2510,8 +2579,10 @@
   global.closeDungeonMenu = closeDungeonMenu;
   global.switchDungeonMenuTab = switchDungeonMenuTab;
   global.handleDungeonMenuOverlayClick = handleDungeonMenuOverlayClick;
-  global.setDungeonHandMode = setDungeonHandMode;
-  global.toggleDungeonHandMode = toggleDungeonHandMode;
+  global.setDungeonPadMode = setDungeonPadMode;
+  global.toggleDungeonPadMode = toggleDungeonPadMode;
+  global.setDungeonHandMode = setDungeonPadMode;
+  global.toggleDungeonHandMode = toggleDungeonPadMode;
   global.exitDungeonToHome = exitDungeonToHome;
   global.enterParentAdminDungeon = openParentAdminDungeon;
   global.exitParentAdminDungeon = exitParentAdminDungeon;
@@ -2530,9 +2601,12 @@
     closeMenu: closeDungeonMenu,
     openAdmin: openParentAdminDungeon,
     loadManifest: loadManifestMaterialsForDungeon,
-    setHandMode: setDungeonHandMode,
-    toggleHandMode: toggleDungeonHandMode,
-    getHandMode: () => dungeonHandMode,
+    setPadMode: setDungeonPadMode,
+    togglePadMode: toggleDungeonPadMode,
+    getPadMode: () => dungeonPadMode,
+    setHandMode: setDungeonPadMode,
+    toggleHandMode: toggleDungeonPadMode,
+    getHandMode: () => dungeonPadMode,
     getPoolStatus: () => ({
       vocabUnits: ALL_VOCAB_UNITS.length,
       exprUnits: ALL_EXPR_UNITS.length,

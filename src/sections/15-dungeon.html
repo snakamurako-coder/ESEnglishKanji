@@ -43,9 +43,9 @@
 
             <!-- Nintendo Wii風 縦向きパッド (十字キーが一番下) -->
             <div id="dungeon-wii-pad" class="dungeon-window dungeon-wii-pad" style="display:none;">
-              <!-- パッド上部: 利き手切り替え & アクションボタン -->
+              <!-- パッド上部: 配置切り替え & アクションボタン -->
               <div class="dungeon-wii-top">
-                <button type="button" class="dungeon-btn dungeon-hand-switch-btn" id="dungeon-hand-switch" onclick="toggleDungeonHandMode()" title="右利き / 左利き 切り替え" aria-label="利き手切り替え">
+                <button type="button" class="dungeon-btn dungeon-hand-switch-btn" id="dungeon-hand-switch" onclick="toggleDungeonPadMode()" title="操作パッドの配置切り替え（右利き・左利き・スマホ下部）" aria-label="操作パッド切り替え">
                   <span id="dungeon-hand-label">🫱 右利き</span> ⇄
                 </button>
                 <button type="button" id="dungeon-wii-bag" class="dungeon-btn dungeon-wii-btn">🎒 どうぐ</button>
@@ -104,13 +104,14 @@
         <div id="dungeon-tab-panel-sound" class="dungeon-menu-panel" style="display:none;">
           <div style="display:grid;gap:12px;">
             <div style="background:#1b1a2a;padding:12px;border-radius:6px;border:1px solid #333048;">
-              <h3 style="margin:0 0 6px;font-size:14px;color:var(--gold);font-family:var(--game);">🎮 操作パッド設定（利き手）</h3>
+              <h3 style="margin:0 0 6px;font-size:14px;color:var(--gold);font-family:var(--game);">🎮 操作パッド設定（配置・利き手）</h3>
               <p style="font-size:12px;color:var(--muted);margin:0 0 8px;line-height:1.5;">
-                探索コントローラー（Wii風縦型パッド）の配置位置を変更できます。
+                操作コントローラーの配置位置を変更できます。「スマホモード」を選ぶと画面下部に十字キーが配置されます。
               </p>
-              <div style="display:flex;gap:8px;">
-                <button type="button" id="dungeon-hand-btn-right" class="dungeon-btn active" style="flex:1;font-size:13px;" onclick="setDungeonHandMode('right')">🫱 右利き用（右側配置）</button>
-                <button type="button" id="dungeon-hand-btn-left" class="dungeon-btn" style="flex:1;font-size:13px;" onclick="setDungeonHandMode('left')">🫲 左利き用（左側配置）</button>
+              <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                <button type="button" id="dungeon-pad-btn-right" class="dungeon-btn" style="flex:1;min-width:100px;font-size:12px;padding:6px 4px;" onclick="setDungeonPadMode('right')">🫱 右利き（右側縦パッド）</button>
+                <button type="button" id="dungeon-pad-btn-left" class="dungeon-btn" style="flex:1;min-width:100px;font-size:12px;padding:6px 4px;" onclick="setDungeonPadMode('left')">🫲 左利き（左側縦パッド）</button>
+                <button type="button" id="dungeon-pad-btn-bottom" class="dungeon-btn" style="flex:1;min-width:100px;font-size:12px;padding:6px 4px;" onclick="setDungeonPadMode('bottom')">📱 スマホモード（下部）</button>
               </div>
             </div>
 

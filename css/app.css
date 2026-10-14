@@ -6023,6 +6023,9 @@ body { font-family: 'Hiragino Maru Gothic ProN', sans-serif; background-color: #
     .dungeon-main-view.dungeon-hand-left {
       flex-direction: row-reverse;
     }
+    .dungeon-main-view.dungeon-mode-bottom #dungeon-wii-pad {
+      display: none !important;
+    }
     .dungeon-main-view .dungeon-stagewrap {
       flex: 1;
       min-width: 0;
