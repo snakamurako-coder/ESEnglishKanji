@@ -3,10 +3,12 @@
         c.innerHTML = "";
         (rewards || []).forEach(r => {
             const div = document.createElement('div'); div.className = "item-card";
-            const limitLine = r.limitMinutes > 0 ? `<div style="font-size:13px;color:#90CAF9;margin-bottom:8px;">制限時間: ${r.limitMinutes} 分</div>` : "";
+            const lim = Number(r.limitMinutes != null ? r.limitMinutes : r.timeMinutes) || 0;
+            const limitLine = lim > 0 ? `<div style="font-size:13px;color:#90CAF9;margin-bottom:8px;">制限時間: ${lim} 分</div>` : "";
             const safeId = String(r.id || "").replace(/\\/g, "\\\\").replace(/'/g, "\\'");
             const safeName = String(r.name || "").replace(/\\/g, "\\\\").replace(/'/g, "\\'");
-            div.innerHTML = `<div class="item-title">🎁 ${r.name}</div><div style="color: gold; font-weight: bold; margin-bottom: 10px;">必要ポイント: ${r.points} Pt</div>${limitLine}<div style="font-size: 14px; color: #aaa; margin-bottom: 15px;">${r.desc}</div><button class="submit-btn btn-orange" style="width: 100%; padding: 10px; font-size: 18px;" onclick="exchangeReward('${safeId}', '${safeName}', ${Number(r.points) || 0}, this)">交換する</button>`;
+            const icon = r.icon ? String(r.icon).trim() + " " : "🎁 ";
+            div.innerHTML = `<div class="item-title">${icon}${r.name}</div><div style="color: gold; font-weight: bold; margin-bottom: 10px;">必要ポイント: ${r.points} Pt</div>${limitLine}<div style="font-size: 14px; color: #aaa; margin-bottom: 15px;">${r.desc || ""}</div><button class="submit-btn btn-orange" style="width: 100%; padding: 10px; font-size: 18px;" onclick="exchangeReward('${safeId}', '${safeName}', ${Number(r.points) || 0}, this)">交換する</button>`;
             c.appendChild(div);
         });
         if (!(rewards || []).length) c.innerHTML = "<p>いま交換できる景品がありません。</p>";

@@ -2103,16 +2103,52 @@ function parseSheetDateTime_(value) {
   return null;
 }
 
+function getRewardHeaderIndices_(headersRow) {
+  const headers = (headersRow || []).map(function (h) { return String(h || "").trim(); });
+  let idIdx = headers.indexOf("景品ID");
+  if (idIdx < 0) idIdx = headers.indexOf("ID");
+  if (idIdx < 0) idIdx = 0;
+
+  let nameIdx = headers.indexOf("景品名");
+  if (nameIdx < 0) nameIdx = headers.indexOf("名前");
+  if (nameIdx < 0) nameIdx = 1;
+
+  let ptIdx = headers.indexOf("必要ポイント");
+  if (ptIdx < 0) ptIdx = headers.indexOf("ポイント");
+  if (ptIdx < 0) ptIdx = 2;
+
+  let timeIdx = -1;
+  for (let i = 0; i < headers.length; i++) {
+    if (headers[i].indexOf("時間") !== -1 || headers[i].indexOf("分") !== -1) {
+      timeIdx = i;
+      break;
+    }
+  }
+  if (timeIdx < 0) timeIdx = 4;
+
+  let descIdx = headers.indexOf("説明");
+  if (descIdx < 0) descIdx = (timeIdx === 4) ? 3 : 4;
+
+  let iconIdx = headers.indexOf("アイコン");
+  if (iconIdx < 0) iconIdx = 5;
+
+  let enabledIdx = headers.indexOf("有効");
+
+  return { idIdx: idIdx, nameIdx: nameIdx, ptIdx: ptIdx, timeIdx: timeIdx, descIdx: descIdx, iconIdx: iconIdx, enabledIdx: enabledIdx };
+}
+
 /** rewards シートを1回読んで ID→制限時間(分) のマップを返す */
 function buildRewardLimitMinutesMap_(adminSs) {
   const map = {};
   const sheet = adminSs.getSheetByName("rewards");
   if (!sheet) return map;
   const data = sheet.getDataRange().getValues();
+  if (data.length <= 1) return map;
+  const hMap = getRewardHeaderIndices_(data[0]);
   for (let i = 1; i < data.length; i++) {
-    const id = String(data[i][0] || "");
+    const id = String(data[i][hMap.idIdx] || "");
     if (!id) continue;
-    const n = Number(data[i][4]);
+    const n = Number(data[i][hMap.timeIdx]);
     map[id] = isNaN(n) || n <= 0 ? 0 : Math.floor(n);
   }
   return map;
@@ -2126,9 +2162,11 @@ function getRewardLimitMinutesById_(adminSs, rewardId, limitMapOpt) {
   const sheet = adminSs.getSheetByName("rewards");
   if (!sheet) return 0;
   const data = sheet.getDataRange().getValues();
+  if (data.length <= 1) return 0;
+  const hMap = getRewardHeaderIndices_(data[0]);
   for (let i = 1; i < data.length; i++) {
-    if (String(data[i][0]) === String(rewardId)) {
-      const n = Number(data[i][4]);
+    if (String(data[i][hMap.idIdx]) === String(rewardId)) {
+      const n = Number(data[i][hMap.timeIdx]);
       return isNaN(n) || n <= 0 ? 0 : Math.floor(n);
     }
   }
@@ -2139,17 +2177,18 @@ function getRewardInfoById_(adminSs, rewardId) {
   const sheet = adminSs.getSheetByName("rewards");
   if (!sheet) return null;
   const data = sheet.getDataRange().getValues();
+  if (data.length <= 1) return null;
+  const hMap = getRewardHeaderIndices_(data[0]);
   for (let i = 1; i < data.length; i++) {
-    if (String(data[i][0]) === String(rewardId)) {
+    if (String(data[i][hMap.idIdx]) === String(rewardId)) {
+      const n = Number(data[i][hMap.timeIdx]);
       return {
-        id: String(data[i][0]),
-        name: String(data[i][1] || ""),
-        points: Number(data[i][2]) || 0,
-        desc: String(data[i][3] || ""),
-        limitMinutes: (function () {
-          const n = Number(data[i][4]);
-          return isNaN(n) || n <= 0 ? 0 : Math.floor(n);
-        })()
+        id: String(data[i][hMap.idIdx]),
+        name: String(data[i][hMap.nameIdx] || ""),
+        points: Number(data[i][hMap.ptIdx]) || 0,
+        desc: String(data[i][hMap.descIdx] || ""),
+        icon: hMap.iconIdx >= 0 ? String(data[i][hMap.iconIdx] || "🎁") : "🎁",
+        limitMinutes: isNaN(n) || n <= 0 ? 0 : Math.floor(n)
       };
     }
   }
@@ -3594,14 +3633,22 @@ function handleGetRewards(req) {
   ensureRewardsSheetStructure_(adminSs);
   const data = adminSs.getSheetByName("rewards").getDataRange().getValues();
   const rewards = [];
+  if (data.length <= 1) return sendResponse({ status: "success", rewards: rewards });
+  const hMap = getRewardHeaderIndices_(data[0]);
   for (let i = 1; i < data.length; i++) {
-    if (!data[i][0]) continue;
-    const limitMinutes = Number(data[i][4]);
+    const id = String(data[i][hMap.idIdx] || "").trim();
+    if (!id) continue;
+    if (hMap.enabledIdx >= 0) {
+      const en = data[i][hMap.enabledIdx];
+      if (en === false || String(en).toLowerCase() === "false") continue;
+    }
+    const limitMinutes = Number(data[i][hMap.timeIdx]);
     rewards.push({
-      id: data[i][0],
-      name: data[i][1],
-      points: Number(data[i][2]),
-      desc: data[i][3],
+      id: id,
+      name: String(data[i][hMap.nameIdx] || "").trim(),
+      points: Math.max(0, Number(data[i][hMap.ptIdx]) || 0),
+      desc: String(data[i][hMap.descIdx] || "").trim(),
+      icon: hMap.iconIdx >= 0 ? String(data[i][hMap.iconIdx] || "🎁").trim() : "🎁",
       limitMinutes: isNaN(limitMinutes) || limitMinutes <= 0 ? 0 : Math.floor(limitMinutes)
     });
   }

@@ -358,17 +358,61 @@
       // 5. ご褒美マスター・交換・インベントリの Firestore 自律インターセプト
       if (action === "get_rewards") {
         return new Promise(function (resolve) {
-          if (typeof firebase !== "undefined" && firebase.firestore) {
-            firebase.firestore().collection("system").doc("rewards_master").get().then(function (doc) {
-              if (doc.exists && Array.isArray(doc.data().rewards)) {
-                resolve({ status: "success", rewards: doc.data().rewards });
-                return;
-              }
-              resolve({ status: "success", rewards: [] });
-            }).catch(function () { resolve({ status: "success", rewards: [] }); });
-          } else {
-            resolve({ status: "success", rewards: [] });
+          const normalizeItem = function (r) {
+            if (!r) return null;
+            const lim = Number(r.limitMinutes != null ? r.limitMinutes : r.timeMinutes) || 0;
+            return {
+              id: String(r.id || ""),
+              name: String(r.name || ""),
+              points: Math.max(0, Number(r.points) || 0),
+              desc: String(r.desc || ""),
+              icon: String(r.icon || "🎁"),
+              limitMinutes: lim,
+              timeMinutes: lim,
+              enabled: r.enabled !== false
+            };
+          };
+
+          if (typeof window !== "undefined" && window.parentAdminStore && typeof window.parentAdminStore.getRewardsMaster === "function") {
+            window.parentAdminStore.getRewardsMaster().then(function (list) {
+              const rewards = (list || []).map(normalizeItem).filter(function (r) { return r && r.enabled !== false; });
+              resolve({ status: "success", rewards: rewards });
+            }).catch(function () {
+              fallbackDirectFirestore();
+            });
+            return;
           }
+
+          function fallbackDirectFirestore() {
+            if (typeof firebase !== "undefined" && firebase.firestore) {
+              firebase.firestore().collection("system").doc("rewards_master").get().then(function (doc) {
+                if (doc.exists) {
+                  const d = doc.data() || {};
+                  const rawList = Array.isArray(d.list) ? d.list : (Array.isArray(d.rewards) ? d.rewards : []);
+                  if (rawList.length > 0) {
+                    const rewards = rawList.map(normalizeItem).filter(function (r) { return r && r.enabled !== false; });
+                    resolve({ status: "success", rewards: rewards });
+                    return;
+                  }
+                }
+                const defaultRewards = [
+                  { id: "reward_game_30", name: "ゲーム 30分", points: 100, limitMinutes: 30, timeMinutes: 30, desc: "宿題を終えてから遊ぼう", icon: "🎮", enabled: true },
+                  { id: "reward_youtube_30", name: "YouTube 30分", points: 100, limitMinutes: 30, timeMinutes: 30, desc: "スマホかテレビで見てね", icon: "📺", enabled: true },
+                  { id: "reward_snack_special", name: "特別なおやつ", points: 80, limitMinutes: 0, timeMinutes: 0, desc: "好きなおやつを1つ選べるよ", icon: "🍦", enabled: true },
+                  { id: "reward_book_manga", name: "マンガ・本 1冊", points: 300, limitMinutes: 0, timeMinutes: 0, desc: "読みたい本を買ってもらえるチケット", icon: "📚", enabled: true }
+                ];
+                resolve({ status: "success", rewards: defaultRewards });
+              }).catch(function () {
+                resolve({ status: "success", rewards: [] });
+              });
+            } else {
+              gasApiFetchJsonRaw_(bodyObj, opts).then(resolve).catch(function () {
+                resolve({ status: "success", rewards: [] });
+              });
+            }
+          }
+
+          fallbackDirectFirestore();
         });
       }
 
@@ -406,11 +450,12 @@
             : Promise.resolve({ exists: false });
 
           getMaster.then(function (doc) {
-            const list = (doc.exists && doc.data() && Array.isArray(doc.data().rewards)) ? doc.data().rewards : [];
+            const d = (doc && doc.exists) ? (doc.data() || {}) : {};
+            const list = Array.isArray(d.list) ? d.list : (Array.isArray(d.rewards) ? d.rewards : []);
             const rItem = list.find(function (r) { return String(r.id) === String(bodyObj.rewardId); });
             const pts = rItem ? Number(rItem.points || 0) : 0;
             const rName = rItem ? rItem.name : "ご褒美";
-            const limitMin = rItem ? Number(rItem.limitMinutes || 0) : 0;
+            const limitMin = rItem ? Number(rItem.limitMinutes != null ? rItem.limitMinutes : rItem.timeMinutes) || 0 : 0;
 
             if (user.points < pts) {
               resolve({ status: "error", message: "ポイントが足りません" });
@@ -3934,10 +3979,12 @@
         c.innerHTML = "";
         (rewards || []).forEach(r => {
             const div = document.createElement('div'); div.className = "item-card";
-            const limitLine = r.limitMinutes > 0 ? `<div style="font-size:13px;color:#90CAF9;margin-bottom:8px;">制限時間: ${r.limitMinutes} 分</div>` : "";
+            const lim = Number(r.limitMinutes != null ? r.limitMinutes : r.timeMinutes) || 0;
+            const limitLine = lim > 0 ? `<div style="font-size:13px;color:#90CAF9;margin-bottom:8px;">制限時間: ${lim} 分</div>` : "";
             const safeId = String(r.id || "").replace(/\\/g, "\\\\").replace(/'/g, "\\'");
             const safeName = String(r.name || "").replace(/\\/g, "\\\\").replace(/'/g, "\\'");
-            div.innerHTML = `<div class="item-title">🎁 ${r.name}</div><div style="color: gold; font-weight: bold; margin-bottom: 10px;">必要ポイント: ${r.points} Pt</div>${limitLine}<div style="font-size: 14px; color: #aaa; margin-bottom: 15px;">${r.desc}</div><button class="submit-btn btn-orange" style="width: 100%; padding: 10px; font-size: 18px;" onclick="exchangeReward('${safeId}', '${safeName}', ${Number(r.points) || 0}, this)">交換する</button>`;
+            const icon = r.icon ? String(r.icon).trim() + " " : "🎁 ";
+            div.innerHTML = `<div class="item-title">${icon}${r.name}</div><div style="color: gold; font-weight: bold; margin-bottom: 10px;">必要ポイント: ${r.points} Pt</div>${limitLine}<div style="font-size: 14px; color: #aaa; margin-bottom: 15px;">${r.desc || ""}</div><button class="submit-btn btn-orange" style="width: 100%; padding: 10px; font-size: 18px;" onclick="exchangeReward('${safeId}', '${safeName}', ${Number(r.points) || 0}, this)">交換する</button>`;
             c.appendChild(div);
         });
         if (!(rewards || []).length) c.innerHTML = "<p>いま交換できる景品がありません。</p>";

@@ -624,8 +624,9 @@
           db.collection('system').doc('rewards_master').get().then(function (doc) {
             if (doc.exists) {
               var data = doc.data() || {};
-              if (Array.isArray(data.list) && data.list.length > 0) {
-                resolve(data.list);
+              var list = Array.isArray(data.list) ? data.list : (Array.isArray(data.rewards) ? data.rewards : null);
+              if (list && list.length > 0) {
+                resolve(list);
                 return;
               }
             }
