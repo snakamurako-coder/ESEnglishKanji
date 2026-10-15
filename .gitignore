@@ -16,3 +16,7 @@ data/
 
 node_modules/
 
+# 移植用キーボードリファレンスデータ（ローカル生成物・Git追跡除外）
+keyboard-export/
+standalone-keyboard.html
+
