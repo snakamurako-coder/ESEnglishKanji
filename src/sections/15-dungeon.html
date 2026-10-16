@@ -1,12 +1,12 @@
-  <div id="section-dungeon" class="section" style="padding:0;background:#12111c;min-height:100vh;color:#eeece2;">
+  <div id="section-dungeon" class="section" style="padding:0;background:#090810;min-height:100vh;color:#f4f3ec;">
     
     <!-- 塔の選択画面 -->
-    <div id="dungeon-tower-select" class="dungeon-wrap" style="padding:20px 14px;">
+    <div id="dungeon-tower-select" class="dungeon-wrap" style="padding:20px 14px;max-width:960px;margin:0 auto;">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:16px;">
-        <h1 class="dungeon-h1" style="font-size:24px;">🏰 挑戦する塔をえらぼう！</h1>
-        <button type="button" class="dungeon-btn dungeon-home-btn" onclick="exitDungeonToHome()">🏠 ホーム</button>
+        <h1 class="dungeon-h1" style="font-size:24px;color:#f5b027;font-family:var(--game,'DotGothic16',monospace);">🏰 挑戦する塔をえらぼう！</h1>
+        <button type="button" class="dungeon-btn dungeon-home-btn" onclick="exitDungeonToHome()" style="background:#201f30;border:1px solid #3c3954;color:#f4f3ec;border-radius:6px;padding:6px 14px;cursor:pointer;">🏠 ホーム</button>
       </div>
-      <p style="color:var(--muted);font-size:14px;margin:0 0 16px;">
+      <p style="color:#8b88a5;font-size:14px;margin:0 0 16px;">
         塔によって出題される問題セット（単語・表現）や階数が変わるよ。好きな塔に挑戦しよう！
       </p>
       
@@ -15,140 +15,191 @@
       </div>
     </div>
 
-    <!-- ダンジョン本編画面 -->
-    <div id="dungeon-game-main" class="dungeon-wrap" style="display:none;padding:12px 14px;">
-      <header class="dungeon-header">
-        <div class="dungeon-title-row">
-          <button type="button" class="dungeon-btn dungeon-home-btn" onclick="exitDungeonToHome()">🏠 ホーム</button>
-          <button type="button" class="dungeon-btn dungeon-home-btn" style="background:#2b2942;" onclick="backToTowerSelect()">🏰 塔選択</button>
-          <h1 class="dungeon-h1" id="dungeon-tower-title">単語迷宮<small id="dungeon-tower-subtitle">百階</small></h1>
-        </div>
-        <div style="display:flex;gap:10px;align-items:center;">
-          <div class="dungeon-best">この塔の記録 <b id="dungeon-best">—</b></div>
-          <button type="button" class="dungeon-btn" style="font-size:12px;padding:4px 10px;min-height:30px;background:var(--gold);color:#000;font-weight:bold;" onclick="openDungeonMenu()">📋 メニュー</button>
-        </div>
-      </header>
+    <!-- 単語迷宮 百階 ゲーム本編画面 -->
+    <div id="dungeon-game-main" style="display:none;width:100%;min-height:100dvh;position:relative;overflow:hidden;">
+      
+      <div id="appRoot" class="mode-gb">
+        <!-- HTML構造はJavaScript (applyLayout / renderGameBoyHTML / renderSwitchHTML) で動的に生成 -->
+      </div>
 
-      <div class="dungeon-app">
-        <div class="dungeon-col" id="dungeon-main-col">
+      <!-- ==========================================================================
+           ⌨️ 仮想キーボード オーバーレイ (Virtual Keyboard Overlay)
+           ========================================================================== -->
+      <div id="keyboardOverlay" class="is-minimized">
+        <div class="vk-overlay-header">
+          <div class="vk-mode-tabs">
+            <button type="button" class="vk-tab-btn active" data-vk-mode="english">英語</button>
+            <button type="button" class="vk-tab-btn" data-vk-mode="japanese-qwerty">ローマ字</button>
+            <button type="button" class="vk-tab-btn" data-vk-mode="japanese-jis">かな(JIS)</button>
+          </div>
+          <div class="vk-input-preview-wrap">
+            <input type="text" id="vkPreviewInput" placeholder="入力..." readonly aria-label="キーボード入力内容">
+            <button type="button" class="vk-clear-btn" id="vkClearBtn">クリア</button>
+          </div>
+          <div class="vk-header-actions">
+            <button type="button" class="vk-size-btn" id="vkSizeDownBtn" title="キーボード縮小">A−</button>
+            <button type="button" class="vk-size-btn" id="vkSizeUpBtn" title="キーボード拡大">A＋</button>
+            <button type="button" class="vk-minimize-btn" id="vkMinBtn" title="キーボードを格納（閉じる）">▼ 格納</button>
+          </div>
+        </div>
+        <div id="vkMountPoint"></div>
+      </div>
+
+      <button type="button" id="vkFloatingToggle" class="vk-floating-toggle is-hidden" aria-label="キーボードを表示">
+        ⌨️ キーボード
+      </button>
+
+      <!-- ==========================================================================
+           ⚙️ 全体メニューモーダル (サウンド・ステータス・テスター調整格納)
+           ========================================================================== -->
+      <div class="modal-overlay" id="menuModal" role="dialog" aria-modal="true" aria-labelledby="menuTitle">
+        <div class="menu-card">
+          <div class="menu-header">
+            <h2 id="menuTitle">⚙️ SYSTEM &amp; TESTER MENU</h2>
+            <button class="menu-close-btn" id="modalCloseBtn" type="button">✕ とじる</button>
+          </div>
           
-          <!-- メインビュー（ダンジョン表示 ＋ Nintendo Wii風縦向きパッド） -->
-          <div id="dungeon-main-view" class="dungeon-main-view dungeon-hand-right">
-            
-            <!-- ダンジョン表示 (マップ / バトル / リザルト) -->
-            <div class="dungeon-stagewrap">
-              <div class="dungeon-window" id="dungeon-stage"></div>
-              <div id="dungeon-fx"></div>
-            </div>
-
-            <!-- Nintendo Wii風 縦向きパッド (十字キーが一番下) -->
-            <div id="dungeon-wii-pad" class="dungeon-window dungeon-wii-pad" style="display:none;">
-              <!-- パッド上部: 配置切り替え & アクションボタン -->
-              <div class="dungeon-wii-top">
-                <button type="button" class="dungeon-btn dungeon-hand-switch-btn" id="dungeon-hand-switch" onclick="toggleDungeonPadMode()" title="操作パッドの配置切り替え（右利き・左利き・スマホ下部）" aria-label="操作パッド切り替え">
-                  <span id="dungeon-hand-label">🫱 右利き</span> ⇄
-                </button>
-                <button type="button" id="dungeon-wii-bag" class="dungeon-btn dungeon-wii-btn">🎒 どうぐ</button>
-                <button type="button" id="dungeon-wii-eqb" class="dungeon-btn dungeon-wii-btn">🛡️ そうび</button>
-                <button type="button" id="dungeon-wii-menu" class="dungeon-btn dungeon-wii-btn dungeon-wii-menu-btn" onclick="openDungeonMenu()">📋 メニュー</button>
+          <nav class="menu-tabs">
+            <button class="menu-tab-btn active" data-tab="tab-sound" type="button">🎧 サウンド</button>
+            <button class="menu-tab-btn" data-tab="tab-status" type="button">📊 ステータス &amp; 記録</button>
+            <button class="menu-tab-btn" data-tab="tab-tester" type="button">🛠️ テスター &amp; 調整</button>
+            <button class="menu-tab-btn" data-tab="tab-settings" type="button">🎮 画面 &amp; 操作</button>
+          </nav>
+          
+          <div class="menu-body">
+            <!-- 🎧 サウンドタブ -->
+            <div class="tab-content active" id="tab-sound">
+              <div class="m-box">
+                <h3>🎵 BGM &amp; 効果音設定</h3>
+                <div class="sound-controls">
+                  <button class="sound-toggle-btn on" id="mSeMute" type="button"><span>効果音 (SE)</span><b id="mSeMuteTxt">ON 🔊</b></button>
+                  <button class="sound-toggle-btn on" id="mBgmMute" type="button"><span>BGM</span><b id="mBgmMuteTxt">ON 🎵</b></button>
+                </div>
+                <div style="display:grid;gap:8px;margin-bottom:12px">
+                  <label class="vol-slider"><span>SE 音量:</span><input type="range" id="mSeVol" min="0" max="1" step="0.05" value="0.7"><span id="mSeVolTxt">70%</span></label>
+                  <label class="vol-slider"><span>BGM 音量:</span><input type="range" id="mBgmVol" min="0" max="1" step="0.05" value="0.35"><span id="mBgmVolTxt">35%</span></label>
+                </div>
+                <div class="sound-status-tag" id="mSoundStatus">読み込み状態: チェック中...</div>
               </div>
 
-              <!-- パッド下部: 十字キー (Nintendo Wiiのように一番下に配置) -->
-              <div class="dungeon-wii-bottom">
-                <div class="dungeon-dpad">
-                  <button class="up" data-d="0,-1" type="button" aria-label="上へ">▲</button>
-                  <button class="lf" data-d="-1,0" type="button" aria-label="左へ">◀</button>
-                  <button class="menu" id="dungeon-dpad-center-btn" type="button" aria-label="メニュー" onclick="openDungeonMenu()">メニュー</button>
-                  <button class="rt" data-d="1,0" type="button" aria-label="右へ">▶</button>
-                  <button class="dn" data-d="0,1" type="button" aria-label="下へ">▼</button>
+              <div class="m-box">
+                <h3>📁 音声ファイルの読み込み</h3>
+                <p style="font-size:12px;color:var(--muted);margin:0 0 8px">
+                  ゲームに同梱された <code>SE/</code> フォルダの音声を読み込みます。Webサーバーや環境により自動で読めない場合は、下のボタンからフォルダまたはファイルを選択してください。
+                </p>
+                <div class="btns">
+                  <button id="mAutoLoadBtn" type="button">🔄 SEフォルダから自動ロード試行</button>
+                  <button id="mDirBtn" type="button">📁 フォルダから選ぶ</button>
+                  <button id="mFileBtn" type="button">🎶 ファイルを個別選択</button>
+                  <input type="file" id="mInputSeDir" webkitdirectory multiple hidden>
+                  <input type="file" id="mInputSeFiles" accept="audio/*,.mp3,.m4a,.ogg,.wav" multiple hidden>
+                </div>
+              </div>
+
+              <div class="m-box">
+                <h3>🔊 サウンドテスト (全48音声の試聴)</h3>
+                <p style="font-size:11px;color:var(--muted);margin:0 0 6px">ボタンを押していつでも音声を試聴できます。</p>
+                <div class="sound-test-grid" id="soundTestGrid"></div>
+              </div>
+            </div>
+
+            <!-- 📊 ステータス & 記録タブ -->
+            <div class="tab-content" id="tab-status">
+              <div class="m-box">
+                <h3>👤 プレイヤー詳細ステータス</h3>
+                <div class="stat-grid" id="mStatGrid">
+                  <!-- JSで動的生成 -->
+                </div>
+              </div>
+              <div class="m-box">
+                <h3>📜 ぼうけんの記録 (リアルタイムログ)</h3>
+                <div class="log-box" id="mLogBox"></div>
+              </div>
+              <div class="m-box">
+                <h3>💾 セーブデータ管理</h3>
+                <div class="btns">
+                  <button id="mResetSaveBtn" type="button" style="color:var(--danger);border-color:var(--danger)">🗑️ セーブデータを初期化する</button>
                 </div>
               </div>
             </div>
 
-          </div>
+            <!-- 🛠️ テスター & 調整タブ -->
+            <div class="tab-content" id="tab-tester">
+              <div class="m-box">
+                <h3>⚡ デバッグテスター・チート機能</h3>
+                <p style="font-size:11px;color:var(--muted);margin:0 0 8px">テストプレイ用の便利ツールです。即座に効果が反映されます。</p>
+                <div class="cheat-grid">
+                  <button class="cheat-btn" id="chHeal" type="button">💖 HP・MP全回復</button>
+                  <button class="cheat-btn" id="chGauge" type="button">💥 必殺ゲージMAX</button>
+                  <button class="cheat-btn" id="chItems" type="button">🎒 アイテム+5全補給</button>
+                  <button class="cheat-btn" id="chGear" type="button">🛡️ 最強装備一括</button>
+                  <button class="cheat-btn" id="chSkip" type="button">🪜 次の階へスキップ</button>
+                  <button class="cheat-btn" id="chBattle" type="button">⚔️ 通常敵と戦闘テスト</button>
+                  <button class="cheat-btn" id="chBoss" type="button">🐉 守護竜と戦闘テスト</button>
+                </div>
+              </div>
 
-          <!-- コマンド・メッセージウィンドウ -->
-          <div class="dungeon-window" id="dungeon-win"></div>
+              <div class="m-box">
+                <h3>🎯 指定階からテスト開始</h3>
+                <div class="try" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                  <label for="mTryF" style="font-size:13px;font-family:var(--game)">開始階 (1〜100):</label>
+                  <input type="number" id="mTryF" min="1" max="100" value="50">
+                  <button id="mTryBtn" type="button">練習モードで開始</button>
+                </div>
+                <p style="font-size:11px;color:var(--muted);margin:4px 0 0">想定レベル・装備で開始され、セーブデータには影響しません。</p>
+              </div>
+
+              <div class="m-box">
+                <h3>📐 想定バランス計算表</h3>
+                <div class="tw"><table id="mTtable"></table></div>
+              </div>
+
+              <div class="m-box">
+                <h3>🎛️ パラメーター詳細調整 (SCHEMA)</h3>
+                <p class="tune-help">数値を変えるとすぐ反映され、ブラウザに保存されます。敵の強さは「必要攻撃回数」「無防備での耐久打数」から自動逆算されます。</p>
+                <div id="mParams"></div>
+                <div class="btns" style="margin-top:10px">
+                  <button id="mCfgReset" type="button">初期値に戻す</button>
+                  <button id="mCfgOut" type="button">設定を書き出す</button>
+                  <button id="mCfgIn" type="button">設定を読み込む</button>
+                </div>
+                <textarea id="mCfgText" rows="3" placeholder="書き出したJSONがここに出ます。読み込むときは貼り付けて「設定を読み込む」を押します。" style="margin-top:8px"></textarea>
+                <p id="mCfgMsg" style="font-size:11px;color:var(--gold);margin:4px 0 0"></p>
+              </div>
+            </div>
+
+            <!-- 🎮 画面 & 操作タブ -->
+            <div class="tab-content" id="tab-settings">
+              <div class="m-box">
+                <h3>📱 画面レイアウト切り替え</h3>
+                <p style="font-size:12px;color:var(--muted);margin:0 0 8px">
+                  本アプリは「初代ゲームボーイ風（縦向き）」と「Nintendo Switch風（横向き）」に対応しています。手動で固定表示することも可能です。
+                </p>
+                <div class="mode-switch-bar">
+                  <button class="mode-btn active" data-mode="auto" type="button">🔄 自動判別 (画面の向き)</button>
+                  <button class="mode-btn" data-mode="gb" type="button">📱 ゲームボーイ風 (縦向き)</button>
+                  <button class="mode-btn" data-mode="switch" type="button">🎮 Switch風 (横向き)</button>
+                </div>
+              </div>
+              <div class="m-box">
+                <h3>📳 操作フィードバック</h3>
+                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-family:var(--game);font-size:13px">
+                  <input type="checkbox" id="mHapticsToggle" checked style="accent-color:var(--gold);width:18px;height:18px">
+                  <span>ソフトウェアパッドの触覚振動（バイブレーション）</span>
+                </label>
+              </div>
+              <div class="m-box">
+                <h3>🚪 迷宮からの脱出</h3>
+                <div class="btns">
+                  <button type="button" onclick="closeMenu(); backToTowerSelect();" style="background:#201f30;border:1px solid var(--gold);color:var(--gold);">🏰 塔の選択画面にもどる</button>
+                  <button type="button" onclick="closeMenu(); exitDungeonToHome();" style="background:#201f30;border:1px solid #3c3954;color:#f4f3ec;">🏠 ホームにもどる</button>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
-    </div>
 
-    <!-- 冒険メニュー モーダル (ステータス・きろく・音声設定・パッド設定) -->
-    <div id="dungeon-menu-modal" class="dungeon-modal-overlay" style="display:none;" onclick="handleDungeonMenuOverlayClick(event)">
-      <div class="dungeon-window dungeon-menu-dialog" onclick="event.stopPropagation()">
-        
-        <!-- モーダルヘッダー -->
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;border-bottom:2px solid var(--line);padding-bottom:8px;">
-          <h2 class="dungeon-h2" style="margin:0;font-size:17px;color:var(--gold);">📋 冒険メニュー</h2>
-          <button type="button" class="dungeon-btn" style="min-height:30px;padding:2px 10px;font-size:12px;" onclick="closeDungeonMenu()">✕ とじる</button>
-        </div>
-
-        <!-- タブボタン -->
-        <div class="dungeon-menu-tabs" style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;">
-          <button type="button" id="dungeon-tab-btn-stat" class="dungeon-btn active" style="flex:1;min-width:100px;font-size:13px;" onclick="switchDungeonMenuTab('stat')">📊 ステータス</button>
-          <button type="button" id="dungeon-tab-btn-log" class="dungeon-btn" style="flex:1;min-width:100px;font-size:13px;" onclick="switchDungeonMenuTab('log')">📜 きろく</button>
-          <button type="button" id="dungeon-tab-btn-sound" class="dungeon-btn" style="flex:1;min-width:100px;font-size:13px;" onclick="switchDungeonMenuTab('sound')">⚙️ 設定・音声</button>
-        </div>
-
-        <!-- タブ内容1: ステータス -->
-        <div id="dungeon-tab-panel-stat" class="dungeon-menu-panel">
-          <dl class="dungeon-stat" id="dungeon-status"></dl>
-        </div>
-
-        <!-- タブ内容2: きろく -->
-        <div id="dungeon-tab-panel-log" class="dungeon-menu-panel" style="display:none;">
-          <div class="dungeon-log" id="dungeon-log" style="max-height:320px;overflow-y:auto;"></div>
-        </div>
-
-        <!-- タブ内容3: 設定・音声 -->
-        <div id="dungeon-tab-panel-sound" class="dungeon-menu-panel" style="display:none;">
-          <div style="display:grid;gap:12px;">
-            <div style="background:#1b1a2a;padding:12px;border-radius:6px;border:1px solid #333048;">
-              <h3 style="margin:0 0 6px;font-size:14px;color:var(--gold);font-family:var(--game);">🎮 操作パッド設定（配置・利き手）</h3>
-              <p style="font-size:12px;color:var(--muted);margin:0 0 8px;line-height:1.5;">
-                操作コントローラーの配置位置を変更できます。「スマホモード」を選ぶと画面下部に十字キーが配置されます。
-              </p>
-              <div style="display:flex;gap:6px;flex-wrap:wrap;">
-                <button type="button" id="dungeon-pad-btn-right" class="dungeon-btn" style="flex:1;min-width:100px;font-size:12px;padding:6px 4px;" onclick="setDungeonPadMode('right')">🫱 右利き（右側縦パッド）</button>
-                <button type="button" id="dungeon-pad-btn-left" class="dungeon-btn" style="flex:1;min-width:100px;font-size:12px;padding:6px 4px;" onclick="setDungeonPadMode('left')">🫲 左利き（左側縦パッド）</button>
-                <button type="button" id="dungeon-pad-btn-bottom" class="dungeon-btn" style="flex:1;min-width:100px;font-size:12px;padding:6px 4px;" onclick="setDungeonPadMode('bottom')">📱 スマホモード（下部）</button>
-              </div>
-            </div>
-
-            <div style="background:#1b1a2a;padding:12px;border-radius:6px;border:1px solid #333048;">
-              <h3 style="margin:0 0 8px;font-size:14px;color:var(--gold);font-family:var(--game);">🔊 ミュート切り替え</h3>
-              <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-                <button id="dungeon-seMute" class="dungeon-btn" type="button" aria-label="効果音のオン・オフ">🔊 効果音: ON</button>
-                <button id="dungeon-bgmMute" class="dungeon-btn" type="button" aria-label="BGMのオン・オフ">🎵 BGM: ON</button>
-                <span id="dungeon-seStat" style="font-size:12px;color:var(--muted);">効果音なし</span>
-              </div>
-            </div>
-
-            <div style="background:#1b1a2a;padding:12px;border-radius:6px;border:1px solid #333048;">
-              <h3 style="margin:0 0 6px;font-size:14px;color:var(--gold);font-family:var(--game);">📁 音声ファイルの取り込み</h3>
-              <p style="font-size:12px;color:var(--muted);margin:0 0 10px;line-height:1.5;">
-                端末内のフォルダまたは音声ファイルを指定して、BGM・効果音をダンジョンRPGに読み込めます。
-              </p>
-              <div style="display:flex;gap:8px;flex-wrap:wrap;">
-                <button id="dungeon-seDirBtn" class="dungeon-btn" type="button">📁 フォルダから音読込</button>
-                <button id="dungeon-seFileBtn" class="dungeon-btn" type="button">🎶 ファイル選択</button>
-                <input type="file" id="dungeon-seDir" webkitdirectory multiple hidden>
-                <input type="file" id="dungeon-seFiles" accept="audio/*,.mp3,.m4a,.ogg,.wav" multiple hidden>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- フッター -->
-        <div style="margin-top:16px;border-top:1px solid #333048;padding-top:10px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
-          <div style="display:flex;gap:8px;">
-            <button type="button" class="dungeon-btn" style="font-size:12px;padding:4px 8px;background:#2b2942;" onclick="backToTowerSelect(); closeDungeonMenu();">🏰 塔選択へ</button>
-            <button type="button" class="dungeon-btn" style="font-size:12px;padding:4px 8px;" onclick="exitDungeonToHome(); closeDungeonMenu();">🏠 ホームへ</button>
-          </div>
-          <button type="button" class="dungeon-btn" style="background:var(--gold);color:#000;font-weight:bold;font-size:13px;padding:4px 14px;" onclick="closeDungeonMenu()">閉じる</button>
-        </div>
-
-      </div>
     </div>
 
   </div>
