@@ -1,4 +1,4 @@
-  <div id="section-parent-admin-dungeon" class="section" style="padding:16px 10px;background:#12111c;min-height:100vh;color:#eeece2;">
+  <div id="section-parent-admin-dungeon" class="section" style="display:none;padding:16px 10px;background:#12111c;min-height:100vh;color:#eeece2;">
     <div style="max-width:960px;margin:0 auto;">
       
       <!-- ヘッダー -->
@@ -112,28 +112,56 @@
 
       <!-- ================= タブ2: パラメータ・バランス調整 ================= -->
       <div id="dungeon-admin-tab-params" style="display:none;">
+        
+        <!-- 🎯 テストプレイ試走 ＆ デバッグチート機能 -->
         <div class="dungeon-window" style="margin-bottom:16px;">
+          <h2 class="dungeon-h2" style="font-size:16px;color:var(--gold);margin:0 0 8px;">🎯 テストプレイ（指定階からの試走）</h2>
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:#1b1a2a;padding:12px;border-radius:6px;border:1px solid #333048;">
+            <label for="dungeon-tryF" style="font-family:'DotGothic16',monospace;color:#f2b632;font-size:14px;">開始階 (1〜100):</label>
+            <input type="number" id="dungeon-tryF" min="1" max="100" value="50" style="width:90px;font-size:16px;padding:4px 8px;background:#000;color:#fff;border:1px solid #eeece2;border-radius:4px;">
+            <button id="dungeon-tryBtn" type="button" class="dungeon-btn" style="background:#2e7d32;color:#fff;font-weight:bold;">練習モードで試走する ▶</button>
+          </div>
+          <p style="font-size:12px;color:var(--muted);margin:6px 0 0;">※指定した階に応じた想定レベル・装備で開始され、セーブデータには影響しません。</p>
+
+          <h2 class="dungeon-h2" style="font-size:16px;color:var(--gold);margin:16px 0 8px;">⚡ テスター用チート機能 (管理者専用)</h2>
+          <p style="font-size:12px;color:var(--muted);margin:0 0 8px;">ゲーム進行中（試走中）に即座に効果を発揮するテスター用ツールです。</p>
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:6px;">
+            <button class="dungeon-btn" id="adm-chHeal" type="button" onclick="adminCheatAction('heal')">💖 HP・MP全回復</button>
+            <button class="dungeon-btn" id="adm-chGauge" type="button" onclick="adminCheatAction('gauge')">💥 必殺ゲージMAX</button>
+            <button class="dungeon-btn" id="adm-chItems" type="button" onclick="adminCheatAction('items')">🎒 アイテム+5全補給</button>
+            <button class="dungeon-btn" id="adm-chGear" type="button" onclick="adminCheatAction('gear')">🛡️ 最強装備一括</button>
+            <button class="dungeon-btn" id="adm-chSkip" type="button" onclick="adminCheatAction('skip')">🪜 次の階へスキップ</button>
+            <button class="dungeon-btn" id="adm-chBattle" type="button" onclick="adminCheatAction('battle')">⚔️ 通常敵と戦闘テスト</button>
+            <button class="dungeon-btn" id="adm-chBoss" type="button" onclick="adminCheatAction('boss')">🐉 守護竜と戦闘テスト</button>
+          </div>
+        </div>
+
+        <!-- 📐 想定バランス計算表 -->
+        <div class="dungeon-window" style="margin-bottom:16px;">
+          <h2 class="dungeon-h2" style="font-size:16px;color:var(--gold);margin:0 0 8px;">📐 想定バランス計算表</h2>
           <p style="color:#aaa;font-size:13px;line-height:1.6;margin:0 0 10px;">
-            数値を変えるとすぐ反映され、ブラウザに保存されます。敵のHPと攻撃力は直接決めず、「標準の攻撃 何発で倒せるか」「無防備で何発耐えられるか」から逆算しています。
+            敵のHPと攻撃力は直接決めず、「標準の攻撃 何発で倒せるか」「無防備で何発耐えられるか」から自動逆算されます。
+          </p>
+          <div class="dungeon-tw"><table id="dungeon-admin-ttable"></table></div>
+        </div>
+
+        <!-- 🎛️ パラメーター詳細調整 (SCHEMA) -->
+        <div class="dungeon-window" style="margin-bottom:16px;">
+          <h2 class="dungeon-h2" style="font-size:16px;color:var(--gold);margin:0 0 8px;">🎛️ パラメーター詳細調整 (SCHEMA)</h2>
+          <p style="color:#aaa;font-size:13px;line-height:1.6;margin:0 0 10px;">
+            数値を変えるとすぐ反映され、ブラウザに保存されます。
           </p>
           <div id="dungeon-admin-params"></div>
-          <div class="dungeon-tw" style="margin-top:16px;"><table id="dungeon-admin-ttable"></table></div>
           
-          <div class="dungeon-try" style="margin-top:16px;">
+          <div class="dungeon-try" style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap;">
             <button id="dungeon-cfgReset" type="button" class="dungeon-btn">初期値にもどす</button>
             <button id="dungeon-cfgOut" type="button" class="dungeon-btn">設定を書き出す</button>
             <button id="dungeon-cfgIn" type="button" class="dungeon-btn">設定を読み込む</button>
           </div>
-          <textarea id="dungeon-cfgText" rows="4" style="margin-top:10px;" aria-label="設定データ" placeholder="書き出した設定がここに出ます。読み込むときは、ここに貼り付けて「設定を読み込む」を押します。"></textarea>
-          <p class="dungeon-note" id="dungeon-cfgMsg" style="margin:6px 0;"></p>
-          
-          <div class="dungeon-try" style="margin-top:16px;padding:12px;background:#1b1a2a;border-radius:6px;border:1px solid #333048;">
-            <label for="dungeon-tryF" style="display:inline;font-family:'DotGothic16',monospace;color:#f2b632;">この階からテストプレイする：</label>
-            <input type="number" id="dungeon-tryF" min="1" max="100" value="50" style="width:90px;font-size:16px;padding:4px 8px;background:#000;color:#fff;border:1px solid #eeece2;border-radius:4px;">
-            <button id="dungeon-tryBtn" type="button" class="dungeon-btn" style="background:#546e7a;">練習モードで試走する ▶</button>
-          </div>
-          <p class="dungeon-note" style="margin-top:6px;">※練習開始は想定レベルで始まり、記録にもセーブデータにも残りません。</p>
+          <textarea id="dungeon-cfgText" rows="4" style="margin-top:10px;width:100%;background:#000;color:#fff;border:1px solid #37344f;padding:8px;font-family:monospace;border-radius:4px;" aria-label="設定データ" placeholder="書き出した設定がここに出ます。読み込むときは、ここに貼り付けて「設定を読み込む」を押します。"></textarea>
+          <p class="dungeon-note" id="dungeon-cfgMsg" style="margin:6px 0;color:var(--gold);"></p>
         </div>
+
       </div>
 
     </div>

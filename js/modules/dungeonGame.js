@@ -2502,142 +2502,35 @@ function buildSoundTestGrid(){
   });
 }
 
-/* デバッグテスター・チートボタン イベント */
-$("#chHeal").onclick = ()=>{
-  if(!S.p) return;
-  S.p.hp = pMaxHp(S.p.lv); S.p.mp = pMaxMp(S.p.lv);
-  log("【テスター】HPとMPを全回復した！");
-  render(); pop("💖 全回復！","heal",0,true); se("heal_hp");
-};
-$("#chGauge").onclick = ()=>{
-  if(!S.p) return;
-  S.p.gauge = 100;
-  log("【テスター】必殺ゲージをMAX(100%)にした！");
-  render(); pop("💥 必殺MAX！","crit",0,true); se("special_start");
-};
-$("#chItems").onclick = ()=>{
-  if(!S.p) return;
-  Object.keys(S.p.it).forEach(k=>S.p.it[k]+=5);
-  log("【テスター】どうぐを各5個補充した！");
-  render(); pop("🎒 アイテム補充！","guard",0,true); se("chest");
-};
-$("#chGear").onclick = ()=>{
-  if(!S.p) return;
-  S.p.gearMax = 10;
-  S.p.eq = fullSet(10);
-  log("【テスター】最高位のオリハルコン装備一式を装備した！");
-  render(); pop("🛡️ 最強装備！","guard",0,true); se("gear_get");
-};
-$("#chSkip").onclick = ()=>{
-  if(!S.p) return;
-  log("【テスター】階段を降りて次の階へスキップした！");
-  closeMenu();
-  descend();
-};
-$("#chBattle").onclick = ()=>{
-  if(!S.p) return;
-  closeMenu();
-  startBattle(null, {t:"mon", a:ri(4)}, false);
-};
-$("#chBoss").onclick = ()=>{
-  if(!S.p) return;
-  closeMenu();
-  startBattle(null, {t:"boss"}, false);
-};
-
-$("#mResetSaveBtn").onclick = ()=>{
-  if(confirm("セーブデータを初期化しますか？（最高記録もリセットされます）")){
-    REC = {best:0, save:null};
-    saveRec();
-    renderStatus();
-    alert("セーブデータを初期化しました。");
+/* デバッグテスター・チートボタン イベント（管理者画面 16-parent-admin-dungeon へ移設） */
+  const rSaveBtn = $("#mResetSaveBtn");
+  if (rSaveBtn) {
+    rSaveBtn.onclick = () => {
+      if (confirm("セーブデータを初期化しますか？（最高記録もリセットされます）")) {
+        REC = {best:0, save:null};
+        saveRec();
+        renderStatus();
+        alert("セーブデータを初期化しました。");
+      }
+    };
   }
-};
 
-/* 画面モード切り替え */
-$$(".mode-btn").forEach(b=>{
-  b.onclick = ()=>{
-    $$(".mode-btn").forEach(x=>x.classList.remove("active"));
-    b.classList.add("active");
-    currentDisplayMode = b.dataset.mode;
-    applyLayout();
-    se("select");
-  };
-});
+  $$(".mode-btn").forEach(b => {
+    b.onclick = () => {
+      $$(".mode-btn").forEach(x => x.classList.remove("active"));
+      b.classList.add("active");
+      currentDisplayMode = b.dataset.mode;
+      applyLayout();
+      se("select");
+    };
+  });
 
-/* 触覚振動トグル */
-$("#mHapticsToggle").onchange = (e)=>{
-  hapticsEnabled = e.target.checked;
-};
-
-
-/* ==========================================================================
-   🛠️ バランス調整 (テスター用 SCHEMA 管理)
-   ========================================================================== */
-function renderTable(){
-  const tbl=$("#mTtable"); if(!tbl) return;
-  let h="<tr><th>階</th><th>想定Lv</th><th>主HP</th><th>主攻</th><th>主防</th><th>敵HP</th><th>敵攻</th><th>必要攻撃</th><th>耐久</th><th>竜HP</th><th>竜攻</th></tr>";
-  for(const f of [1,10,30,50,80,100]){
-    const s=monStats(f,archOf(0),false), b=f%10===0?monStats(f,archOf(0),true):null;
-    h+="<tr><td>"+f+"</td><td>"+f+"</td><td>"+pMaxHp(f)+"</td><td>"+expAtk(f)+"</td><td>"+expDef(f)+"</td><td>"+s.hp+"</td><td>"+s.atk+"</td><td>"+kHits(f).toFixed(1)+"</td><td>"+nHits(f).toFixed(1)+"</td><td>"+(b?b.hp:"—")+"</td><td>"+(b?b.atk:"—")+"</td></tr>";
+  const hapticsEl = $("#mHapticsToggle");
+  if (hapticsEl) {
+    hapticsEl.onchange = (e) => {
+      hapticsEnabled = e.target.checked;
+    };
   }
-  tbl.innerHTML=h;
-}
-
-function buildParams(){
-  const pBox=$("#mParams"); if(!pBox) return;
-  const open=[...document.querySelectorAll("#mParams .pgroup")].map(d=>d.open);
-  pBox.innerHTML=SCHEMA.map((g,gi)=>'<details class="pgroup"'+(open[gi]?" open":"")+'><summary>'+g[0]+'</summary>'+g[1].map(r=>'<label class="prow" for="p_'+r[0]+'"><span>'+r[1]+'</span><input type="number" id="p_'+r[0]+'" min="'+r[3]+'" max="'+r[4]+'" step="'+r[5]+'" value="'+CFG[r[0]]+'"></label>').join("")+'</details>').join("");
-  SCHEMA.forEach(g=>g[1].forEach(r=>{
-    const el=$("#p_"+r[0]);
-    if(el) el.addEventListener("change",e=>{
-      let v=parseFloat(e.target.value); if(!isFinite(v)) v=DEF[r[0]];
-      v=Math.max(r[3],Math.min(r[4],v)); CFG[r[0]]=v; e.target.value=v; applyCfg();
-    });
-  }));
-}
-
-function applyCfg(){
-  saveCfg(); renderTable();
-  if(S.p&&(S.screen==="explore"||S.screen==="battle")){
-    S.p.hp=Math.max(1,Math.min(S.p.hp,pMaxHp(S.p.lv)));
-    S.p.mp=Math.min(S.p.mp,pMaxMp(S.p.lv));
-    renderStage(); renderStatus();
-  }
-}
-function renderTune(){ buildParams(); renderTable(); }
-
-let resetArmed=false;
-$("#mCfgReset").onclick=()=>{
-  if(!resetArmed){
-    resetArmed=true; $("#mCfgMsg").textContent="もう一度押すとすべての数値が初期値に戻ります。"; return;
-  }
-  resetArmed=false; Object.assign(CFG,DEF); buildParams(); applyCfg();
-  $("#mCfgMsg").textContent="初期値に戻しました。";
-};
-$("#mCfgOut").onclick=()=>{
-  const t=JSON.stringify(CFG); $("#mCfgText").value=t;
-  const done=()=>{$("#mCfgMsg").textContent="設定JSONを書き出しました。";};
-  try{navigator.clipboard.writeText(t).then(()=>{$("#mCfgMsg").textContent="設定をクリップボードにコピーしました！";},done)}catch(e){done()}
-};
-$("#mCfgIn").onclick=()=>{
-  try{
-    const o=JSON.parse($("#mCfgText").value);
-    if(!o||typeof o!=="object") throw 0;
-    setCfg(o); buildParams(); applyCfg();
-    $("#mCfgMsg").textContent="設定を読み込みました。";
-  }catch(e){
-    $("#mCfgMsg").textContent="読み込めませんでした。正しいJSON形式で貼り付けてください。";
-  }
-};
-
-$("#mTryBtn").onclick=()=>{
-  const f=Math.max(1,Math.min(100,Math.round(+$("#mTryF").value||1)));
-  closeMenu();
-  start(f,true);
-};
-
-
 /* ==========================================================================
    🎮 入力イベント (キーボード & タッチスワイプ & マップタップ)
    ========================================================================== */
@@ -3948,6 +3841,11 @@ function openDungeonGame(startFloor, isPractice) {
   }
   if (typeof switchSection === "function") {
     switchSection("section-dungeon");
+  } else if (typeof global.switchSection === "function") {
+    global.switchSection("section-dungeon");
+  } else {
+    document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+    if (sec) sec.classList.add('active');
   }
   if (typeof startFloor === "number" && startFloor > 0) {
     startDungeonWithTower(currentTower.id, startFloor, !!isPractice);
@@ -4037,18 +3935,50 @@ function exitDungeonToHome() {
 
 /* ---------- 保護者管理画面 (16-parent-admin-dungeon.html) 連携 ---------- */
 function openParentAdminDungeon() {
+  document.body.classList.remove('in-dungeon-game');
+  if (window.AppKeyboard) AppKeyboard.hide();
+
   const sec = document.getElementById("section-parent-admin-dungeon");
-  if (sec) sec.style.display = "block";
+  if (sec) {
+    sec.style.display = "block";
+    sec.classList.add("active");
+  }
   if (typeof switchSection === "function") {
     switchSection("section-parent-admin-dungeon");
+  } else if (typeof global.switchSection === "function") {
+    global.switchSection("section-parent-admin-dungeon");
+  } else {
+    document.querySelectorAll('.section').forEach(s => {
+      s.classList.remove('active');
+      if (s.id !== "section-parent-admin-dungeon") s.style.display = 'none';
+    });
+    if (sec) sec.classList.add('active');
   }
-  switchAdminDungeonTab('towers');
+  switchAdminDungeonTab('params');
+  renderAdminParams();
   renderAdminTowerList();
 }
 
 function exitParentAdminDungeon() {
+  const sec = document.getElementById("section-parent-admin-dungeon");
+  if (sec) {
+    sec.classList.remove('active');
+    sec.style.display = 'none';
+  }
   if (typeof switchSection === "function") {
     switchSection("section-parent-admin");
+  } else if (typeof global.switchSection === "function") {
+    global.switchSection("section-parent-admin");
+  } else {
+    document.querySelectorAll('.section').forEach(s => {
+      s.classList.remove('active');
+      s.style.display = 'none';
+    });
+    const pSec = document.getElementById("section-parent-admin");
+    if (pSec) {
+      pSec.classList.add('active');
+      pSec.style.display = 'block';
+    }
   }
 }
 
@@ -4280,6 +4210,50 @@ function renderAdminParams() {
   }
 }
 
+function adminCheatAction(type) {
+  if (!S || !S.p) {
+    alert("まず「練習モードで試走する ▶」を押してダンジョンを開始してください。");
+    return;
+  }
+  if (type === 'heal') {
+    S.p.hp = pMaxHp(S.p.lv);
+    S.p.mp = pMaxMp(S.p.lv);
+    se("heal_hp");
+    alert("HP・MPを全回復しました！");
+  } else if (type === 'gauge') {
+    S.p.gauge = 100;
+    se("special_start");
+    alert("必殺ゲージをMAX（100%）にしました！");
+  } else if (type === 'items') {
+    for (let k in S.p.it) S.p.it[k] = (S.p.it[k] || 0) + 5;
+    se("gear_get");
+    alert("全アイテムを+5個補給しました！");
+  } else if (type === 'gear') {
+    S.p.gearMax = 10;
+    S.p.eq = fullSet(10);
+    se("equip");
+    alert("オリハルコン（最強装備一式）を装備しました！");
+  } else if (type === 'skip') {
+    if (S.floor < (currentTower.maxFloor || 100)) {
+      S.floor++;
+      enterFloor("地下 " + S.floor + " 階に スキップした。");
+      openDungeonGame(S.floor, true);
+    } else {
+      alert("最深階です。");
+    }
+  } else if (type === 'battle') {
+    openDungeonGame(S.floor || 1, true);
+    setTimeout(() => {
+      startBattle(ri(4), false);
+    }, 200);
+  } else if (type === 'boss') {
+    openDungeonGame(S.floor || 1, true);
+    setTimeout(() => {
+      startBattle(0, true);
+    }, 200);
+  }
+}
+
 function renderAdminParamsTable() {
   const tbl = document.getElementById("dungeon-admin-ttable");
   if (!tbl) return;
@@ -4318,6 +4292,7 @@ function renderAdminParamsTable() {
   global.toggleAllUnits = toggleAllUnits;
   global.resetTowersToDefault = resetTowersToDefault;
   global.deleteTower = deleteTower;
+  global.adminCheatAction = adminCheatAction;
 
   // 初期化
   if (typeof document !== 'undefined') {

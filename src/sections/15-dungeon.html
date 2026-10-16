@@ -55,14 +55,13 @@
       <div class="modal-overlay" id="menuModal" role="dialog" aria-modal="true" aria-labelledby="menuTitle">
         <div class="menu-card">
           <div class="menu-header">
-            <h2 id="menuTitle">⚙️ SYSTEM &amp; TESTER MENU</h2>
+            <h2 id="menuTitle">⚙️ SYSTEM MENU</h2>
             <button class="menu-close-btn" id="modalCloseBtn" type="button">✕ とじる</button>
           </div>
           
           <nav class="menu-tabs">
             <button class="menu-tab-btn active" data-tab="tab-sound" type="button">🎧 サウンド</button>
             <button class="menu-tab-btn" data-tab="tab-status" type="button">📊 ステータス &amp; 記録</button>
-            <button class="menu-tab-btn" data-tab="tab-tester" type="button">🛠️ テスター &amp; 調整</button>
             <button class="menu-tab-btn" data-tab="tab-settings" type="button">🎮 画面 &amp; 操作</button>
           </nav>
           
@@ -120,51 +119,6 @@
                 <div class="btns">
                   <button id="mResetSaveBtn" type="button" style="color:var(--danger);border-color:var(--danger)">🗑️ セーブデータを初期化する</button>
                 </div>
-              </div>
-            </div>
-
-            <!-- 🛠️ テスター & 調整タブ -->
-            <div class="tab-content" id="tab-tester">
-              <div class="m-box">
-                <h3>⚡ デバッグテスター・チート機能</h3>
-                <p style="font-size:11px;color:var(--muted);margin:0 0 8px">テストプレイ用の便利ツールです。即座に効果が反映されます。</p>
-                <div class="cheat-grid">
-                  <button class="cheat-btn" id="chHeal" type="button">💖 HP・MP全回復</button>
-                  <button class="cheat-btn" id="chGauge" type="button">💥 必殺ゲージMAX</button>
-                  <button class="cheat-btn" id="chItems" type="button">🎒 アイテム+5全補給</button>
-                  <button class="cheat-btn" id="chGear" type="button">🛡️ 最強装備一括</button>
-                  <button class="cheat-btn" id="chSkip" type="button">🪜 次の階へスキップ</button>
-                  <button class="cheat-btn" id="chBattle" type="button">⚔️ 通常敵と戦闘テスト</button>
-                  <button class="cheat-btn" id="chBoss" type="button">🐉 守護竜と戦闘テスト</button>
-                </div>
-              </div>
-
-              <div class="m-box">
-                <h3>🎯 指定階からテスト開始</h3>
-                <div class="try" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-                  <label for="mTryF" style="font-size:13px;font-family:var(--game)">開始階 (1〜100):</label>
-                  <input type="number" id="mTryF" min="1" max="100" value="50">
-                  <button id="mTryBtn" type="button">練習モードで開始</button>
-                </div>
-                <p style="font-size:11px;color:var(--muted);margin:4px 0 0">想定レベル・装備で開始され、セーブデータには影響しません。</p>
-              </div>
-
-              <div class="m-box">
-                <h3>📐 想定バランス計算表</h3>
-                <div class="tw"><table id="mTtable"></table></div>
-              </div>
-
-              <div class="m-box">
-                <h3>🎛️ パラメーター詳細調整 (SCHEMA)</h3>
-                <p class="tune-help">数値を変えるとすぐ反映され、ブラウザに保存されます。敵の強さは「必要攻撃回数」「無防備での耐久打数」から自動逆算されます。</p>
-                <div id="mParams"></div>
-                <div class="btns" style="margin-top:10px">
-                  <button id="mCfgReset" type="button">初期値に戻す</button>
-                  <button id="mCfgOut" type="button">設定を書き出す</button>
-                  <button id="mCfgIn" type="button">設定を読み込む</button>
-                </div>
-                <textarea id="mCfgText" rows="3" placeholder="書き出したJSONがここに出ます。読み込むときは貼り付けて「設定を読み込む」を押します。" style="margin-top:8px"></textarea>
-                <p id="mCfgMsg" style="font-size:11px;color:var(--gold);margin:4px 0 0"></p>
               </div>
             </div>
 

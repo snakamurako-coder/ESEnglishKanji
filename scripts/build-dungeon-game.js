@@ -1005,6 +1005,41 @@ refJs = refJs.replace(
   '// boot will be invoked via startDungeonWithTower() or openDungeonGame()'
 );
 
+// 5.3 旧テスター・チートボタン イベント（プレイヤーメニューから管理者画面へ移設したため、直接バインドによるnullエラーを防止）
+refJs = refJs.replace(
+  /\/\* デバッグテスター・チートボタン イベント \*\/[\s\S]*?\$\("#mTryBtn"\)\.onclick\s*=\s*\(\)\s*=>\s*\{[\s\S]*?\};\s*/,
+  () => `/* デバッグテスター・チートボタン イベント（管理者画面 16-parent-admin-dungeon へ移設） */
+  const rSaveBtn = $("#mResetSaveBtn");
+  if (rSaveBtn) {
+    rSaveBtn.onclick = () => {
+      if (confirm("セーブデータを初期化しますか？（最高記録もリセットされます）")) {
+        REC = {best:0, save:null};
+        saveRec();
+        renderStatus();
+        alert("セーブデータを初期化しました。");
+      }
+    };
+  }
+
+  $$(".mode-btn").forEach(b => {
+    b.onclick = () => {
+      $$(".mode-btn").forEach(x => x.classList.remove("active"));
+      b.classList.add("active");
+      currentDisplayMode = b.dataset.mode;
+      applyLayout();
+      se("select");
+    };
+  });
+
+  const hapticsEl = $("#mHapticsToggle");
+  if (hapticsEl) {
+    hapticsEl.onchange = (e) => {
+      hapticsEnabled = e.target.checked;
+    };
+  }
+`
+);
+
 
 // 6. 追加関数（handleTopBack, 塔選択画面, 保護者管理画面）
 const extraAdminAndNavFunctions = `
@@ -1033,6 +1068,11 @@ function openDungeonGame(startFloor, isPractice) {
   }
   if (typeof switchSection === "function") {
     switchSection("section-dungeon");
+  } else if (typeof global.switchSection === "function") {
+    global.switchSection("section-dungeon");
+  } else {
+    document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+    if (sec) sec.classList.add('active');
   }
   if (typeof startFloor === "number" && startFloor > 0) {
     startDungeonWithTower(currentTower.id, startFloor, !!isPractice);
@@ -1122,18 +1162,50 @@ function exitDungeonToHome() {
 
 /* ---------- 保護者管理画面 (16-parent-admin-dungeon.html) 連携 ---------- */
 function openParentAdminDungeon() {
+  document.body.classList.remove('in-dungeon-game');
+  if (window.AppKeyboard) AppKeyboard.hide();
+
   const sec = document.getElementById("section-parent-admin-dungeon");
-  if (sec) sec.style.display = "block";
+  if (sec) {
+    sec.style.display = "block";
+    sec.classList.add("active");
+  }
   if (typeof switchSection === "function") {
     switchSection("section-parent-admin-dungeon");
+  } else if (typeof global.switchSection === "function") {
+    global.switchSection("section-parent-admin-dungeon");
+  } else {
+    document.querySelectorAll('.section').forEach(s => {
+      s.classList.remove('active');
+      if (s.id !== "section-parent-admin-dungeon") s.style.display = 'none';
+    });
+    if (sec) sec.classList.add('active');
   }
-  switchAdminDungeonTab('towers');
+  switchAdminDungeonTab('params');
+  renderAdminParams();
   renderAdminTowerList();
 }
 
 function exitParentAdminDungeon() {
+  const sec = document.getElementById("section-parent-admin-dungeon");
+  if (sec) {
+    sec.classList.remove('active');
+    sec.style.display = 'none';
+  }
   if (typeof switchSection === "function") {
     switchSection("section-parent-admin");
+  } else if (typeof global.switchSection === "function") {
+    global.switchSection("section-parent-admin");
+  } else {
+    document.querySelectorAll('.section').forEach(s => {
+      s.classList.remove('active');
+      s.style.display = 'none';
+    });
+    const pSec = document.getElementById("section-parent-admin");
+    if (pSec) {
+      pSec.classList.add('active');
+      pSec.style.display = 'block';
+    }
   }
 }
 
@@ -1365,6 +1437,50 @@ function renderAdminParams() {
   }
 }
 
+function adminCheatAction(type) {
+  if (!S || !S.p) {
+    alert("まず「練習モードで試走する ▶」を押してダンジョンを開始してください。");
+    return;
+  }
+  if (type === 'heal') {
+    S.p.hp = pMaxHp(S.p.lv);
+    S.p.mp = pMaxMp(S.p.lv);
+    se("heal_hp");
+    alert("HP・MPを全回復しました！");
+  } else if (type === 'gauge') {
+    S.p.gauge = 100;
+    se("special_start");
+    alert("必殺ゲージをMAX（100%）にしました！");
+  } else if (type === 'items') {
+    for (let k in S.p.it) S.p.it[k] = (S.p.it[k] || 0) + 5;
+    se("gear_get");
+    alert("全アイテムを+5個補給しました！");
+  } else if (type === 'gear') {
+    S.p.gearMax = 10;
+    S.p.eq = fullSet(10);
+    se("equip");
+    alert("オリハルコン（最強装備一式）を装備しました！");
+  } else if (type === 'skip') {
+    if (S.floor < (currentTower.maxFloor || 100)) {
+      S.floor++;
+      enterFloor("地下 " + S.floor + " 階に スキップした。");
+      openDungeonGame(S.floor, true);
+    } else {
+      alert("最深階です。");
+    }
+  } else if (type === 'battle') {
+    openDungeonGame(S.floor || 1, true);
+    setTimeout(() => {
+      startBattle(ri(4), false);
+    }, 200);
+  } else if (type === 'boss') {
+    openDungeonGame(S.floor || 1, true);
+    setTimeout(() => {
+      startBattle(0, true);
+    }, 200);
+  }
+}
+
 function renderAdminParamsTable() {
   const tbl = document.getElementById("dungeon-admin-ttable");
   if (!tbl) return;
@@ -1405,6 +1521,7 @@ const globalExports = `
   global.toggleAllUnits = toggleAllUnits;
   global.resetTowersToDefault = resetTowersToDefault;
   global.deleteTower = deleteTower;
+  global.adminCheatAction = adminCheatAction;
 
   // 初期化
   if (typeof document !== 'undefined') {

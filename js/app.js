@@ -1,3 +1,5 @@
+var global = typeof window !== 'undefined' ? window : this;
+
 // ▼ GASのURLを貼り付けてください（※前回と同じURLならそのままで大丈夫） ▼
     const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxlXeRNrrj5dkD-ok-S-WGGLWrrwn7wAKA9N_4OKjkyDO8norUhAY_gU4ZmqAizVwjc/exec";
     const LS_PENDING_FINISH_SAVE = "app_pending_finish_quiz_save_v1";
@@ -2851,8 +2853,17 @@
     function switchSection(id, opts) {
       opts = opts || {};
       abandonKanjiQuizPlayIfLeavingSection(id);
-      document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
-      document.getElementById(id).classList.add('active');
+      document.querySelectorAll('.section').forEach(s => {
+        s.classList.remove('active');
+        if (s.id !== id) {
+          s.style.display = '';
+        }
+      });
+      const targetSec = document.getElementById(id);
+      if (targetSec) {
+        targetSec.classList.add('active');
+        targetSec.style.display = '';
+      }
       const msgEl = document.getElementById('message');
       if (msgEl) msgEl.innerText = "";
       const kanjiFlowIds = [
@@ -15506,6 +15517,8 @@
       }
     });
 
+    global.switchSection = switchSection;
+
     // 単語迷宮 百階 (Dungeon RPG Gamification) 連携
     global.openDungeonGame = function(startFloor, isPractice) {
       if (global.DungeonGame && typeof global.DungeonGame.open === 'function') {
@@ -15516,10 +15529,9 @@
     };
 
     global.enterParentAdminDungeon = function() {
+      switchSection('section-parent-admin-dungeon');
       if (global.DungeonGame && typeof global.DungeonGame.openAdmin === 'function') {
         global.DungeonGame.openAdmin();
-      } else {
-        switchSection('section-parent-admin-dungeon');
       }
     };
 
