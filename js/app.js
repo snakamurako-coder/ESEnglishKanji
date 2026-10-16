@@ -2864,6 +2864,10 @@ var global = typeof window !== 'undefined' ? window : this;
         targetSec.classList.add('active');
         targetSec.style.display = '';
       }
+      document.body.classList.toggle('in-dungeon-game', id === 'section-dungeon');
+      if (id !== 'section-dungeon' && window.AppKeyboard && typeof window.AppKeyboard.hide === 'function') {
+        try { window.AppKeyboard.hide(); } catch(e) {}
+      }
       const msgEl = document.getElementById('message');
       if (msgEl) msgEl.innerText = "";
       const kanjiFlowIds = [

@@ -320,6 +320,20 @@ const newDataSection = `/* =====================================================
   }
 
   /* ---------- 難易度1〜10 の定義 ---------- */
+  const FMT = { c: "4択 英→日", r: "4択 日→英", t: "記述" };
+  const LV = [
+    null,
+    ["c", "A"],
+    ["c", "B"],
+    ["r", "A"],
+    ["c", "C"],
+    ["r", "BC"],
+    ["c", "DE"],
+    ["r", "DE"],
+    ["t", "AB"],
+    ["t", "CD"],
+    ["t", "E"]
+  ];
   const LV_INFO = [
     null,
     { name: "単語 四択 (日→英)", mode: "単語", dir: "日→英", fmt: "四択" },
@@ -968,6 +982,19 @@ refJs = refJs.replace(
   }`
 );
 
+// 5.0 diffRow の置換（10段階難易度の名称表示に対応し、FMT未定義エラーを防ぐ）
+refJs = refJs.replace(
+  /function diffRow\(\)\{[\s\S]*?return h\+'<p class="dnote">'[\s\S]*?<\/p>';\s*\}/,
+  `function diffRow(){
+  let h='<div class="diff"><span class="dtitle">難易度</span>';
+  for(let n=1;n<=10;n++) h+='<button type="button" class="dchip'+(n===S.diff?" on":"")+'" data-l="'+n+'" aria-label="難易度'+n+'">'+n+'</button>';
+  h+='<span class="dnav-hint">◀▶選択 / ▼コマンド</span></div>';
+  const lvName = (typeof LV_INFO !== "undefined" && LV_INFO[S.diff]) ? LV_INFO[S.diff].name : ("Lv " + S.diff);
+  return h+'<p class="dnote">'+lvName+'・正解で効果 '+bonus(S.diff)+'%＋速さ補正（不正解は '+CFG.base+'%）</p>';
+}`
+);
+
+
 // 5.1 イベントガード追加（ダンジョンゲーム非アクティブ時に他の画面へ干渉しないようにする）
 refJs = `function isDungeonActive() {
   const sec = document.getElementById("section-dungeon");
@@ -1082,7 +1109,7 @@ function openDungeonGame(startFloor, isPractice) {
 }
 
 function backToTowerSelect() {
-  document.body.classList.remove('in-dungeon-game');
+  document.body.classList.add('in-dungeon-game');
   if (window.AppKeyboard) AppKeyboard.hide();
   const selectView = document.getElementById("dungeon-tower-select");
   const mainView = document.getElementById("dungeon-game-main");
