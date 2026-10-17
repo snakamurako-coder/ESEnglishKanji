@@ -249,7 +249,8 @@
             return db.collection('system').doc('manifest_book_' + modeId).get().then(function (doc) {
               if (doc.exists) {
                 const d = doc.data();
-                if (d && d.isChunked && Array.isArray(d.unitNames)) {
+                const hasInlineUnits = d && d.units && typeof d.units === 'object' && Object.keys(d.units).length > 0;
+                if (d && d.isChunked && Array.isArray(d.unitNames) && d.unitNames.length) {
                   // 1MB 超え対策の分割単元ドキュメント群を並列取得して復元
                   const unitPromises = d.unitNames.map(function (uName) {
                     const uDocId = 'manifest_book_' + modeId + '_u_' + encodeURIComponent(uName);
@@ -264,12 +265,18 @@
                         reconstructedUnits[it.name] = it.data;
                       }
                     });
+                    // 分割ドキュメントが空で、親に units が残っている場合は親を使う
+                    // （以前 isChunked=true のまま非分割上書きされた残骸対策）
+                    if (Object.keys(reconstructedUnits).length === 0 && hasInlineUnits) {
+                      idbPut(STORE_BOOKS, Object.assign({ modeId: modeId, hash: expectedHash }, d));
+                      return d;
+                    }
                     d.units = reconstructedUnits;
                     idbPut(STORE_BOOKS, Object.assign({ modeId: modeId, hash: expectedHash }, d));
                     return d;
                   });
                 }
-                if (d && d.units) {
+                if (hasInlineUnits) {
                   idbPut(STORE_BOOKS, Object.assign({ modeId: modeId, hash: expectedHash }, d));
                   return d;
                 }
@@ -297,18 +304,66 @@
     });
   }
 
+  /** 単元名のゆれ（前後空白・全角数字など）を吸収して units から取り出す */
+  function resolveUnitPayload_(units, unitName) {
+    if (!units || typeof units !== 'object') return null;
+    const want = String(unitName || '').trim();
+    if (!want) return null;
+    if (units[want]) return units[want];
+    if (units[unitName]) return units[unitName];
+    const keys = Object.keys(units);
+    for (let i = 0; i < keys.length; i++) {
+      if (String(keys[i] || '').trim() === want) return units[keys[i]];
+    }
+    return null;
+  }
+
+  /** setQuestions のキー型ゆれ（"1" / 1）を吸収 */
+  function resolveSetQuestions_(setQuestions, setId) {
+    if (!setQuestions || typeof setQuestions !== 'object') return null;
+    const sid = String(setId || '');
+    if (sid && Array.isArray(setQuestions[sid])) return setQuestions[sid];
+    if (sid && Array.isArray(setQuestions[setId])) return setQuestions[setId];
+    const keys = Object.keys(setQuestions);
+    for (let i = 0; i < keys.length; i++) {
+      if (String(keys[i]) === sid) {
+        const arr = setQuestions[keys[i]];
+        return Array.isArray(arr) ? arr : null;
+      }
+    }
+    return null;
+  }
+
   /**
    * 漢字のセット一覧を取得（GAS通信ゼロ）
    */
   function getKanjiQuizSets(modeId, unitName) {
     return getBookPayload(modeId).then(function (book) {
-      if (book && book.units && book.units[unitName]) {
-        const u = book.units[unitName];
-        if (Array.isArray(u.sets)) {
-          return { status: 'success', sets: u.sets, sheetKind: u.sheetKind || 'standard', fromCache: true };
+      if (!book || !book.units) {
+        return { status: 'error', sets: [], sheetKind: 'standard', fromCache: false, message: '漢字教材ブックが見つかりません。親画面で教材を更新してください。' };
+      }
+      const u = resolveUnitPayload_(book.units, unitName);
+      if (u && Array.isArray(u.sets) && u.sets.length > 0) {
+        return { status: 'success', sets: u.sets, sheetKind: u.sheetKind || 'standard', fromCache: true };
+      }
+      // setQuestions だけある古いマニフェストからもセット一覧を復元
+      if (u && u.setQuestions && typeof u.setQuestions === 'object') {
+        const keys = Object.keys(u.setQuestions);
+        if (keys.length) {
+          const sets = keys.map(function (sid) {
+            const items = Array.isArray(u.setQuestions[sid]) ? u.setQuestions[sid] : [];
+            return {
+              setId: String(sid),
+              count: items.length,
+              kanjiList: items.map(function (it) {
+                return String((it && (it['ターゲット漢字'] || it['漢字'] || it.kanji)) || '').trim();
+              }).filter(Boolean)
+            };
+          });
+          return { status: 'success', sets: sets, sheetKind: (u && u.sheetKind) || 'standard', fromCache: true };
         }
       }
-      return { status: 'success', sets: [], sheetKind: 'standard', fromCache: false, message: 'セットが見つかりません' };
+      return { status: 'error', sets: [], sheetKind: (u && u.sheetKind) || 'standard', fromCache: false, message: 'セットが見つかりません' };
     });
   }
 
@@ -317,11 +372,15 @@
    */
   function getKanjiQuizQuestions(modeId, unitName, setId) {
     return getBookPayload(modeId).then(function (book) {
-      if (book && book.units && book.units[unitName]) {
-        const u = book.units[unitName];
+      if (!book || !book.units) {
+        return { status: 'error', questions: [], fromCache: false, message: '漢字教材ブックが見つかりません。親画面で教材を更新してください。' };
+      }
+      const u = resolveUnitPayload_(book.units, unitName);
+      if (u) {
         const sid = String(setId || '');
-        if (sid && u.setQuestions && Array.isArray(u.setQuestions[sid])) {
-          return { status: 'success', questions: u.setQuestions[sid], fromCache: true };
+        const hit = resolveSetQuestions_(u.setQuestions, sid);
+        if (hit && hit.length) {
+          return { status: 'success', questions: hit, setId: sid, sheetKind: u.sheetKind || 'standard', fromCache: true };
         }
         // setId が未指定または空文字、"ALL" の場合は全セットの質問を平坦化して返却
         if ((!sid || sid === 'ALL') && u.setQuestions && typeof u.setQuestions === 'object') {
@@ -332,11 +391,11 @@
             }
           });
           if (allQuestions.length > 0) {
-            return { status: 'success', questions: allQuestions, fromCache: true };
+            return { status: 'success', questions: allQuestions, setId: sid || 'ALL', sheetKind: u.sheetKind || 'standard', fromCache: true };
           }
         }
       }
-      return { status: 'success', questions: [], fromCache: false, message: '漢字問題が見つかりません' };
+      return { status: 'error', questions: [], fromCache: false, message: '漢字問題が見つかりません' };
     });
   }
 
@@ -424,7 +483,8 @@
               isChunked: true,
               unitNames: unitNames
             };
-            promises.push(db.collection('system').doc('manifest_book_' + mId).set(metaDoc, { merge: true }));
+            // merge だと旧 units が残り読み取りが混乱するため置換
+            promises.push(db.collection('system').doc('manifest_book_' + mId).set(metaDoc));
 
             // 単元ごとの分割ドキュメント
             unitNames.forEach(function (uName) {
@@ -436,7 +496,10 @@
               }, { merge: true }));
             });
           } else {
-            promises.push(db.collection('system').doc('manifest_book_' + mId).set(bData, { merge: true }));
+            // 非分割保存時は isChunked 残骸を消すため merge せず置換
+            const inlineDoc = Object.assign({}, bData, { isChunked: false });
+            delete inlineDoc.unitNames;
+            promises.push(db.collection('system').doc('manifest_book_' + mId).set(inlineDoc));
           }
         });
       }

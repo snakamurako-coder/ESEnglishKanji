@@ -64,9 +64,15 @@
             toggleBtnLoading(btn, false, origText); 
             if(d.status==="success") { 
                 alert(d.message); 
-                user.points = d.newPoints; saveAppKidUserToLocal(user);
+                let fresh = null;
+                try { fresh = JSON.parse(localStorage.getItem('app_kid_user') || 'null'); } catch (_e) {}
+                if (!fresh || String(fresh.id) !== String(user.id)) fresh = user;
+                if (d.newPoints != null) fresh.points = d.newPoints;
+                if (Array.isArray(d.inventory)) fresh.inventory = d.inventory;
+                else if (!Array.isArray(fresh.inventory)) fresh.inventory = [];
+                saveAppKidUserToLocal(fresh);
                 invalidateInventoryListCache_();
-                showHome(user); 
+                showHome(fresh); 
             } else { alert(d.message); } 
         }).catch(e => { alert("通信エラーが発生しました。"); toggleBtnLoading(btn, false, origText); }); 
     }

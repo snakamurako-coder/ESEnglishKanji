@@ -180,8 +180,10 @@
         var userObj = {
           id: uData.id || doc.id,
           name: uData.name || '',
-          points: typeof uData.points === 'number' ? uData.points : 0
+          points: typeof uData.points === 'number' ? uData.points : 0,
+          inventory: Array.isArray(uData.inventory) ? uData.inventory : []
         };
+        if (uData.activeRewardTicket) userObj.activeRewardTicket = uData.activeRewardTicket;
 
         if (typeof global.setAppKidUserSession_ === 'function') {
           global.setAppKidUserSession_(userObj);

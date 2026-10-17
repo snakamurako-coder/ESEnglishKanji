@@ -463,37 +463,55 @@ function extractEnglishUnitQuestions_(sheet) {
 
 function extractKanjiUnitQuestions_(sheet, bookName) {
   const values = sheet.getDataRange().getValues();
-  if (values.length < 2) return { sets: [], setQuestions: {} };
+  if (values.length < 2) return { sets: [], setQuestions: {}, sheetKind: 'standard' };
 
-  const headers = values[0] || [];
+  const headers = (values[0] || []).map(function (h) { return String(h || '').trim(); });
   const isJukugo = (headers.indexOf('セット') >= 0 && headers.indexOf('ターゲット漢字') >= 0) ||
-                    bookName.indexOf('熟語') >= 0;
+                    String(bookName || '').indexOf('熟語') >= 0 ||
+                    headers.some(function (h) { return /^漢字熟語[A-CＡ-Ｃ]$/.test(h); });
 
+  // 「セット」列を優先。無い場合のみ1列目（通し番号と誤認しやすいので注意）
+  const setCol = headers.indexOf('セット');
   const setsMap = {};
+  const setOrder = [];
 
   for (let i = 1; i < values.length; i++) {
     const row = values[i];
-    const setId = String(row[0] || '1').trim();
+    const setRaw = setCol >= 0 ? row[setCol] : row[0];
+    const setId = String(setRaw != null && setRaw !== '' ? setRaw : '1').trim();
     if (!setId) continue;
 
-    if (!setsMap[setId]) setsMap[setId] = [];
-    
-    const record = {};
+    if (!setsMap[setId]) {
+      setsMap[setId] = [];
+      setOrder.push(setId);
+    }
+
+    const record = { rowIndex: i + 1 };
     headers.forEach(function (h, colIdx) {
       if (h) record[h] = row[colIdx];
     });
+    // セット列が数値のまま残ると後段でキー不一致になるため文字列に揃える
+    if (setCol >= 0) record['セット'] = setId;
     setsMap[setId].push(record);
   }
 
   const setsList = [];
   const setQuestions = {};
 
-  Object.keys(setsMap).sort().forEach(function (sid) {
-    const items = setsMap[sid];
+  setOrder.forEach(function (sid) {
+    const items = setsMap[sid] || [];
+    const kanjiList = [];
+    const seen = {};
+    items.forEach(function (it) {
+      const k = String(it['ターゲット漢字'] || it['漢字'] || '').trim();
+      if (!k || seen[k]) return;
+      seen[k] = true;
+      kanjiList.push(k);
+    });
     setsList.push({
       setId: sid,
       count: items.length,
-      kanjiList: items.map(function (it) { return it['ターゲット漢字'] || it['漢字'] || ''; }).filter(Boolean)
+      kanjiList: kanjiList
     });
     setQuestions[sid] = items;
   });

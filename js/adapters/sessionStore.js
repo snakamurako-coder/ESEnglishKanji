@@ -5,6 +5,9 @@
 (function (global) {
   'use strict';
 
+  /** 同一 sessionSubmitId の二重加算を防ぐ（同一タブ内） */
+  var processedSubmitIds_ = Object.create(null);
+
   function getDb() {
     return (typeof global.getFirestoreDb === 'function') ? global.getFirestoreDb() : (global.firebaseDb || null);
   }
@@ -14,9 +17,8 @@
    */
   function saveLearningSession(payload) {
     return new Promise(function (resolve) {
-      var db = getDb();
-      if (!db || !payload || !payload.userId) {
-        resolve({ status: "success", earnedPoints: 0 });
+      if (!payload || !payload.userId) {
+        resolve({ status: "success", earnedPoints: 0, newTotal: 0 });
         return;
       }
 
@@ -25,6 +27,18 @@
         var submitId = payload.sessionSubmitId || (String(payload.unitId || 'session') + '_' + Date.now());
         // ドキュメントIDとして無効な文字を置換
         var docId = submitId.replace(/[\/\\#\?]/g, '_');
+
+        if (submitId && processedSubmitIds_[submitId]) {
+          var prior = processedSubmitIds_[submitId];
+          resolve({
+            status: "success",
+            earnedPoints: prior.earnedPoints,
+            newTotal: prior.newTotal,
+            alreadyProcessed: true,
+            message: "すでに保存済みです"
+          });
+          return;
+        }
 
         var results = Array.isArray(payload.results) ? payload.results : [];
         var totalCount = results.length;
@@ -35,6 +49,16 @@
 
         var earned = typeof payload.earnedPoints === 'number' ? payload.earnedPoints :
           (typeof payload.earnedOverride === 'number' ? payload.earnedOverride : 0);
+        earned = Math.max(0, Math.round(Number(earned) * 100) / 100);
+
+        var kid = null;
+        try { kid = JSON.parse(localStorage.getItem('app_kid_user') || 'null'); } catch (_e) {}
+        var basePts = (kid && String(kid.id) === userId && typeof kid.points === 'number')
+          ? kid.points
+          : (typeof payload.newTotal === 'number' ? Math.max(0, payload.newTotal - earned) : 0);
+        var newTotal = typeof payload.newTotal === 'number'
+          ? Math.round(Number(payload.newTotal) * 100) / 100
+          : Math.round((basePts + earned) * 100) / 100;
 
         var sessionDoc = {
           unitId: payload.unitId || '',
@@ -45,7 +69,7 @@
           isRandom: !!payload.isRandom,
           score: typeof payload.score === 'number' ? payload.score : null,
           earnedPoints: earned,
-          totalQuestions: totalCount,
+          totalQuestions: totalCount || (Array.isArray(payload.kanjiScoreBatch) ? payload.kanjiScoreBatch.length : 0),
           correctQuestions: correctCount,
           trainingMenuId: payload.trainingMenuId || null,
           trainingStepIndex: payload.trainingStepIndex != null ? payload.trainingStepIndex : null,
@@ -53,34 +77,54 @@
             firebase.firestore.FieldValue.serverTimestamp() : new Date().toISOString()
         };
 
+        processedSubmitIds_[submitId] = { earnedPoints: earned, newTotal: newTotal };
+
+        // ローカルユーザーのポイントを即時反映（Firestore 待ちでも UI が遅れない）
+        if (kid && String(kid.id) === userId) {
+          kid.points = newTotal;
+          try {
+            if (typeof global.saveAppKidUserToLocal === 'function') {
+              global.saveAppKidUserToLocal(kid);
+            } else {
+              localStorage.setItem('app_kid_user', JSON.stringify(kid));
+            }
+          } catch (_e2) {}
+        }
+
+        var db = getDb();
+        var finish = function (msg) {
+          resolve({
+            status: "success",
+            earnedPoints: earned,
+            newTotal: newTotal,
+            message: msg || "セッション結果を保存しました"
+          });
+        };
+
+        if (!db) {
+          finish("ローカル保存されました");
+          return;
+        }
+
         var docRef = db.collection('users').doc(userId).collection('sessions').doc(docId);
         docRef.set(sessionDoc, { merge: true })
           .then(function () {
-            // 不正解の項目があれば weakItems に記録
             recordWeakItemsFromResults(userId, payload.learningCategory || 'english', results);
 
-            // 獲得ポイントがあれば Firestore の user.points も加算
-            if (sessionDoc.earnedPoints > 0 && global.userStore && typeof global.userStore.addPoints === 'function') {
-              global.userStore.addPoints(userId, sessionDoc.earnedPoints, '学習: ' + (payload.unitSheetName || payload.unitId));
+            if (earned > 0 && global.userStore && typeof global.userStore.addPoints === 'function') {
+              return global.userStore.addPoints(userId, earned, '学習: ' + (payload.unitSheetName || payload.unitId));
             }
-
-            resolve({
-              status: "success",
-              earnedPoints: sessionDoc.earnedPoints,
-              message: "セッション結果を保存しました"
-            });
+          })
+          .then(function () {
+            finish("セッション結果を保存しました");
           })
           .catch(function (err) {
             console.warn("Firestore session save failed (offline or quota):", err);
-            resolve({
-              status: "success",
-              earnedPoints: sessionDoc.earnedPoints,
-              message: "オフライン保存されました"
-            });
+            finish("オフライン保存されました");
           });
       } catch (e) {
         console.warn("saveLearningSession adapter error:", e);
-        resolve({ status: "success", earnedPoints: 0 });
+        resolve({ status: "success", earnedPoints: 0, newTotal: 0 });
       }
     });
   }
