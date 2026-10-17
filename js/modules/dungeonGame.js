@@ -1007,10 +1007,23 @@ function saveSnd(){
 }
 
 function bgmWant(){
+  // 全滅・踏破クリア後はBGM停止（ファンファーレ等は SE で鳴らす）
+  if(S.screen==="over" || S.screen==="clear" || S.screen==="title") return 0;
   if(S.screen==="explore")return 1;
   if(S.screen==="battle")return S.b&&S.b.m.boss?3:2;
-  if(S.screen==="clear")return 4;
   return 0;
+}
+
+/** すべてのBGMを即停止（ラン終了・塔選択・ホーム復帰時） */
+function stopAllBgm_(){
+  try{
+    Object.keys(BGM).forEach(function(k){
+      const a = BGM[k];
+      if(!a) return;
+      try{ a.pause(); a.currentTime = 0; }catch(e){}
+    });
+  }catch(e){}
+  bgmCur = 0;
 }
 
 function setupBgmElement(aud, id){
@@ -2371,7 +2384,9 @@ function finishRun(kind){
     // ラン終了時はセーブを消す（コンパスで戻れる踏破階は REC に残さない＝新規スタート想定）
     if (!S.practice) { REC.save = null; saveRec(); }
   }
-  S.result = r; S.screen = kind; render(); winEnd();
+  S.result = r; S.screen = kind;
+  stopAllBgm_();
+  render(); winEnd();
   se(kind === "clear" ? "game_clear" : "game_over");
   if (r.isNew) se("new_record", 2600);
   flushDungeonPointsToAccount_(kind === "clear" ? "clear" : "over").then(function (d) {
@@ -4400,10 +4415,12 @@ function openDungeonGame(startFloor, isPractice) {
 function backToTowerSelect() {
   document.body.classList.add('in-dungeon-game');
   if (window.AppKeyboard) AppKeyboard.hide();
+  stopAllBgm_();
   const afterFlush = function () {
     try {
       if (S && (S.screen === "explore" || S.screen === "battle") && !S.practice) autosave();
     } catch (_) {}
+    stopAllBgm_();
     const selectView = document.getElementById("dungeon-tower-select");
     const mainView = document.getElementById("dungeon-game-main");
     if (selectView) selectView.style.display = "block";
@@ -4474,10 +4491,12 @@ function renderTowerCards() {
 function exitDungeonToHome() {
   document.body.classList.remove('in-dungeon-game');
   if (window.AppKeyboard) AppKeyboard.hide();
+  stopAllBgm_();
   const goHome = function () {
     try {
       if (S && (S.screen === "explore" || S.screen === "battle") && !S.practice) autosave();
     } catch (_) {}
+    stopAllBgm_();
     const user = JSON.parse(localStorage.getItem('app_kid_user') || 'null');
     if (typeof showHome === "function") {
       showHome(user);
@@ -4492,6 +4511,7 @@ function exitDungeonToHome() {
 function openParentAdminDungeon() {
   document.body.classList.remove('in-dungeon-game');
   if (window.AppKeyboard) AppKeyboard.hide();
+  stopAllBgm_();
 
   const sec = document.getElementById("section-parent-admin-dungeon");
   if (sec) {
