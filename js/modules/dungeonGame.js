@@ -658,13 +658,149 @@ const SCHEMA=[
  ["クイズの効果",[["base","基本値・不正解時の効果（%）",5,0,100,1],["perLv","難易度1つごとの上昇（%）",5,0,50,0.5],["sp1","速さ補正：残り80%以上",15,-100,100,1],["sp2","速さ補正：残り60%以上",10,-100,100,1],["sp3","速さ補正：残り40%以上",5,-100,100,1],["sp4","速さ補正：残り20%以上",0,-100,100,1],["sp5","速さ補正：残り20%未満",-5,-100,100,1],["t_lv1","制限時間：Lv1 単語四択（秒）",10,1,300,1],["t_lv2","制限時間：Lv2 単語四択＋なし（秒）",12,1,300,1],["t_lv3","制限時間：Lv3 単語スペル補う（秒）",15,1,300,1],["t_lv4","制限時間：Lv4 単語音声入力（秒）",16,1,300,1],["t_lv5","制限時間：Lv5 単語タイピング（秒）",22,1,300,1],["t_lv6","制限時間：Lv6 表現並び替え過不足なし（秒）",25,1,300,1],["t_lv7","制限時間：Lv7 表現並び替え不要語排除（秒）",28,1,300,1],["t_lv8","制限時間：Lv8 表現並び替え＋1補う（秒）",30,1,300,1],["t_lv9","制限時間：Lv9 表現音声入力（秒）",18,1,300,1],["t_lv10","制限時間：Lv10 表現タイピング（秒）",25,1,300,1],["time","制限時間の全体倍率",1,0.2,10,0.1]]],
  ["必殺技・とくぎ",[["spPow","必殺技の威力（通常の何倍か）",3,0.5,50,0.1],["spSureLv","必殺技が必中になるLv",10,1,999,1],["spDrainLv","必殺技が吸収を得るLv",20,1,999,1],["spDrain","必殺技の吸収量（与ダメージの%）",20,0,100,1],["spAllLv","必殺技が全体攻撃になるLv",30,1,999,1],["s1lv","二連切：習得Lv",5,1,999,1],["s1mp","二連切：消費MP",4,0,999,1],["s1pow","二連切：1発の威力（%）",60,1,1000,5],["s2lv","回転切り：習得Lv",10,1,999,1],["s2mp","回転切り：消費MP",6,0,999,1],["s2pow","回転切り：威力（%）",60,1,1000,5],["s3lv","三連斬：習得Lv",15,1,999,1],["s3mp","三連斬：消費MP",8,0,999,1],["s3pow","三連斬：1発の威力（%）",50,1,1000,5],["s4lv","竜巻切り：習得Lv",20,1,999,1],["s4mp","竜巻切り：消費MP",10,0,999,1],["s4pow","竜巻切り：威力（%）",70,1,1000,5]]],
  ["回復",[["stairHeal","階段を降りたときのHP・MP回復（%）",20,0,100,1],["revive","復活の首飾りで戻るHP（%）",50,1,100,1]]],
- ["どうぐ",[["iPot","初期所持：ポーション",3,0,99,1],["iEth","初期所持：まりょくの水",2,0,99,1],["iWing","初期所持：みちびきのコンパス",1,0,99,1],["iGate","初期所持：さいしんの渦",1,0,99,1],["iNeck","初期所持：復活の首飾り",1,0,99,1],["chestMin","1階あたりの宝箱の数",1,0,10,1],["chest2","宝箱がもう1つ出る確率（%）",40,0,100,1],["dNeck","宝箱：復活の首飾りの確率（%）",1.5,0,100,0.1],["dPot","宝箱：ポーションの比率",50,0,1000,1],["dEth","宝箱：まりょくの水の比率",28,0,1000,1],["dWing","宝箱：コンパスの比率",12,0,1000,1],["dGate","宝箱：さいしんの渦の比率",10,0,1000,1]]]
+ ["どうぐ",[["iPot","初期所持：ポーション",3,0,99,1],["iEth","初期所持：まりょくの水",2,0,99,1],["iWing","初期所持：導きのコンパス",1,0,99,1],["iGate","初期所持：さいしんの渦",1,0,99,1],["iNeck","初期所持：復活の首飾り",1,0,99,1],["chestMin","1階あたりの宝箱の数",1,0,10,1],["chest2","宝箱がもう1つ出る確率（%）",40,0,100,1],["dNeck","宝箱：復活の首飾りの確率（%）",1.5,0,100,0.1],["dPot","宝箱：ポーションの比率",50,0,1000,1],["dEth","宝箱：まりょくの水の比率",28,0,1000,1],["dWing","宝箱：コンパスの比率",12,0,1000,1],["dGate","宝箱：さいしんの渦の比率",10,0,1000,1]]],
+ ["学習ポイント",[["ptQuiz","正解時：難易度(1〜10)×この値",1,0,999,1],["ptFloor","踏破時：階層(1〜100)×この値",150,0,9999,1],["ptBoss","守護竜撃退：階層(10,20,…,100)×この値",50,0,9999,1]]]
 ];
 const DEF={}; SCHEMA.forEach(g=>g[1].forEach(r=>{DEF[r[0]]=r[2]}));
 const CFG=Object.assign({},DEF), CKEY="tango-meikyu-v1-cfg";
 function setCfg(o){if(o)for(const k in DEF)if(typeof o[k]==="number"&&isFinite(o[k]))CFG[k]=o[k]}
 function saveCfg(){try{localStorage.setItem(CKEY,JSON.stringify(CFG))}catch(e){}}
 try{setCfg(JSON.parse(localStorage.getItem(CKEY)))}catch(e){}
+
+/** 学習ポイント集計の初期値（踏破＝階段クリアした階。到達だけでは加算しない） */
+function emptyPointStats_() {
+  return {
+    ok: 0, total: 0, kills: 0,
+    ptsQuiz: 0, ptsFloor: 0, ptsBoss: 0, ptsTotal: 0,
+    ptsFlushed: 0,
+    awardedFloors: {},
+    awardedBosses: {}
+  };
+}
+function ensurePointStats_(st) {
+  if (!st || typeof st !== "object") return emptyPointStats_();
+  if (typeof st.ptsQuiz !== "number") st.ptsQuiz = 0;
+  if (typeof st.ptsFloor !== "number") st.ptsFloor = 0;
+  if (typeof st.ptsBoss !== "number") st.ptsBoss = 0;
+  if (typeof st.ptsTotal !== "number") st.ptsTotal = st.ptsQuiz + st.ptsFloor + st.ptsBoss;
+  if (typeof st.ptsFlushed !== "number") st.ptsFlushed = 0;
+  if (!st.awardedFloors || typeof st.awardedFloors !== "object") st.awardedFloors = {};
+  if (!st.awardedBosses || typeof st.awardedBosses !== "object") st.awardedBosses = {};
+  return st;
+}
+function addDungeonPoints_(kind, amount, meta) {
+  if (!S || S.practice) return 0;
+  const pts = Math.max(0, Math.round(Number(amount) || 0));
+  if (!pts) return 0;
+  S.st = ensurePointStats_(S.st);
+  if (kind === "quiz") S.st.ptsQuiz += pts;
+  else if (kind === "floor") S.st.ptsFloor += pts;
+  else if (kind === "boss") S.st.ptsBoss += pts;
+  S.st.ptsTotal = S.st.ptsQuiz + S.st.ptsFloor + S.st.ptsBoss;
+  if (meta && meta.toast) {
+    try { pop("+" + pts + "pt", "heal", 0, true); } catch (_) {}
+  }
+  return pts;
+}
+function awardQuizPoints_(diffLv) {
+  const L = Math.max(1, Math.min(10, Math.round(Number(diffLv) || S.diff || 1)));
+  const mult = Number(CFG.ptQuiz);
+  const pts = L * (isFinite(mult) ? mult : 1);
+  return addDungeonPoints_("quiz", pts, { toast: pts > 0 });
+}
+function awardFloorClearPoints_(floorNum) {
+  const f = Math.max(1, Math.min(100, Math.round(Number(floorNum) || 0)));
+  if (!f || !S || S.practice) return 0;
+  S.st = ensurePointStats_(S.st);
+  const key = String(f);
+  if (S.st.awardedFloors[key]) return 0;
+  S.st.awardedFloors[key] = true;
+  const mult = Number(CFG.ptFloor);
+  const pts = f * (isFinite(mult) ? mult : 150);
+  return addDungeonPoints_("floor", pts, { toast: pts > 0 });
+}
+function awardBossPoints_(floorNum) {
+  const f = Math.max(1, Math.min(100, Math.round(Number(floorNum) || 0)));
+  if (!f || f % 10 !== 0 || !S || S.practice) return 0;
+  S.st = ensurePointStats_(S.st);
+  const key = String(f);
+  if (S.st.awardedBosses[key]) return 0;
+  S.st.awardedBosses[key] = true;
+  const mult = Number(CFG.ptBoss);
+  const pts = f * (isFinite(mult) ? mult : 50);
+  return addDungeonPoints_("boss", pts, { toast: pts > 0 });
+}
+function pendingDungeonPoints_() {
+  if (!S || !S.st) return 0;
+  S.st = ensurePointStats_(S.st);
+  return Math.max(0, Math.round(S.st.ptsTotal - (S.st.ptsFlushed || 0)));
+}
+function flushDungeonPointsToAccount_(reason) {
+  const pending = pendingDungeonPoints_();
+  if (!pending || !S || S.practice) {
+    return Promise.resolve({ earnedPoints: 0, skipped: true });
+  }
+  let user = null;
+  try { user = JSON.parse(localStorage.getItem("app_kid_user") || "null"); } catch (_) {}
+  if (!user || !user.id) {
+    return Promise.resolve({ earnedPoints: 0, skipped: true, reason: "no-user" });
+  }
+  const submitId = "dungeon_" + (currentTower && currentTower.id ? currentTower.id : "tower") +
+    "_" + Date.now() + "_" + Math.floor(Math.random() * 1e6);
+  const payload = {
+    action: "save_learning_session",
+    userId: user.id,
+    sessionSubmitId: submitId,
+    unitId: "DUNGEON_" + (currentTower && currentTower.id ? currentTower.id : "default"),
+    unitSheetName: "単語迷宮:" + (currentTower && currentTower.name ? currentTower.name : "百階"),
+    learningCategory: "english",
+    challengeType: "dungeon",
+    earnedPoints: pending,
+    results: [],
+    dungeonMeta: {
+      reason: reason || "",
+      ptsQuiz: S.st.ptsQuiz,
+      ptsFloor: S.st.ptsFloor,
+      ptsBoss: S.st.ptsBoss,
+      cleared: S.cleared,
+      floor: S.floor
+    }
+  };
+  const applyLocal = function (earned, newTotal) {
+    S.st.ptsFlushed = (S.st.ptsFlushed || 0) + earned;
+    if (typeof newTotal === "number" && isFinite(newTotal)) {
+      try {
+        const u = JSON.parse(localStorage.getItem("app_kid_user") || "null");
+        if (u && String(u.id) === String(user.id)) {
+          u.points = newTotal;
+          if (typeof window.saveAppKidUserToLocal === "function") window.saveAppKidUserToLocal(u);
+          else localStorage.setItem("app_kid_user", JSON.stringify(u));
+        }
+      } catch (_) {}
+    }
+  };
+  const fetcher = (typeof window.gasApiFetchJson === "function")
+    ? window.gasApiFetchJson
+    : (typeof gasApiFetchJson === "function" ? gasApiFetchJson : null);
+  if (!fetcher) {
+    // オフライン即時加点（ローカルのみ）
+    const base = Number(user.points) || 0;
+    const newTotal = base + pending;
+    applyLocal(pending, newTotal);
+    return Promise.resolve({ earnedPoints: pending, newTotal: newTotal, localOnly: true });
+  }
+  return fetcher(payload).then(function (d) {
+    const earned = (d && typeof d.earnedPoints === "number") ? d.earnedPoints : pending;
+    applyLocal(earned, d && d.newTotal);
+    return d || { earnedPoints: earned };
+  }).catch(function (err) {
+    console.warn("[dungeon points] flush failed, local fallback", err);
+    const base = Number(user.points) || 0;
+    const newTotal = base + pending;
+    applyLocal(pending, newTotal);
+    return { earnedPoints: pending, newTotal: newTotal, localOnly: true };
+  });
+}
 
 const pAtk=L=>CFG.atk0+CFG.atkLv*(L-1);
 const pMaxHp=L=>CFG.hp0+CFG.hpLv*(L-1);
@@ -715,7 +851,7 @@ let REC=loadRec();
 const clone=o=>JSON.parse(JSON.stringify(o));
 
 /* ---------- どうぐ・クイズの種類 ---------- */
-const ITEMS={pot:{ic:"🧪",n:"ポーション"},eth:{ic:"💧",n:"まりょくの水"},wing:{ic:"🧭",n:"みちびきのコンパス"},gate:{ic:"🌀",n:"さいしんの渦"},neck:{ic:"📿",n:"復活の首飾り"}};
+const ITEMS={pot:{ic:"🧪",n:"ポーション"},eth:{ic:"💧",n:"まりょくの水"},wing:{ic:"🧭",n:"導きのコンパス"},gate:{ic:"🌀",n:"さいしんの渦"},neck:{ic:"📿",n:"復活の首飾り"}};
 const fillItems=it=>Object.assign({pot:0,eth:0,wing:0,gate:0,neck:0},it);
 const loot=()=>{
   if(roll(CFG.dNeck))return "neck";
@@ -772,7 +908,7 @@ function log(t){S.log.push(t);if(S.log.length>40)S.log.shift();renderLog()}
 
 function newState(f,practice){
   return {screen:"explore",floor:f,practice:!!practice,cleared:practice?f-1:0,diff:(S&&S.diff)||5,
-    p:{lv:f,exp:0,hp:pMaxHp(f),mp:pMaxMp(f),gauge:0,gearMax:practice?tierAt(f):1,eq:fullSet(practice?tierAt(f):1),it:{pot:CFG.iPot,eth:CFG.iEth,wing:CFG.iWing,gate:CFG.iGate,neck:CFG.iNeck}},st:{ok:0,total:0,kills:0},log:[],b:null,map:null};
+    p:{lv:f,exp:0,hp:pMaxHp(f),mp:pMaxMp(f),gauge:0,gearMax:practice?tierAt(f):1,eq:fullSet(practice?tierAt(f):1),it:{pot:CFG.iPot,eth:CFG.iEth,wing:CFG.iWing,gate:CFG.iGate,neck:CFG.iNeck}},st:emptyPointStats_(),log:[],b:null,map:null};
 }
 function start(f,practice){
   S=newState(f,practice);
@@ -781,7 +917,7 @@ function start(f,practice){
 }
 function resume(){
   const v=REC.save;S=newState(v.floor,false);
-  S.cleared=v.cleared;S.diff=v.diff||5;S.p=clone(v.p);S.p.it=fillItems(S.p.it);fillGear(S.p,S.cleared);S.st=clone(v.st);
+  S.cleared=v.cleared;S.diff=v.diff||5;S.p=clone(v.p);S.p.it=fillItems(S.p.it);fillGear(S.p,S.cleared);S.st=ensurePointStats_(clone(v.st)||emptyPointStats_());
   se("game_start");enterFloor("地下 "+v.floor+" 階から さいかい。");
 }
 function enterFloor(msg){
@@ -1165,7 +1301,18 @@ function renderStage(){
   }
   if(S.screen==="over"||S.screen==="clear"){
     const r=S.result;
-    stage.innerHTML='<div class="result"><div class="big">'+(S.screen==="clear"?"踏破":"全滅")+'</div><p>到達 地下 '+r.floor+' 階 ／ Lv '+r.lv+'</p><p>正答率 '+r.acc+'%（'+r.ok+' / '+r.total+'）・たおした数 '+r.kills+'</p>'+(r.isNew?'<p class="new">★ きろく こうしん！ ★</p>':'')+(r.practice?'<p style="color:var(--muted)">練習のため記録なし</p>':'')+'</div>';
+    const ptsLine = r.practice ? '' :
+      ('<p style="margin-top:6px;">獲得ポイント <b style="color:var(--gold)">' + (r.ptsAwarded != null ? r.ptsAwarded : (r.ptsTotal || 0)) + ' pt</b>' +
+        '<br><span style="font-size:12px;color:var(--muted)">正解 ' + (r.ptsQuiz || 0) +
+        ' ／ 踏破 ' + (r.ptsFloor || 0) +
+        ' ／ 守護竜 ' + (r.ptsBoss || 0) + '</span></p>');
+    stage.innerHTML='<div class="result"><div class="big">'+(S.screen==="clear"?"踏破":"全滅")+'</div>'+
+      '<p>到達 地下 '+r.floor+' 階 ／ 最終踏破 地下 '+(r.cleared != null ? r.cleared : 0)+' 階 ／ Lv '+r.lv+'</p>'+
+      '<p>正答率 '+r.acc+'%（'+r.ok+' / '+r.total+'）・たおした数 '+r.kills+'</p>'+
+      ptsLine+
+      (r.isNew?'<p class="new">★ きろく こうしん！ ★</p>':'')+
+      (r.practice?'<p style="color:var(--muted)">練習のため記録・ポイントなし</p>':'')+
+      '</div>';
     return;
   }
   if(S.screen==="battle"){
@@ -1212,6 +1359,7 @@ function renderStatus(){
     <div class="stat-item"><span>経験値</span><span>${p.exp} / ${expNext(p.lv)}</span></div>
     <div class="stat-item"><span>踏破記録</span><span>${S.cleared ? "地下 "+S.cleared+" 階" : "未踏破"}</span></div>
     <div class="stat-item"><span>クイズ正答</span><span>${S.st.ok} / ${S.st.total}</span></div>
+    <div class="stat-item"><span>獲得pt</span><span>${(S.st && S.st.ptsTotal) ? S.st.ptsTotal : 0}</span></div>
     <div class="stat-item" style="grid-column: 1 / -1"><span>所持アイテム</span><span>${Object.keys(ITEMS).map(k=>ITEMS[k].ic+it[k]).join("　")}</span></div>
   `;
 }
@@ -1411,7 +1559,7 @@ function winItems(t){
   w.innerHTML='<p class="msg">🎒 どうぐ'+(inB?"（つかうと 1ターン消費）":"")+'</p>'+diffRow()+'<div class="btns">'+
     row("pot",p.hp>=pMaxHp(p.lv),"クイズ正解で HP "+b+"% 回復")+
     row("eth",p.mp>=pMaxMp(p.lv),"クイズ正解で MP "+b+"% 回復")+
-    row("wing",inB||S.cleared<1,inB?"戦闘中は使えない":S.cleared<1?"踏破した階が まだない":"踏破階（1〜"+S.cleared+"）へワープ")+
+    row("wing",inB||S.cleared<1,inB?"戦闘中は使えない":S.cleared<1?"踏破した階が まだない":"踏破階（1〜"+S.cleared+"）へ。戻った階で倒れても最深踏破は残る")+
     row("gate",inB||S.floor===newest,inB?"戦闘中は使えない":S.floor===newest?"いまが最新階":"地下 "+newest+" 階へワープ")+
     row("neck",true,"戦闘で倒れると自動発動（1戦闘1回）")+
     '<button id="back" type="button">もどる</button></div>';
@@ -1596,12 +1744,18 @@ function ask(L, kind, done, name) {
     }
 
     const r = Math.min(1, (performance.now() - t0) / limit);
+    S.st = ensurePointStats_(S.st);
     S.st.total++;
-    if (ok) S.st.ok++;
+    let quizPts = 0;
+    if (ok) {
+      S.st.ok++;
+      quizPts = awardQuizPoints_(L);
+    }
     const sp = spdOf(r);
     const correctDisplay = q.answer || (q.validAnswers && q.validAnswers[0]) || "";
     const resTxt = ok
-      ? "せいかい！ 速さ補正 " + (sp > 0 ? "+" : sp < 0 ? "−" : "±") + Math.abs(sp) + "% → 効果 " + (bonus(L) + sp) + "%"
+      ? "せいかい！ 速さ補正 " + (sp > 0 ? "+" : sp < 0 ? "−" : "±") + Math.abs(sp) + "% → 効果 " + (bonus(L) + sp) + "%" +
+        (quizPts > 0 ? " ／ +" + quizPts + "pt" : "")
       : (timeout ? "じかんぎれ… " : "ざんねん… ") + "こたえは「" + correctDisplay + "」";
 
     se(ok ? "quiz_correct" : "quiz_wrong");
@@ -1999,6 +2153,8 @@ function victory(){
       p.gearMax=nt; se("gear_get",2200);
       t+=" "+GEAR[nt-1]+"の装備一式を てにいれた！";
     }
+    const bossPts = awardBossPoints_(S.floor);
+    if (bossPts > 0) t += " 守護竜撃退 +" + bossPts + "pt！";
   }
   log(t);
 
@@ -2092,21 +2248,60 @@ function move(dx,dy){
 }
 
 function descend(){
-  S.cleared=Math.max(S.cleared,S.floor);
-  if(S.floor>=100) return finishRun("clear");
+  // 階段を降りた＝その階を「踏破」。たどり着いただけでは踏破にならない。
+  const clearedFloor = S.floor;
+  const prevCleared = S.cleared || 0;
+  S.cleared = Math.max(prevCleared, clearedFloor);
+  if (S.cleared > prevCleared) {
+    const floorPts = awardFloorClearPoints_(clearedFloor);
+    if (floorPts > 0) log("地下 " + clearedFloor + " 階を 踏破！ +" + floorPts + "pt");
+  }
+  if (S.floor >= 100) return finishRun("clear");
   S.floor++;
-  const p=S.p, mx=pMaxHp(p.lv), h=Math.min(mx-p.hp,Math.round(mx*CFG.stairHeal/100));
-  p.hp+=h; p.mp=Math.min(pMaxMp(p.lv),p.mp+Math.round(pMaxMp(p.lv)*CFG.stairHeal/100));
-  enterFloor("地下 "+S.floor+" 階へ。ひといきついて HP "+h+" 回復。");
+  const p = S.p, mx = pMaxHp(p.lv), h = Math.min(mx - p.hp, Math.round(mx * CFG.stairHeal / 100));
+  p.hp += h; p.mp = Math.min(pMaxMp(p.lv), p.mp + Math.round(pMaxMp(p.lv) * CFG.stairHeal / 100));
+  enterFloor("地下 " + S.floor + " 階へ。ひといきついて HP " + h + " 回復。");
   autosave();
 }
 
 function finishRun(kind){
-  const st=S.st, r={floor:S.floor,lv:S.p.lv,ok:st.ok,total:st.total,kills:st.kills,acc:st.total?Math.round(100*st.ok/st.total):0,practice:S.practice,isNew:false};
-  if(!S.practice&&S.floor>REC.best){REC.best=S.floor;r.isNew=true;saveRec()}
-  S.result=r; S.screen=kind; render(); winEnd();
-  se(kind==="clear"?"game_clear":"game_over");
-  if(r.isNew) se("new_record",2600);
+  S.st = ensurePointStats_(S.st);
+  // 全滅時: 踏破記録は階段クリア済みの S.cleared のまま
+  // （到達階 S.floor は踏破に含めない。導きのコンパスで戻った階で倒れても最深踏破は維持）
+  const st = S.st;
+  const r = {
+    floor: S.floor,
+    cleared: S.cleared || 0,
+    lv: S.p.lv,
+    ok: st.ok,
+    total: st.total,
+    kills: st.kills,
+    acc: st.total ? Math.round(100 * st.ok / st.total) : 0,
+    practice: S.practice,
+    isNew: false,
+    ptsQuiz: st.ptsQuiz,
+    ptsFloor: st.ptsFloor,
+    ptsBoss: st.ptsBoss,
+    ptsTotal: st.ptsTotal,
+    ptsPending: pendingDungeonPoints_()
+  };
+  if (!S.practice && S.floor > REC.best) { REC.best = S.floor; r.isNew = true; saveRec(); }
+  if (kind === "over" || kind === "clear") {
+    // ラン終了時はセーブを消す（コンパスで戻れる踏破階は REC に残さない＝新規スタート想定）
+    if (!S.practice) { REC.save = null; saveRec(); }
+  }
+  S.result = r; S.screen = kind; render(); winEnd();
+  se(kind === "clear" ? "game_clear" : "game_over");
+  if (r.isNew) se("new_record", 2600);
+  flushDungeonPointsToAccount_(kind === "clear" ? "clear" : "over").then(function (d) {
+    const earned = d && d.earnedPoints ? d.earnedPoints : 0;
+    if (S.result) {
+      S.result.ptsAwarded = earned;
+      S.result.ptsPending = pendingDungeonPoints_();
+    }
+    render();
+    winEnd();
+  });
 }
 
 /* ==========================================================================
@@ -4124,11 +4319,17 @@ function openDungeonGame(startFloor, isPractice) {
 function backToTowerSelect() {
   document.body.classList.add('in-dungeon-game');
   if (window.AppKeyboard) AppKeyboard.hide();
-  const selectView = document.getElementById("dungeon-tower-select");
-  const mainView = document.getElementById("dungeon-game-main");
-  if (selectView) selectView.style.display = "block";
-  if (mainView) mainView.style.display = "none";
-  renderTowerCards();
+  const afterFlush = function () {
+    try {
+      if (S && (S.screen === "explore" || S.screen === "battle") && !S.practice) autosave();
+    } catch (_) {}
+    const selectView = document.getElementById("dungeon-tower-select");
+    const mainView = document.getElementById("dungeon-game-main");
+    if (selectView) selectView.style.display = "block";
+    if (mainView) mainView.style.display = "none";
+    renderTowerCards();
+  };
+  Promise.resolve(flushDungeonPointsToAccount_("tower-select")).then(afterFlush).catch(afterFlush);
 }
 
 function startDungeonWithTower(towerId, startFloor, isPractice) {
@@ -4192,12 +4393,18 @@ function renderTowerCards() {
 function exitDungeonToHome() {
   document.body.classList.remove('in-dungeon-game');
   if (window.AppKeyboard) AppKeyboard.hide();
-  const user = JSON.parse(localStorage.getItem('app_kid_user') || 'null');
-  if (typeof showHome === "function") {
-    showHome(user);
-  } else if (typeof switchSection === "function") {
-    switchSection("section-home");
-  }
+  const goHome = function () {
+    try {
+      if (S && (S.screen === "explore" || S.screen === "battle") && !S.practice) autosave();
+    } catch (_) {}
+    const user = JSON.parse(localStorage.getItem('app_kid_user') || 'null');
+    if (typeof showHome === "function") {
+      showHome(user);
+    } else if (typeof switchSection === "function") {
+      switchSection("section-home");
+    }
+  };
+  Promise.resolve(flushDungeonPointsToAccount_("home")).then(goHome).catch(goHome);
 }
 
 /* ---------- 保護者管理画面 (16-parent-admin-dungeon.html) 連携 ---------- */
