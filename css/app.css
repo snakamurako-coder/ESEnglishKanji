@@ -6435,6 +6435,14 @@ input[type=number] { flex: 0 0 80px; font-size: 14px; }
 .quiz-pane .typed input[type=text] {
   flex: 1 1 140px; font-size: 15px; padding: 8px 10px;
 }
+/* 単語迷宮: ネイティブKB／長押し選択・コピペUIを抑止（仮想KBのみ） */
+#section-dungeon #qin,
+#section-dungeon #sortMissingIn,
+#section-dungeon #vkPreviewInput {
+  -webkit-user-select: none;
+  user-select: none;
+  caret-color: transparent;
+}
 .quiz-pane .typed button {
   padding: 8px 16px; font-size: 14px; font-weight: bold; background: #2196f3; color: #fff; border-color: #1976d2;
 }

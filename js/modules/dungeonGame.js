@@ -21,6 +21,38 @@ const $$=s=>document.querySelectorAll(s);
 const rnd=(a,b)=>a+Math.random()*(b-a), ri=n=>Math.floor(Math.random()*n);
 const shuffle=a=>{for(let i=a.length-1;i>0;i--){const j=ri(i+1);[a[i],a[j]]=[a[j],a[i]]}return a};
 
+/** 単語迷宮の英語入力欄用: スマホのネイティブキーボード／予測変換／コピペを抑止（仮想KBのみ） */
+const DUNGEON_TEXT_INPUT_ATTRS_ =
+  'readonly inputmode="none" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-form-type="other"';
+function hardenDungeonTextInput_(el) {
+  if (!el || el.nodeType !== 1) return el;
+  if (el.__dungeonKbHardened) return el;
+  el.__dungeonKbHardened = true;
+  el.setAttribute("readonly", "readonly");
+  el.readOnly = true;
+  el.setAttribute("inputmode", "none");
+  el.setAttribute("autocomplete", "off");
+  el.setAttribute("autocapitalize", "off");
+  el.setAttribute("autocorrect", "off");
+  el.setAttribute("spellcheck", "false");
+  el.setAttribute("data-form-type", "other");
+  const blockClip = function (e) { e.preventDefault(); };
+  ["paste", "cut", "copy", "drop"].forEach(function (ev) {
+    el.addEventListener(ev, blockClip);
+  });
+  // フォーカス時もネイティブKBが立ち上がらないよう再適用（iOS対策）
+  el.addEventListener("focus", function () {
+    el.readOnly = true;
+    el.setAttribute("readonly", "readonly");
+    el.setAttribute("inputmode", "none");
+  });
+  el.addEventListener("touchend", function () {
+    el.readOnly = true;
+    el.setAttribute("inputmode", "none");
+  }, { passive: true });
+  return el;
+}
+
 /* 触覚フィードバック */
 let hapticsEnabled = true;
 function haptic(ms=15){
@@ -1462,17 +1494,17 @@ function ask(L, kind, done, name) {
       '</div>';
   } else if (q.type === "spell") {
     h += '<div class="spell-display" style="font-size:22px;letter-spacing:4px;color:var(--gold);text-align:center;margin:6px 0;font-family:var(--game);font-weight:bold;">' + q.hint + '</div>' +
-      '<form class="typed" id="qform"><input type="text" id="qin" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="抜けた文字または単語を入力" aria-label="英語で入力"><button type="submit">こたえる</button></form>';
+      '<form class="typed" id="qform"><input type="text" id="qin" ' + DUNGEON_TEXT_INPUT_ATTRS_ + ' placeholder="抜けた文字または単語を入力" aria-label="英語で入力"><button type="submit">こたえる</button></form>';
   } else if (q.type === "voice") {
     h += '<div class="voice-box" style="display:flex;flex-direction:column;align-items:center;gap:8px;margin:6px 0;">' +
       '<button type="button" id="voiceBtn" style="background:#1e88e5;color:#fff;font-size:14px;padding:8px 16px;border-radius:20px;font-family:var(--game);border:none;cursor:pointer;">🎙️ マイクを押して英語で発音</button>' +
       '<div id="voiceStatus" style="font-size:12px;color:var(--muted);font-family:var(--game);">ボタンを押して英語で話してね</div>' +
       '<button type="button" id="voiceSwitchBtn" style="font-size:11px;padding:3px 8px;background:none;border:1px solid #555;color:var(--muted);font-family:var(--game);cursor:pointer;">⌨️ 文字入力に切り替え</button>' +
-      '<form class="typed" id="qform" style="display:none;width:100%;margin-top:6px;"><input type="text" id="qin" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="英語で入力"><button type="submit">こたえる</button></form>' +
+      '<form class="typed" id="qform" style="display:none;width:100%;margin-top:6px;"><input type="text" id="qin" ' + DUNGEON_TEXT_INPUT_ATTRS_ + ' placeholder="英語で入力"><button type="submit">こたえる</button></form>' +
       '</div>';
   } else if (q.type === "sort") {
     h += '<div class="sort-area" style="display:flex;flex-direction:column;gap:8px;margin:4px 0;">' +
-      (q.variant === 'missing' ? '<div style="display:flex;gap:6px;align-items:center;"><input type="text" id="sortMissingIn" placeholder="足りない単語を入力..." style="font-size:15px;padding:6px 10px;flex:1;background:#111;color:#fff;border:1px solid #4fc3f7;border-radius:6px;"><button type="button" id="sortAddBtn" style="font-size:13px;padding:6px 12px;background:#4caf50;color:#fff;font-weight:bold;border:none;border-radius:6px;cursor:pointer;">＋追加</button></div>' : '') +
+      (q.variant === 'missing' ? '<div style="display:flex;gap:6px;align-items:center;"><input type="text" id="sortMissingIn" ' + DUNGEON_TEXT_INPUT_ATTRS_ + ' placeholder="足りない単語を入力..." style="font-size:15px;padding:6px 10px;flex:1;background:#111;color:#fff;border:1px solid #4fc3f7;border-radius:6px;"><button type="button" id="sortAddBtn" style="font-size:13px;padding:6px 12px;background:#4caf50;color:#fff;font-weight:bold;border:none;border-radius:6px;cursor:pointer;">＋追加</button></div>' : '') +
       '<div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--muted);font-family:var(--game);">' +
       '<span>回答枠（タップして外す）:</span>' +
       '<button type="button" id="sortClearBtn" style="font-size:11px;padding:3px 8px;background:#2b2942;color:#fff;border:none;border-radius:4px;cursor:pointer;">ぜんぶ戻す</button>' +
@@ -1484,10 +1516,12 @@ function ask(L, kind, done, name) {
       '</div>';
   } else {
     // type
-    h += '<form class="typed" id="qform"><input type="text" id="qin" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="英語で入力..." aria-label="英語で入力"><button type="submit">こたえる</button></form>';
+    h += '<form class="typed" id="qform"><input type="text" id="qin" ' + DUNGEON_TEXT_INPUT_ATTRS_ + ' placeholder="英語で入力..." aria-label="英語で入力"><button type="submit">こたえる</button></form>';
   }
 
   targetBox.innerHTML = h + '<p class="qres" id="qres"></p>';
+  // ネイティブソフトキーボード抑止（readonly / inputmode=none / コピペ遮断）
+  targetBox.querySelectorAll("#qin, #sortMissingIn").forEach(hardenDungeonTextInput_);
 
   const fill = $("#tfill"), sec = $("#qsec");
 
@@ -1629,7 +1663,9 @@ function ask(L, kind, done, name) {
           doAdd();
         }
       };
+      hardenDungeonTextInput_(missingIn);
       missingIn.onfocus = () => {
+        hardenDungeonTextInput_(missingIn);
         if (window.AppKeyboard) {
           AppKeyboard.setMode('english');
           AppKeyboard.setTarget(missingIn);
@@ -1667,11 +1703,13 @@ function ask(L, kind, done, name) {
     };
 
     if (swBtn && qform && inp) {
+      hardenDungeonTextInput_(inp);
       swBtn.onclick = () => {
         if (vBtn) vBtn.style.display = "none";
         if (vStat) vStat.style.display = "none";
         swBtn.style.display = "none";
         qform.style.display = "flex";
+        hardenDungeonTextInput_(inp);
         inp.focus();
         if (window.AppKeyboard) {
           AppKeyboard.setMode('english');
@@ -1724,12 +1762,12 @@ function ask(L, kind, done, name) {
       };
     }
   } else {
-    // spell または type
+    // spell または type（ネイティブKBは起動させず、アプリ内仮想KBのみ）
     const inp = targetBox.querySelector("#qin");
     const qform = targetBox.querySelector("#qform");
     if (inp) {
+      hardenDungeonTextInput_(inp);
       inp.focus();
-      inp.setAttribute("inputmode", "latin");
       inp.addEventListener("input", () => {
         const sanitized = inp.value.replace(/[^a-zA-Z0-9\s'’\-]/g, "");
         if (inp.value !== sanitized) {
@@ -3802,6 +3840,8 @@ window.AppKeyboard = {
     const modeTabs = document.querySelectorAll('.vk-tab-btn');
 
     if (!overlay || !mountPoint) return;
+
+    hardenDungeonTextInput_(previewInput);
 
     modeTabs.forEach(btn => {
       btn.addEventListener('pointerdown', (e) => {

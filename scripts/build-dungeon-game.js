@@ -714,17 +714,17 @@ function ask(L, kind, done, name) {
       '</div>';
   } else if (q.type === "spell") {
     h += '<div class="spell-display" style="font-size:22px;letter-spacing:4px;color:var(--gold);text-align:center;margin:6px 0;font-family:var(--game);font-weight:bold;">' + q.hint + '</div>' +
-      '<form class="typed" id="qform"><input type="text" id="qin" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="抜けた文字または単語を入力" aria-label="英語で入力"><button type="submit">こたえる</button></form>';
+      '<form class="typed" id="qform"><input type="text" id="qin" ' + DUNGEON_TEXT_INPUT_ATTRS_ + ' placeholder="抜けた文字または単語を入力" aria-label="英語で入力"><button type="submit">こたえる</button></form>';
   } else if (q.type === "voice") {
     h += '<div class="voice-box" style="display:flex;flex-direction:column;align-items:center;gap:8px;margin:6px 0;">' +
       '<button type="button" id="voiceBtn" style="background:#1e88e5;color:#fff;font-size:14px;padding:8px 16px;border-radius:20px;font-family:var(--game);border:none;cursor:pointer;">🎙️ マイクを押して英語で発音</button>' +
       '<div id="voiceStatus" style="font-size:12px;color:var(--muted);font-family:var(--game);">ボタンを押して英語で話してね</div>' +
       '<button type="button" id="voiceSwitchBtn" style="font-size:11px;padding:3px 8px;background:none;border:1px solid #555;color:var(--muted);font-family:var(--game);cursor:pointer;">⌨️ 文字入力に切り替え</button>' +
-      '<form class="typed" id="qform" style="display:none;width:100%;margin-top:6px;"><input type="text" id="qin" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="英語で入力"><button type="submit">こたえる</button></form>' +
+      '<form class="typed" id="qform" style="display:none;width:100%;margin-top:6px;"><input type="text" id="qin" ' + DUNGEON_TEXT_INPUT_ATTRS_ + ' placeholder="英語で入力"><button type="submit">こたえる</button></form>' +
       '</div>';
   } else if (q.type === "sort") {
     h += '<div class="sort-area" style="display:flex;flex-direction:column;gap:8px;margin:4px 0;">' +
-      (q.variant === 'missing' ? '<div style="display:flex;gap:6px;align-items:center;"><input type="text" id="sortMissingIn" placeholder="足りない単語を入力..." style="font-size:15px;padding:6px 10px;flex:1;background:#111;color:#fff;border:1px solid #4fc3f7;border-radius:6px;"><button type="button" id="sortAddBtn" style="font-size:13px;padding:6px 12px;background:#4caf50;color:#fff;font-weight:bold;border:none;border-radius:6px;cursor:pointer;">＋追加</button></div>' : '') +
+      (q.variant === 'missing' ? '<div style="display:flex;gap:6px;align-items:center;"><input type="text" id="sortMissingIn" ' + DUNGEON_TEXT_INPUT_ATTRS_ + ' placeholder="足りない単語を入力..." style="font-size:15px;padding:6px 10px;flex:1;background:#111;color:#fff;border:1px solid #4fc3f7;border-radius:6px;"><button type="button" id="sortAddBtn" style="font-size:13px;padding:6px 12px;background:#4caf50;color:#fff;font-weight:bold;border:none;border-radius:6px;cursor:pointer;">＋追加</button></div>' : '') +
       '<div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--muted);font-family:var(--game);">' +
       '<span>回答枠（タップして外す）:</span>' +
       '<button type="button" id="sortClearBtn" style="font-size:11px;padding:3px 8px;background:#2b2942;color:#fff;border:none;border-radius:4px;cursor:pointer;">ぜんぶ戻す</button>' +
@@ -736,10 +736,11 @@ function ask(L, kind, done, name) {
       '</div>';
   } else {
     // type
-    h += '<form class="typed" id="qform"><input type="text" id="qin" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="英語で入力..." aria-label="英語で入力"><button type="submit">こたえる</button></form>';
+    h += '<form class="typed" id="qform"><input type="text" id="qin" ' + DUNGEON_TEXT_INPUT_ATTRS_ + ' placeholder="英語で入力..." aria-label="英語で入力"><button type="submit">こたえる</button></form>';
   }
 
   targetBox.innerHTML = h + '<p class="qres" id="qres"></p>';
+  targetBox.querySelectorAll("#qin, #sortMissingIn").forEach(hardenDungeonTextInput_);
 
   const fill = $("#tfill"), sec = $("#qsec");
 
@@ -980,8 +981,8 @@ function ask(L, kind, done, name) {
     const inp = targetBox.querySelector("#qin");
     const qform = targetBox.querySelector("#qform");
     if (inp) {
+      hardenDungeonTextInput_(inp);
       inp.focus();
-      inp.setAttribute("inputmode", "latin");
       inp.addEventListener("input", () => {
         const sanitized = inp.value.replace(/[^a-zA-Z0-9\\s'’\\-]/g, "");
         if (inp.value !== sanitized) {
@@ -1811,8 +1812,42 @@ const globalExports = `
   }
 `;
 
+// ネイティブソフトキーボード抑止ヘルパー（再生成時も必ず先頭へ注入）
+const dungeonKbHardeningHelper = `
+/** 単語迷宮の英語入力欄用: スマホのネイティブキーボード／予測変換／コピペを抑止（仮想KBのみ） */
+const DUNGEON_TEXT_INPUT_ATTRS_ =
+  'readonly inputmode="none" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-form-type="other"';
+function hardenDungeonTextInput_(el) {
+  if (!el || el.nodeType !== 1) return el;
+  if (el.__dungeonKbHardened) return el;
+  el.__dungeonKbHardened = true;
+  el.setAttribute("readonly", "readonly");
+  el.readOnly = true;
+  el.setAttribute("inputmode", "none");
+  el.setAttribute("autocomplete", "off");
+  el.setAttribute("autocapitalize", "off");
+  el.setAttribute("autocorrect", "off");
+  el.setAttribute("spellcheck", "false");
+  el.setAttribute("data-form-type", "other");
+  const blockClip = function (e) { e.preventDefault(); };
+  ["paste", "cut", "copy", "drop"].forEach(function (ev) {
+    el.addEventListener(ev, blockClip);
+  });
+  el.addEventListener("focus", function () {
+    el.readOnly = true;
+    el.setAttribute("readonly", "readonly");
+    el.setAttribute("inputmode", "none");
+  });
+  el.addEventListener("touchend", function () {
+    el.readOnly = true;
+    el.setAttribute("inputmode", "none");
+  }, { passive: true });
+  return el;
+}
+`;
+
 // 最終組み立て
-const finalJs = `/**
+let finalJs = `/**
  * js/modules/dungeonGame.js
  * 単語迷宮 百階 (Dungeon RPG Gamification)
  * 完全刷新版: 「参考/単語迷宮 百階.html」のUI/UX（GBモード・Switchモード、HUD、戦闘画面、フィールド探索、
@@ -1823,7 +1858,13 @@ const finalJs = `/**
 (function(global) {
   'use strict';
 
-` + refJs + '\n' + extraAdminAndNavFunctions + '\n' + globalExports + '\n})(typeof window !== "undefined" ? window : this);\n';
+` + dungeonKbHardeningHelper + refJs + '\n' + extraAdminAndNavFunctions + '\n' + globalExports + '\n})(typeof window !== "undefined" ? window : this);\n';
+
+// 旧 latin inputmode を除去し、仮想KB専用ハードニングへ置換
+finalJs = finalJs.replace(
+  /inp\.setAttribute\(["']inputmode["'],\s*["']latin["']\);/g,
+  'hardenDungeonTextInput_(inp);'
+);
 
 fs.writeFileSync(outJsPath, finalJs, 'utf8');
 console.log('[SUCCESS] Successfully generated js/modules/dungeonGame.js (' + Buffer.byteLength(finalJs, 'utf8') + ' bytes)');
