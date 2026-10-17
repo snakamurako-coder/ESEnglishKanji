@@ -7335,4 +7335,35 @@ body:has(#section-dungeon.active) #global-header {
   padding: 0 !important;
 }
 
+/* 単語迷宮: 並び替えクイズの空所英文および単語カードスタイル */
+.sort-ref-en {
+  text-shadow: 0 0 8px rgba(0, 210, 211, 0.4);
+  animation: pulse-ref-en 2.5s infinite ease-in-out;
+}
+
+@keyframes pulse-ref-en {
+  0%, 100% { border-color: #00d2d3; box-shadow: 0 0 10px rgba(0, 210, 211, 0.25); }
+  50% { border-color: #48dbfb; box-shadow: 0 0 16px rgba(72, 219, 251, 0.45); }
+}
+
+.sort-card {
+  transition: transform 0.1s ease, filter 0.1s ease;
+  font-family: inherit;
+  outline: none;
+}
+
+.sort-card:active {
+  transform: scale(0.94);
+  filter: brightness(0.9);
+}
+
+.sort-card.placed:hover {
+  filter: brightness(1.1);
+}
+
+.sort-card.in-pool:hover {
+  filter: brightness(1.15);
+}
+
+
 

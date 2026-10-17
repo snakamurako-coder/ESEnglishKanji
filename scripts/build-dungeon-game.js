@@ -64,29 +64,34 @@ const newDataSection = `/* =====================================================
 
   const DEFAULT_EXPR = [
     {
-      日本語: "こんにちは。", 英文: "Hello.",
-      別解1: "Hi.", 別解2: "Good morning.", 別解3: "", 別解4: "", 別解5: "",
-      並び替え語句ダミー: "bye", tokens: ["Hello"], unit: "基本表現"
-    },
-    {
       日本語: "わたしの名前はあかりです。", 英文: "My name is Akari.",
       別解1: "I am Akari.", 別解2: "I'm Akari.", 別解3: "", 別解4: "", 別解5: "",
-      並び替え語句ダミー: "are", tokens: ["My", "name", "is", "Akari"], unit: "基本表現"
+      並び替え用英文: "My ( ) is Akari.", 並び替え語句ダミー: "are",
+      tokens: ["name", "is", "Akari"], unit: "基本表現"
     },
     {
       日本語: "わたしは10歳です。", 英文: "I am ten years old.",
       別解1: "I'm ten years old.", 別解2: "", 別解3: "", 別解4: "", 別解5: "",
-      並び替え語句ダミー: "nine", tokens: ["I", "am", "ten", "years", "old"], unit: "基本表現"
+      並び替え用英文: "I ( ) ten years old.", 並び替え語句ダミー: "nine",
+      tokens: ["am", "ten", "years", "old"], unit: "基本表現"
     },
     {
       日本語: "お会いできてうれしいです。", 英文: "Nice to meet you.",
       別解1: "Glad to meet you.", 別解2: "", 別解3: "", 別解4: "", 別解5: "",
-      並び替え語句ダミー: "see", tokens: ["Nice", "to", "meet", "you"], unit: "基本表現"
+      並び替え用英文: "Nice ( ) meet you.", 並び替え語句ダミー: "see",
+      tokens: ["Nice", "to", "meet", "you"], unit: "基本表現"
     },
     {
       日本語: "わたしは本を読むのが好きです。", 英文: "I like reading books.",
       別解1: "I like to read books.", 別解2: "", 別解3: "", 別解4: "", 別解5: "",
-      並び替え語句ダミー: "play", tokens: ["I", "like", "reading", "books"], unit: "基本表現"
+      並び替え用英文: "I like ( ) books.", 並び替え語句ダミー: "play",
+      tokens: ["reading", "books", "like"], unit: "基本表現"
+    },
+    {
+      日本語: "これらはわたしの本です。", 英文: "These are my books.",
+      別解1: "", 別解2: "", 別解3: "", 別解4: "", 別解5: "",
+      並び替え用英文: "( ) are my books.", 並び替え語句ダミー: "is",
+      tokens: ["These", "are", "my", "books"], unit: "基本表現"
     }
   ];
 
@@ -114,13 +119,14 @@ const newDataSection = `/* =====================================================
   async function loadManifestMaterialsForDungeon() {
     try {
       let indexRes = null;
-      try {
-        const r = await fetch('data/manifest-index.json', { cache: 'no-store' });
-        if (r.ok) indexRes = await r.json();
-      } catch (e) {}
-
-      if (!indexRes && window.manifestCache && typeof window.manifestCache.getManifest === 'function') {
-        indexRes = window.manifestCache.getManifest();
+      if (window.manifestCache && typeof window.manifestCache.getManifest === 'function') {
+        try { indexRes = await window.manifestCache.getManifest(); } catch (e) {}
+      }
+      if (!indexRes) {
+        try {
+          const r = await fetch('data/manifest-index.json', { cache: 'no-store' });
+          if (r.ok) indexRes = await r.json();
+        } catch (e) {}
       }
       if (!indexRes && window.g_manifest) {
         indexRes = window.g_manifest;
@@ -140,14 +146,36 @@ const newDataSection = `/* =====================================================
 
       const books = indexRes.books || (indexRes.modes ? indexRes.modes : {});
       for (const key of Object.keys(books)) {
-        const bookData = books[key];
-        if (!bookData || !bookData.units) continue;
-        const modeName = String(bookData.title || bookData.name || key);
-        const modeId = String(bookData.id || key);
+        const bookMeta = books[key];
+        if (!bookMeta) continue;
+        const modeName = String(bookMeta.modeName || bookMeta.title || bookMeta.name || key);
+        const modeId = String(bookMeta.id || key);
+        const isVocab = modeName.includes('単語') || modeId === '1Dhd9bV4SDc-SWNHqyykZqPsmRsSFtGnDHpic2uQwW14';
+        const isExpr = modeName.includes('表現') || modeId === '1FEwmkmGQYKttN-Uovji8YbNXaT7rzWE0aH6Cyi7osaA';
 
-        if (modeName.includes('単語') || modeId === '1b7c-jNq387Zz9c3E7-6-S_a116Z1T9B') {
-          Object.keys(bookData.units).forEach(uName => {
-            const rows = bookData.units[uName];
+        if (!isVocab && !isExpr) continue;
+
+        // ブックの実データを取得
+        let bookPayload = null;
+        if (window.manifestCache && typeof window.manifestCache.getBookPayload === 'function') {
+          try { bookPayload = await window.manifestCache.getBookPayload(modeId); } catch (e) {}
+        }
+        if (!bookPayload || !bookPayload.units || Array.isArray(bookPayload.units)) {
+          const expectedHash = bookMeta.hash || '';
+          const rawPath = bookMeta.path || (expectedHash ? ('data/books/' + modeId + '.' + expectedHash + '.json') : null);
+          if (rawPath) {
+            try {
+              const r = await fetch(rawPath, { cache: 'no-store' });
+              if (r.ok) bookPayload = await r.json();
+            } catch (e) {}
+          }
+        }
+
+        if (!bookPayload || !bookPayload.units || Array.isArray(bookPayload.units)) continue;
+
+        if (isVocab) {
+          Object.keys(bookPayload.units).forEach(uName => {
+            const rows = bookPayload.units[uName];
             if (!Array.isArray(rows)) return;
             vocabUnitNames.push(uName);
             vocabMap[uName] = [];
@@ -166,32 +194,44 @@ const newDataSection = `/* =====================================================
               }
             });
           });
-        } else if (modeName.includes('表現') || modeId === '1FEwmkmGQYKttN-Uovji8YbNXaT7rzWE0aH6Cyi7osaA') {
-          Object.keys(bookData.units).forEach(uName => {
-            const rows = bookData.units[uName];
+        } else if (isExpr) {
+          Object.keys(bookPayload.units).forEach(uName => {
+            const rows = bookPayload.units[uName];
             if (!Array.isArray(rows)) return;
             exprUnitNames.push(uName);
             exprMap[uName] = [];
             rows.forEach(row => {
-              const en = String(row["英文"] || "").trim();
+              const en = String(row["英文"] || row["英単語"] || "").trim();
               const ja = String(row["日本語"] != null ? row["日本語"] : "").trim();
               if (en && ja) {
-                const tokens = tokenizeSentence(row["並び替え箇所"] || en);
-                if (tokens.length >= 2) {
-                  exprMap[uName].push({
-                    日本語: ja,
-                    英文: en,
-                    別解1: String(row["別解１"] || "").trim(),
-                    別解2: String(row["別解２"] || "").trim(),
-                    別解3: String(row["別解３"] || "").trim(),
-                    別解4: String(row["別解４"] || "").trim(),
-                    別解5: String(row["別解５"] || "").trim(),
-                    並び替え語句ダミー: String(row["並び替え語句ダミー"] || "").trim(),
-                    tokens: tokens,
-                    ヒント: String(row["ヒント"] || "").trim(),
-                    unit: uName
-                  });
+                // 並び替え語句の抽出（並び替え語句1〜20、なければtokenizeSentence）
+                let tokens = [];
+                for (let k = 1; k <= 20; k++) {
+                  const val = row["並び替え語句" + k];
+                  if (val && String(val).trim()) {
+                    tokens.push(String(val).trim());
+                  }
                 }
+                if (tokens.length === 0) {
+                  tokens = tokenizeSentence(row["並び替え箇所"] || en);
+                }
+                const refEn = String(row["並び替え用英文"] || row["穴埋め１"] || "( ).").trim();
+                const dummy = String(row["並び替え語句ダミー"] || "").trim();
+
+                exprMap[uName].push({
+                  日本語: ja,
+                  英文: en,
+                  別解1: String(row["別解１"] || row["別解1"] || "").trim(),
+                  別解2: String(row["別解２"] || row["別解2"] || "").trim(),
+                  別解3: String(row["別解３"] || row["別解3"] || "").trim(),
+                  別解4: String(row["別解４"] || row["別解4"] || "").trim(),
+                  別解5: String(row["別解５"] || row["別解5"] || "").trim(),
+                  ヒント: String(row["ヒント"] || "").trim(),
+                  並び替え用英文: refEn,
+                  並び替え語句ダミー: dummy,
+                  tokens: tokens.length >= 2 ? tokens : tokenizeSentence(en),
+                  unit: uName
+                });
               }
             });
           });
@@ -498,17 +538,21 @@ const newDataSection = `/* =====================================================
       .map(s => normalizeText(s))
       .filter(s => s.length > 0);
 
+    const qTokens = (q.tokens && q.tokens.length >= 2) ? q.tokens.slice() : tokenizeSentence(q.英文);
+    const qRefEn = String(q.並び替え用英文 || "( ).").trim();
+
     // Lv 6: 表現 / 日本語→英語 / 並び替え（過不足なし）
     if (L === 6) {
       return {
         L, fm: "並び替え (過不足なし)", type: "sort",
         variant: "all",
         prompt: "「" + q.日本語 + "」になるように単語を並べよう",
+        refEn: qRefEn,
         hint: q.ヒント || "",
         answer: q.英文,
         validAnswers: validAnswers,
-        cards: shuffle(q.tokens.slice()),
-        expectedCount: q.tokens.length
+        cards: shuffle(qTokens.slice()),
+        expectedCount: qTokens.length
       };
     }
 
@@ -517,36 +561,38 @@ const newDataSection = `/* =====================================================
       let dummy = q.並び替え語句ダミー;
       if (!dummy) {
         const others = shuffle(ePool.filter(x => x.英文 !== q.英文));
-        dummy = others[0] && others[0].tokens[0] ? others[0].tokens[0] : "very";
+        dummy = (others[0] && others[0].tokens && others[0].tokens[0]) ? others[0].tokens[0] : "very";
       }
       return {
         L, fm: "並び替え (不要語排除)", type: "sort",
         variant: "dummy",
         prompt: "「" + q.日本語 + "」になるよう並べよう（使わない単語が1つあるよ！）",
+        refEn: qRefEn,
         hint: "不要な単語を1つ除外して回答枠に並べてね",
         answer: q.英文,
         validAnswers: validAnswers,
-        cards: shuffle(q.tokens.concat(dummy)),
-        expectedCount: q.tokens.length,
+        cards: shuffle(qTokens.concat(dummy)),
+        expectedCount: qTokens.length,
         dummyWord: dummy
       };
     }
 
     // Lv 8: 表現 / 日本語→英語 / 並び替え（＋１補う）
     if (L === 8) {
-      const missingIdx = ri(q.tokens.length);
-      const missingWord = q.tokens[missingIdx];
-      const remaining = q.tokens.filter((_, i) => i !== missingIdx);
+      const missingIdx = ri(qTokens.length);
+      const missingWord = qTokens[missingIdx];
+      const remaining = qTokens.filter((_, i) => i !== missingIdx);
       return {
         L, fm: "並び替え (＋1補う)", type: "sort",
         variant: "missing",
         prompt: "「" + q.日本語 + "」になるよう並べよう（1語足りない単語を補ってね！）",
+        refEn: qRefEn,
         hint: "足りない単語を入力して「＋追加」し、並べてね",
         answer: q.英文,
         validAnswers: validAnswers,
         cards: shuffle(remaining),
         missingWord: missingWord,
-        expectedCount: q.tokens.length
+        expectedCount: qTokens.length
       };
     }
 
@@ -655,6 +701,13 @@ function ask(L, kind, done, name) {
     '<div class="tbar"><i id="tfill"></i></div>' +
     '<p class="qprompt">' + q.prompt + (q.hint ? '<small>' + q.hint + '</small>' : '') + '</p>';
 
+  if (q.refEn) {
+    h += '<div class="sort-ref-en" style="background:rgba(0,0,0,0.55);border:2px solid #00d2d3;border-radius:8px;padding:8px 12px;margin:6px 0 10px 0;font-size:18px;font-weight:bold;color:#00d2d3;text-align:center;letter-spacing:0.04em;box-shadow:0 0 10px rgba(0,210,211,0.25);">' +
+      '<span style="font-size:11px;display:block;color:#8395a7;font-weight:normal;margin-bottom:2px;">空所のある英文</span>' +
+      q.refEn +
+      '</div>';
+  }
+
   if (q.type === "choice") {
     h += '<div class="choices' + (q.is5Choice ? ' choices-5' : '') + '">' +
       q.choices.map((c, i) => '<button data-c="' + i + '" type="button">' + (i + 1) + '. ' + c + '</button>').join("") +
@@ -670,16 +723,16 @@ function ask(L, kind, done, name) {
       '<form class="typed" id="qform" style="display:none;width:100%;margin-top:6px;"><input type="text" id="qin" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="英語で入力"><button type="submit">こたえる</button></form>' +
       '</div>';
   } else if (q.type === "sort") {
-    h += '<div class="sort-area" style="display:flex;flex-direction:column;gap:6px;margin:4px 0;">' +
-      (q.variant === 'missing' ? '<div style="display:flex;gap:6px;align-items:center;"><input type="text" id="sortMissingIn" placeholder="足りない単語を入力" style="font-size:14px;padding:4px 8px;flex:1;background:#000;color:#fff;border:1px solid var(--line);border-radius:4px;"><button type="button" id="sortAddBtn" style="font-size:12px;padding:4px 10px;background:var(--gold);color:#000;font-weight:bold;">＋追加</button></div>' : '') +
-      '<div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--muted);font-family:var(--game);">' +
-      '<span>回答枠（タップして並べる）</span>' +
-      '<button type="button" id="sortClearBtn" style="font-size:10px;padding:2px 8px;background:#2b2942;">クリア</button>' +
+    h += '<div class="sort-area" style="display:flex;flex-direction:column;gap:8px;margin:4px 0;">' +
+      (q.variant === 'missing' ? '<div style="display:flex;gap:6px;align-items:center;"><input type="text" id="sortMissingIn" placeholder="足りない単語を入力..." style="font-size:15px;padding:6px 10px;flex:1;background:#111;color:#fff;border:1px solid #4fc3f7;border-radius:6px;"><button type="button" id="sortAddBtn" style="font-size:13px;padding:6px 12px;background:#4caf50;color:#fff;font-weight:bold;border:none;border-radius:6px;cursor:pointer;">＋追加</button></div>' : '') +
+      '<div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--muted);font-family:var(--game);">' +
+      '<span>回答枠（タップして外す）:</span>' +
+      '<button type="button" id="sortClearBtn" style="font-size:11px;padding:3px 8px;background:#2b2942;color:#fff;border:none;border-radius:4px;cursor:pointer;">ぜんぶ戻す</button>' +
       '</div>' +
-      '<div id="sortSlots" style="min-height:36px;border:1px dashed var(--gold);border-radius:4px;padding:4px;display:flex;flex-wrap:wrap;gap:4px;background:rgba(245,176,39,0.08);align-items:center;"></div>' +
-      '<div style="font-size:11px;color:var(--muted);font-family:var(--game);">単語カード' + (q.variant === 'dummy' ? '（1語不要なものがあるよ）' : '') + '</div>' +
-      '<div id="sortPool" style="display:flex;flex-wrap:wrap;gap:4px;"></div>' +
-      '<button type="button" id="sortSubmit" style="width:100%;margin-top:4px;background:#2ed573;color:#000;font-weight:bold;font-size:14px;padding:6px;display:none;">これで回答する ▶</button>' +
+      '<div id="sortSlots" style="min-height:46px;border:2px dashed var(--gold);border-radius:8px;padding:6px;display:flex;flex-wrap:wrap;gap:6px;background:rgba(245,176,39,0.12);align-items:center;"></div>' +
+      '<div style="font-size:12px;color:var(--muted);font-family:var(--game);">単語カード' + (q.variant === 'dummy' ? '（1語不要なものがあるよ！）' : '') + ':</div>' +
+      '<div id="sortPool" style="min-height:46px;border:1px solid var(--line);border-radius:8px;padding:6px;display:flex;flex-wrap:wrap;gap:6px;background:rgba(0,0,0,0.25);align-items:center;"></div>' +
+      '<button type="button" id="sortSubmit" style="width:100%;margin-top:6px;background:#2ed573;color:#000;font-weight:bold;font-size:15px;padding:8px;border:none;border-radius:6px;cursor:pointer;display:none;box-shadow:0 2px 4px rgba(0,0,0,0.3);">これで回答する ▶</button>' +
       '</div>';
   } else {
     // type
@@ -770,12 +823,12 @@ function ask(L, kind, done, name) {
     const addBtn = targetBox.querySelector("#sortAddBtn");
 
     let placedWords = [];
-    let poolWords = q.cards.slice();
+    let poolWords = (q.cards && q.cards.length > 0) ? q.cards.slice() : [];
 
     function renderSort() {
       if (!slotsEl || !poolEl) return;
-      slotsEl.innerHTML = placedWords.map((w, idx) => '<button type="button" class="sort-card placed" data-idx="' + idx + '" style="padding:4px 8px;font-size:13px;background:var(--gold);color:#000;border:1px solid #fff;border-radius:4px;cursor:pointer;">' + w + '</button>').join("");
-      poolEl.innerHTML = poolWords.map((w, idx) => '<button type="button" class="sort-card in-pool" data-idx="' + idx + '" style="padding:4px 8px;font-size:13px;background:#201f30;color:#fff;border:1px solid var(--line);border-radius:4px;cursor:pointer;">' + w + '</button>').join("");
+      slotsEl.innerHTML = placedWords.map((w, idx) => '<button type="button" class="sort-card placed" data-idx="' + idx + '" style="padding:6px 12px;font-size:15px;font-weight:bold;background:var(--gold);color:#000;border:2px solid #fff;border-radius:6px;cursor:pointer;box-shadow:0 2px 4px rgba(0,0,0,0.4);user-select:none;">' + w + '</button>').join("");
+      poolEl.innerHTML = poolWords.map((w, idx) => '<button type="button" class="sort-card in-pool" data-idx="' + idx + '" style="padding:6px 12px;font-size:15px;font-weight:bold;background:#1e88e5;color:#fff;border:2px solid #64b5f6;border-radius:6px;cursor:pointer;box-shadow:0 2px 4px rgba(0,0,0,0.4);user-select:none;">' + w + '</button>').join("");
 
       slotsEl.querySelectorAll(".sort-card.placed").forEach(b => {
         b.onclick = () => {
@@ -798,7 +851,7 @@ function ask(L, kind, done, name) {
       });
 
       if (submitBtn) {
-        submitBtn.style.display = placedWords.length >= q.expectedCount ? "block" : "none";
+        submitBtn.style.display = placedWords.length >= 1 ? "block" : "none";
       }
     }
 
@@ -822,6 +875,12 @@ function ask(L, kind, done, name) {
         if (window.AppKeyboard) AppKeyboard.hide();
       };
       addBtn.onclick = doAdd;
+      missingIn.onkeydown = (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          doAdd();
+        }
+      };
       missingIn.onfocus = () => {
         if (window.AppKeyboard) {
           AppKeyboard.setMode('english');
@@ -835,7 +894,9 @@ function ask(L, kind, done, name) {
       submitBtn.onclick = () => {
         const formed = placedWords.join(" ");
         const norm = normalizeText(formed);
-        const ok = q.validAnswers ? q.validAnswers.some(a => normalizeText(a) === norm) : normalizeText(q.answer) === norm;
+        const ok = (q.validAnswers && q.validAnswers.length > 0)
+          ? q.validAnswers.some(a => normalizeText(a) === norm)
+          : normalizeText(q.answer) === norm;
         finish(ok, false, submitBtn);
       };
     }
@@ -1032,11 +1093,23 @@ refJs = refJs.replace(
   '// boot will be invoked via startDungeonWithTower() or openDungeonGame()'
 );
 
-// 5.3 旧テスター・チートボタン イベント（プレイヤーメニューから管理者画面へ移設したため、直接バインドによるnullエラーを防止）
+// 5.3 旧チートボタン・設定ボタンの null エラー防止ガード（要素が存在しない場合でも安全にする）
 refJs = refJs.replace(
-  /\/\* デバッグテスター・チートボタン イベント \*\/[\s\S]*?\$\("#mTryBtn"\)\.onclick\s*=\s*\(\)\s*=>\s*\{[\s\S]*?\};\s*/,
-  () => `/* デバッグテスター・チートボタン イベント（管理者画面 16-parent-admin-dungeon へ移設） */
-  const rSaveBtn = $("#mResetSaveBtn");
+  /\/\* デバッグテスター・チートボタン イベント \*\/[\s\S]*?\$\("#chBoss"\)\.onclick = \(\)=>\{[\s\S]*?\};\s*/,
+  `/* デバッグテスター・チートボタン イベント（存在チェック付き） */
+  if ($("#chHeal")) { $("#chHeal").onclick = ()=>{ if(!S.p) return; S.p.hp = pMaxHp(S.p.lv); S.p.mp = pMaxMp(S.p.lv); log("【テスター】HPとMPを全回復した！"); render(); pop("💖 全回復！","heal",0,true); se("heal_hp"); }; }
+  if ($("#chGauge")) { $("#chGauge").onclick = ()=>{ if(!S.p) return; S.p.gauge = 100; log("【テスター】必殺ゲージをMAX(100%)にした！"); render(); pop("💥 必殺MAX！","crit",0,true); se("special_start"); }; }
+  if ($("#chItems")) { $("#chItems").onclick = ()=>{ if(!S.p) return; Object.keys(S.p.it).forEach(k=>S.p.it[k]+=5); log("【テスター】どうぐを各5個補充した！"); render(); pop("🎒 アイテム補充！","guard",0,true); se("chest"); }; }
+  if ($("#chGear")) { $("#chGear").onclick = ()=>{ if(!S.p) return; S.p.gearMax = 10; S.p.eq = fullSet(10); log("【テスター】最高位のオリハルコン装備一式を装備した！"); render(); pop("🛡️ 最強装備！","guard",0,true); se("gear_get"); }; }
+  if ($("#chSkip")) { $("#chSkip").onclick = ()=>{ if(!S.p) return; log("【テスター】階段を降りて次の階へスキップした！"); closeMenu(); descend(); }; }
+  if ($("#chBattle")) { $("#chBattle").onclick = ()=>{ if(!S.p) return; closeMenu(); startBattle(null, {t:"mon", a:ri(4)}, false); }; }
+  if ($("#chBoss")) { $("#chBoss").onclick = ()=>{ if(!S.p) return; closeMenu(); startBattle(null, {t:"boss"}, false); }; }
+`
+);
+
+refJs = refJs.replace(
+  /\$\("#mResetSaveBtn"\)\.onclick\s*=\s*\(\)\s*=>\s*\{[\s\S]*?alert\("セーブデータを初期化しました。"\);\s*\}\s*;\s*\}/,
+  `const rSaveBtn = $("#mResetSaveBtn");
   if (rSaveBtn) {
     rSaveBtn.onclick = () => {
       if (confirm("セーブデータを初期化しますか？（最高記録もリセットされます）")) {
@@ -1046,27 +1119,203 @@ refJs = refJs.replace(
         alert("セーブデータを初期化しました。");
       }
     };
-  }
+  }`
+);
 
-  $$(".mode-btn").forEach(b => {
-    b.onclick = () => {
-      $$(".mode-btn").forEach(x => x.classList.remove("active"));
-      b.classList.add("active");
-      currentDisplayMode = b.dataset.mode;
-      applyLayout();
-      se("select");
-    };
-  });
-
-  const hapticsEl = $("#mHapticsToggle");
+refJs = refJs.replace(
+  /\$\("#mHapticsToggle"\)\.onchange\s*=\s*\(e\)\s*=>\s*\{[\s\S]*?hapticsEnabled\s*=\s*e\.target\.checked;\s*\};/,
+  `const hapticsEl = $("#mHapticsToggle");
   if (hapticsEl) {
     hapticsEl.onchange = (e) => {
       hapticsEnabled = e.target.checked;
     };
-  }
-`
+  }`
 );
 
+refJs = refJs.replace(
+  /\$\("#mCfgReset"\)\.onclick[\s\S]*?\$\("#mTryBtn"\)\.onclick\s*=\s*\(\)\s*=>\s*\{[\s\S]*?start\(f,true\);\s*\};/,
+  `const cResetBtn = $("#mCfgReset");
+  if (cResetBtn) {
+    cResetBtn.onclick = () => {
+      if (!resetArmed) { resetArmed = true; if ($("#mCfgMsg")) $("#mCfgMsg").textContent = "もう一度押すとすべての数値が初期値に戻ります。"; return; }
+      resetArmed = false; Object.assign(CFG, DEF); buildParams(); applyCfg();
+      if ($("#mCfgMsg")) $("#mCfgMsg").textContent = "初期値に戻しました。";
+    };
+  }
+  const cOutBtn = $("#mCfgOut");
+  if (cOutBtn) {
+    cOutBtn.onclick = () => {
+      const t = JSON.stringify(CFG); if ($("#mCfgText")) $("#mCfgText").value = t;
+      const done = () => { if ($("#mCfgMsg")) $("#mCfgMsg").textContent = "設定JSONを書き出しました。"; };
+      try { navigator.clipboard.writeText(t).then(() => { if ($("#mCfgMsg")) $("#mCfgMsg").textContent = "設定をクリップボードにコピーしました！"; }, done); } catch (e) { done(); }
+    };
+  }
+  const cInBtn = $("#mCfgIn");
+  if (cInBtn) {
+    cInBtn.onclick = () => {
+      try {
+        const o = JSON.parse($("#mCfgText") ? $("#mCfgText").value : "");
+        if (!o || typeof o !== "object") throw 0;
+        setCfg(o); buildParams(); applyCfg();
+        if ($("#mCfgMsg")) $("#mCfgMsg").textContent = "設定を読み込みました。";
+      } catch (e) {
+        if ($("#mCfgMsg")) $("#mCfgMsg").textContent = "読み込めませんでした。正しいJSON形式で貼り付けてください。";
+      }
+    };
+  }
+  const tryBtn = $("#mTryBtn");
+  if (tryBtn) {
+    tryBtn.onclick = () => {
+      const fInp = $("#mTryF");
+      const f = fInp ? Math.max(1, Math.min(100, Math.round(+fInp.value || 1))) : 1;
+      closeMenu();
+      start(f, true);
+    };
+  }`
+);
+
+// 5.4 ソフトウェアキーボードのShiftキー押し込み中対応（長押し・ホールド中の大文字入力＆即時大文字キートップ表示）
+{
+  const pA1 = refJs.indexOf('let shiftMode = 0; // 0: 小文字, 1: 1文字大文字, 2: CapsLock');
+  const pA2 = refJs.indexOf('function appendChar(char) {', pA1);
+  if (pA1 !== -1 && pA2 !== -1) {
+    const newA = `let shiftMode = 0; // 0: 小文字, 1: 1文字大文字, 2: CapsLock
+      let isShiftHoldMode = false;
+      let isShiftPressing = false;
+      let shiftPressedKeyCount = 0;
+      let shiftPressStartTime = 0;
+      let shiftTimer1s = null;
+      let shiftTimer2s = null;
+
+      function updateKeyboardDisplay() {
+        const isUpper = shiftMode > 0 || isShiftHoldMode || isShiftPressing;
+        const shiftBtn = wrap.querySelector('.vk-shift-btn');
+        if (shiftBtn) {
+          shiftBtn.classList.remove('vk-shift-1', 'vk-shift-2');
+          if (shiftMode === 2) {
+            shiftBtn.innerText = '⇪';
+            shiftBtn.style.background = '#FF9800';
+            shiftBtn.classList.add('vk-shift-2');
+          } else if (shiftMode === 1 || isShiftHoldMode || isShiftPressing) {
+            shiftBtn.innerText = '⇧';
+            shiftBtn.style.background = '#e50914';
+            shiftBtn.classList.add('vk-shift-1');
+          } else {
+            shiftBtn.innerText = '⇧';
+            shiftBtn.style.background = '#444444';
+          }
+        }
+        wrap.querySelectorAll('.key-char').forEach(btn => {
+          const baseChar = btn.getAttribute('data-char');
+          if (/[a-z]/.test(baseChar)) {
+            btn.innerText = isUpper ? baseChar.toUpperCase() : baseChar;
+          }
+        });
+      }
+
+      `;
+    refJs = refJs.slice(0, pA1) + newA + refJs.slice(pA2);
+  }
+
+  const pB1 = refJs.indexOf('function pressChar(char) {');
+  const pB2 = refJs.indexOf('function pressBackspace() {', pB1);
+  if (pB1 !== -1 && pB2 !== -1) {
+    const newB = `function pressChar(char) {
+        const isUpper = shiftMode > 0 || isShiftHoldMode || isShiftPressing;
+        if (isShiftPressing) shiftPressedKeyCount++;
+        let c = char;
+        if (/[a-z]/i.test(char)) {
+          c = isUpper ? char.toUpperCase() : char.toLowerCase();
+          flashKey('.key-char[data-char="' + char.toLowerCase() + '"]');
+        } else {
+          flashKey('.vk-key[data-char="' + char + '"]');
+        }
+        appendChar(c);
+        if (shiftMode === 1) {
+          shiftMode = 0;
+          updateKeyboardDisplay();
+        }
+      }
+
+      `;
+    refJs = refJs.slice(0, pB1) + newB + refJs.slice(pB2);
+  }
+
+  const pC1 = refJs.indexOf('shiftBtn.onpointerdown = (e) => {');
+  const pC2 = refJs.indexOf('rowDiv.appendChild(shiftBtn);', pC1);
+  if (pC1 !== -1 && pC2 !== -1) {
+    const cEnd = pC2 + 'rowDiv.appendChild(shiftBtn);'.length;
+    const newC = `shiftBtn.onpointerdown = (e) => {
+            e.preventDefault();
+            if (e.button !== 0 && e.pointerType === 'mouse') return;
+            if (shiftPressStartTime > 0) return;
+            shiftPressStartTime = Date.now();
+            isShiftPressing = true;
+            shiftPressedKeyCount = 0;
+            updateKeyboardDisplay();
+            shiftTimer1s = setTimeout(() => {
+              if (shiftBtn && !isShiftHoldMode) {
+                shiftBtn.style.background = '#FF9800';
+                shiftBtn.innerText = '⇪';
+              }
+            }, 1000);
+            shiftTimer2s = setTimeout(() => {
+              isShiftHoldMode = true;
+              shiftMode = 0;
+              isShiftPressing = false;
+              updateKeyboardDisplay();
+            }, 2000);
+          };
+
+          const handlePointerUp = (e) => {
+            e.preventDefault();
+            if (shiftPressStartTime === 0 && !isShiftPressing) return;
+            clearTimeout(shiftTimer1s);
+            clearTimeout(shiftTimer2s);
+            const duration = Date.now() - shiftPressStartTime;
+            shiftPressStartTime = 0;
+            const hadHold = isShiftPressing;
+            isShiftPressing = false;
+
+            if (isShiftHoldMode) {
+              isShiftHoldMode = false;
+              shiftMode = 0;
+            } else if (hadHold && shiftPressedKeyCount > 0) {
+              shiftMode = 0;
+            } else if (duration >= 1000) {
+              shiftMode = (shiftMode === 2) ? 0 : 2;
+            } else if (duration > 0 && duration < 1000) {
+              shiftMode = (shiftMode === 1 || shiftMode === 2) ? 0 : 1;
+            }
+            updateKeyboardDisplay();
+          };
+
+          shiftBtn.onpointerup = handlePointerUp;
+          shiftBtn.onpointerleave = handlePointerUp;
+          shiftBtn.onpointercancel = handlePointerUp;
+          shiftBtn.oncontextmenu = (e) => { e.preventDefault(); return false; };
+          rowDiv.appendChild(shiftBtn);`;
+    refJs = refJs.slice(0, pC1) + newC + refJs.slice(cEnd);
+  }
+
+  const pD1 = refJs.indexOf('bindKey(keyBtn, () => {');
+  const pD2 = refJs.indexOf('rowDiv.appendChild(keyBtn);', pD1);
+  if (pD1 !== -1 && pD2 !== -1) {
+    const newD = `bindKey(keyBtn, () => {
+            const isUpper = shiftMode > 0 || isShiftHoldMode || isShiftPressing;
+            if (isShiftPressing) shiftPressedKeyCount++;
+            let inputChar = char;
+            if (/[a-z]/.test(char) && isUpper) inputChar = char.toUpperCase();
+            appendChar(inputChar);
+            if (shiftMode === 1) {
+              shiftMode = 0;
+              updateKeyboardDisplay();
+            }
+          });
+          `;
+    refJs = refJs.slice(0, pD1) + newD + refJs.slice(pD2);
+  }
+}
 
 // 6. 追加関数（handleTopBack, 塔選択画面, 保護者管理画面）
 const extraAdminAndNavFunctions = `
