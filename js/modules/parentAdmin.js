@@ -857,6 +857,179 @@
     });
   }
 
+  /** 漢字獲得Pt：形式プレフィックス一覧 */
+  var KANJI_POINT_FORMATS_ = [
+    { id: "採点", label: "共通（採点）※形式別キーが無いときの既定", prefix: "漢字基本Pt_採点_" },
+    { id: "送り仮名選択", label: "送り仮名選択", prefix: "漢字基本Pt_送り仮名選択_" },
+    { id: "書取り", label: "書いて答える（書取り）", prefix: "漢字基本Pt_書取り_" },
+    { id: "読みタイピング", label: "読みタイピング", prefix: "漢字基本Pt_読みタイピング_" },
+    { id: "画数", label: "画数クイズ", prefix: "漢字基本Pt_画数_" }
+  ];
+  var KANJI_POINT_BANDS_ = [
+    { suffix: "90以上", label: "90点以上", def: 10 },
+    { suffix: "80以上", label: "80点以上", def: 5 },
+    { suffix: "70以上", label: "70点以上", def: 4 },
+    { suffix: "60以上", label: "60点以上", def: 3 },
+    { suffix: "50以上", label: "50点以上", def: 1 }
+  ];
+  var KANJI_POINT_EXTRA_KEYS_ = [
+    { key: "漢字書き順_画数倍率", label: "書き順：画数×倍率", def: 1, step: "0.1" },
+    { key: "漢字書き順_練習点", label: "書き順：練習点（再挑戦）", def: 5, step: "1" },
+    { key: "漢字熟語読み_基礎点", label: "熟語読み選択：基礎点", def: 1, step: "1" },
+    { key: "漢字熟語読み_選択肢倍率", label: "熟語読み選択：選択肢あたり", def: 1, step: "1" },
+    { key: "漢字熟語読み_無し選択肢ボーナス", label: "熟語読み：「無し」選択肢ボーナス", def: 2, step: "1" },
+    { key: "漢字熟語読みタイプ_基礎点", label: "熟語読みタイピング：基礎点", def: 15, step: "1" },
+    { key: "漢字採点_高得点回数上限_週", label: "回復：週あたり高得点上限回数", def: 3, step: "1" },
+    { key: "漢字採点_回数上限後倍率", label: "回復：上限到達後の倍率", def: 0.1, step: "0.05" },
+    { key: "漢字採点_回復率_日", label: "回復：1日あたりの回復量", def: 0.15, step: "0.05" },
+    { key: "漢字採点_完全回復日数", label: "回復：完全回復までの日数", def: 7, step: "1" }
+  ];
+  var __kanjiPointSettingsCache_ = null;
+
+  function readKanjiSettingNum_(settings, key, fallback) {
+    const src = settings || {};
+    const v = src[key];
+    if (v === undefined || v === null || String(v).trim() === "") return fallback;
+    const n = Number(v);
+    return isNaN(n) ? fallback : n;
+  }
+
+  function renderKanjiPointsForm(containerId) {
+    const form = document.getElementById(containerId || "sysconfig-kanji-points-form");
+    if (!form) return;
+
+    function buildHtml(settings) {
+      __kanjiPointSettingsCache_ = settings || {};
+      let html = "";
+      html += '<div class="training-admin-field" style="margin-bottom:10px;">';
+      html += '<label style="color:#bbb;font-size:13px;">問題形式（得点帯ポイント）</label>';
+      html += '<select id="sys-kanji-pt-format" class="large-select" style="width:100%;margin-top:4px;">';
+      KANJI_POINT_FORMATS_.forEach(function (f, idx) {
+        html += '<option value="' + f.id + '"' + (idx === 0 ? " selected" : "") + ">" + escapeHtml(f.label) + "</option>";
+      });
+      html += "</select></div>";
+      html += '<div id="sys-kanji-pt-bands" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px;"></div>';
+      html += '<div id="sys-kanji-pt-key" style="font-size:11px;color:#78909C;margin-bottom:12px;"></div>';
+      html += '<h4 style="margin:4px 0 8px;color:#FFE082;font-size:13px;">書き順・熟語・回復パラメータ</h4>';
+      html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">';
+      KANJI_POINT_EXTRA_KEYS_.forEach(function (item) {
+        const val = readKanjiSettingNum_(settings, item.key, item.def);
+        html +=
+          '<div><label style="color:#bbb;font-size:11px;">' + escapeHtml(item.label) + "</label>" +
+          '<input type="number" data-kanji-extra-key="' + escapeHtml(item.key) + '" step="' + item.step +
+          '" value="' + val + '" style="width:100%;padding:6px;background:#252538;border:1px solid #555;color:#fff;border-radius:6px;box-sizing:border-box;"></div>';
+      });
+      html += "</div>";
+      form.innerHTML = html;
+
+      const formatEl = document.getElementById("sys-kanji-pt-format");
+      if (formatEl) {
+        formatEl.onchange = function () { fillKanjiPointBands_(settings); };
+      }
+      fillKanjiPointBands_(settings);
+    }
+
+    if (global.appSettingsStore && typeof global.appSettingsStore.getAppSettings === "function") {
+      global.appSettingsStore.getAppSettings().then(function (d) {
+        buildHtml((d && d.settings) || {});
+      }).catch(function () {
+        buildHtml({});
+      });
+    } else {
+      buildHtml((global.appSettings && typeof global.appSettings === "object") ? global.appSettings : {});
+    }
+  }
+
+  function fillKanjiPointBands_(settings) {
+    const bandsEl = document.getElementById("sys-kanji-pt-bands");
+    const keyEl = document.getElementById("sys-kanji-pt-key");
+    const formatEl = document.getElementById("sys-kanji-pt-format");
+    if (!bandsEl || !formatEl) return;
+    const fmtId = formatEl.value;
+    const fmt = KANJI_POINT_FORMATS_.find(function (f) { return f.id === fmtId; }) || KANJI_POINT_FORMATS_[0];
+    const src = settings || __kanjiPointSettingsCache_ || {};
+    bandsEl.innerHTML = KANJI_POINT_BANDS_.map(function (b) {
+      const key = fmt.prefix + b.suffix;
+      const val = readKanjiSettingNum_(src, key, b.def);
+      return (
+        '<div><label style="color:#bbb;font-size:11px;">' + escapeHtml(b.label) + "</label>" +
+        '<input type="number" data-kanji-band-suffix="' + escapeHtml(b.suffix) + '" min="0" max="999" step="1" value="' +
+        val + '" style="width:100%;padding:6px;background:#252538;border:1px solid #555;color:#fff;border-radius:6px;box-sizing:border-box;"></div>'
+      );
+    }).join("");
+    if (keyEl) keyEl.textContent = "設定キー接頭辞: " + fmt.prefix + "（例: " + fmt.prefix + "90以上）";
+  }
+
+  function saveSysConfigKanjiPoints(btn) {
+    const msgEl = document.getElementById("sysconfig-kanji-point-msg");
+    const formatEl = document.getElementById("sys-kanji-pt-format");
+    if (!formatEl) {
+      if (msgEl) { msgEl.innerText = "フォームが見つかりません"; msgEl.style.color = "#ff8a80"; }
+      return;
+    }
+    const fmt = KANJI_POINT_FORMATS_.find(function (f) { return f.id === formatEl.value; }) || KANJI_POINT_FORMATS_[0];
+    const patch = {};
+    const bandInputs = document.querySelectorAll("#sys-kanji-pt-bands input[data-kanji-band-suffix]");
+    bandInputs.forEach(function (inp) {
+      const suffix = inp.getAttribute("data-kanji-band-suffix");
+      if (!suffix) return;
+      const n = Number(inp.value);
+      patch[fmt.prefix + suffix] = isNaN(n) ? 0 : n;
+    });
+    const extraInputs = document.querySelectorAll("#sysconfig-kanji-points-form input[data-kanji-extra-key]");
+    extraInputs.forEach(function (inp) {
+      const key = inp.getAttribute("data-kanji-extra-key");
+      if (!key) return;
+      const n = Number(inp.value);
+      patch[key] = isNaN(n) ? 0 : n;
+    });
+
+    const saveBtn = btn || document.getElementById("sys-kanji-point-save-btn");
+    const orig = saveBtn ? callToggleBtnLoading(saveBtn, true) : null;
+
+    const applyLocal_ = function () {
+      __kanjiPointSettingsCache_ = Object.assign({}, __kanjiPointSettingsCache_ || {}, patch);
+      if (global.appSettings && typeof global.appSettings === "object") {
+        Object.keys(patch).forEach(function (k) { global.appSettings[k] = patch[k]; });
+      }
+      if (typeof global.invalidateAppSettingsCache === "function") {
+        global.invalidateAppSettingsCache();
+      }
+      // 学習画面の appSettings も即時反映
+      if (typeof global.reloadAppSettingsAfterAdminSave_ === "function") {
+        try { global.reloadAppSettingsAfterAdminSave_(patch); } catch (_e) {}
+      }
+    };
+
+    if (global.appSettingsStore && typeof global.appSettingsStore.saveAppSettings === "function") {
+      global.appSettingsStore.saveAppSettings(patch)
+        .then(function () {
+          applyLocal_();
+          if (msgEl) {
+            msgEl.innerText = "漢字の配点を保存しました（" + fmt.label + " ほか）";
+            msgEl.style.color = "#8bc34a";
+          }
+        })
+        .catch(function (err) {
+          if (msgEl) {
+            msgEl.innerText = (err && err.message) || "保存に失敗しました";
+            msgEl.style.color = "#ff8a80";
+          }
+        })
+        .finally(function () {
+          if (saveBtn && saveBtn.isConnected) callToggleBtnLoading(saveBtn, false, orig);
+        });
+      return;
+    }
+
+    applyLocal_();
+    if (msgEl) {
+      msgEl.innerText = "ローカルに反映しました（設定ストア未初期化）";
+      msgEl.style.color = "#FFCC80";
+    }
+    if (saveBtn && saveBtn.isConnected) callToggleBtnLoading(saveBtn, false, orig);
+  }
+
   function openTrainingAdminRouteEditor(menuId) {
     const menu = getTrainingAdminMenuById(menuId);
     if (!menu) return;
@@ -1371,6 +1544,8 @@
     if (msg) msg.innerText = "";
     const englishMsg = document.getElementById('sysconfig-english-point-msg');
     if (englishMsg) englishMsg.innerText = "";
+    const kanjiMsg = document.getElementById('sysconfig-kanji-point-msg');
+    if (kanjiMsg) kanjiMsg.innerText = "";
 
     global.parentAdminStore.getSysConfig().then(function (cfg) {
       document.getElementById('sys-pass-score').value = cfg.passScore || 70;
@@ -1394,6 +1569,7 @@
     } else {
       renderEnglishPointsForm('sysconfig-english-points-form', 'sys-point');
     }
+    renderKanjiPointsForm('sysconfig-kanji-points-form');
   }
 
   function submitSaveSysConfig() {
@@ -1802,6 +1978,8 @@
   global.saveTrainingAdminBasePoint = saveTrainingAdminBasePoint;
   global.saveSysConfigEnglishBasePoint = saveSysConfigEnglishBasePoint;
   global.renderEnglishPointsForm = renderEnglishPointsForm;
+  global.renderKanjiPointsForm = renderKanjiPointsForm;
+  global.saveSysConfigKanjiPoints = saveSysConfigKanjiPoints;
   global.deleteTrainingAdminRoute = deleteTrainingAdminRoute;
 
   // 新規公開ハンドラ

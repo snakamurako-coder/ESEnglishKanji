@@ -3788,6 +3788,19 @@ var global = typeof window !== 'undefined' ? window : this;
       try { localStorage.removeItem("app_cached_settings"); } catch (_) {}
       appSettings = appSettings || {};
     }
+    /** 管理画面から漢字／英語配点を保存した直後に学習側の設定を同期 */
+    function reloadAppSettingsAfterAdminSave_(patch) {
+      if (patch && typeof patch === "object") {
+        appSettings = Object.assign({}, appSettings || {}, patch);
+      }
+      if (typeof window !== "undefined" && window.appSettingsStore && typeof window.appSettingsStore.getAppSettings === "function") {
+        window.appSettingsStore.getAppSettings().then(function (d) {
+          if (d && d.settings) appSettings = d.settings;
+        }).catch(function () {});
+      }
+    }
+    window.reloadAppSettingsAfterAdminSave_ = reloadAppSettingsAfterAdminSave_;
+    window.invalidateAppSettingsCache = invalidateAppSettingsCache;
 
     function invalidateTrainingRouteCache(menuId) {
       try {
