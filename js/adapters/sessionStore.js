@@ -111,9 +111,17 @@
           .then(function () {
             recordWeakItemsFromResults(userId, payload.learningCategory || 'english', results);
 
-            if (earned > 0 && global.userStore && typeof global.userStore.addPoints === 'function') {
-              return global.userStore.addPoints(userId, earned, '学習: ' + (payload.unitSheetName || payload.unitId));
+            // ポイントは increment と絶対値の両方で確実に反映（加算漏れ対策）
+            var userRef = db.collection('users').doc(userId);
+            var patch = {
+              points: newTotal,
+              updatedAt: (typeof firebase !== 'undefined' && firebase.firestore && firebase.firestore.FieldValue) ?
+                firebase.firestore.FieldValue.serverTimestamp() : new Date().toISOString()
+            };
+            if (earned > 0) {
+              patch.lastReason = '学習: ' + (payload.unitSheetName || payload.unitId || '');
             }
+            return userRef.set(patch, { merge: true });
           })
           .then(function () {
             finish("セッション結果を保存しました");

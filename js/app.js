@@ -547,46 +547,114 @@ var global = typeof window !== 'undefined' ? window : this;
       if (action === "consume_reward" && bodyObj.userId && bodyObj.rowIdx != null) {
         return new Promise(function (resolve) {
           const uid = String(bodyObj.userId);
-          const user = JSON.parse(localStorage.getItem("app_kid_user") || "null");
-          if (!user || !Array.isArray(user.inventory)) {
-            resolve({ status: "error", message: "アイテムが見つかりません" });
-            return;
-          }
-          const item = user.inventory.find(function (i) { return Number(i.rowIdx) === Number(bodyObj.rowIdx); });
-          if (!item) {
-            resolve({ status: "error", message: "対象アイテムが見つかりません" });
-            return;
-          }
-          item.status = "使用済み";
-          item.usedAt = new Date().toISOString();
-
-          let activeTicket = null;
-          if (item.limitMinutes > 0) {
-            const endsAt = new Date(Date.now() + item.limitMinutes * 60 * 1000).toISOString();
-            activeTicket = {
-              rewardName: item.rewardName,
-              endsAt: endsAt,
-              usedAt: item.usedAt,
-              limitMinutes: item.limitMinutes
-            };
-            user.activeRewardTicket = activeTicket;
-            if (typeof window.setActiveRewardTicket_ === "function") {
-              window.setActiveRewardTicket_(activeTicket);
+          const wantIdx = Number(bodyObj.rowIdx);
+          const isUnusedStatus_ = function (st) {
+            const s = String(st || "");
+            return s !== "使用済み" && s !== "used";
+          };
+          const findItem_ = function (inv) {
+            if (!Array.isArray(inv)) return null;
+            return inv.find(function (i) {
+              return i && Number(i.rowIdx) === wantIdx && isUnusedStatus_(i.status);
+            }) || inv.find(function (i) {
+              return i && Number(i.rowIdx) === wantIdx;
+            }) || null;
+          };
+          const finishConsume_ = function (user, item) {
+            if (!user || !item) {
+              resolve({ status: "error", message: "対象アイテムが見つかりません" });
+              return;
             }
-          }
-          saveAppKidUserToLocal(user);
+            if (!isUnusedStatus_(item.status)) {
+              resolve({ status: "error", message: "このアイテムはすでに使用済みです" });
+              return;
+            }
+            if (!Array.isArray(user.inventory)) user.inventory = [];
+            // rowIdx 一致の実体を inventory 内で更新
+            var target = user.inventory.find(function (i) { return i && Number(i.rowIdx) === wantIdx; });
+            if (!target) {
+              user.inventory.unshift(item);
+              target = item;
+            }
+            target.status = "使用済み";
+            target.usedAt = new Date().toISOString();
 
+            let activeTicket = null;
+            const lim = Number(target.limitMinutes != null ? target.limitMinutes : item.limitMinutes) || 0;
+            if (lim > 0) {
+              const endsAt = new Date(Date.now() + lim * 60 * 1000).toISOString();
+              activeTicket = {
+                rewardName: target.rewardName || item.rewardName,
+                endsAt: endsAt,
+                usedAt: target.usedAt,
+                limitMinutes: lim
+              };
+              user.activeRewardTicket = activeTicket;
+              if (typeof window.setActiveRewardTicket_ === "function") {
+                window.setActiveRewardTicket_(activeTicket);
+              }
+            }
+            saveAppKidUserToLocal(user);
+
+            const done = function () {
+              resolve({
+                status: "success",
+                message: "「" + (target.rewardName || "景品") + "」を使いました！",
+                activeTicket: activeTicket,
+                inventory: user.inventory.slice()
+              });
+            };
+            if (typeof firebase !== "undefined" && firebase.firestore) {
+              const patch = { inventory: user.inventory };
+              if (activeTicket) patch.activeRewardTicket = activeTicket;
+              firebase.firestore().collection("users").doc(uid).set(patch, { merge: true })
+                .then(done)
+                .catch(done);
+              return;
+            }
+            done();
+          };
+
+          let user = null;
+          try { user = JSON.parse(localStorage.getItem("app_kid_user") || "null"); } catch (_e) {}
+          if (!user || String(user.id) !== uid) {
+            resolve({ status: "error", message: "ユーザー情報が見つかりません" });
+            return;
+          }
+
+          var localItem = findItem_(user.inventory);
+          if (localItem) {
+            finishConsume_(user, localItem);
+            return;
+          }
+
+          // ローカルに無い場合は Firestore のもちものから探す（表示はできたが使えない問題の対策）
           if (typeof firebase !== "undefined" && firebase.firestore) {
-            const patch = { inventory: user.inventory };
-            if (activeTicket) patch.activeRewardTicket = activeTicket;
-            firebase.firestore().collection("users").doc(uid).set(patch, { merge: true }).catch(function () {});
+            firebase.firestore().collection("users").doc(uid).get().then(function (doc) {
+              const remoteInv = (doc.exists && doc.data() && Array.isArray(doc.data().inventory))
+                ? doc.data().inventory
+                : [];
+              if (!Array.isArray(user.inventory) || !user.inventory.length) {
+                user.inventory = remoteInv.slice();
+              } else {
+                // ローカル欠落分をマージ
+                remoteInv.forEach(function (ri) {
+                  if (!ri) return;
+                  const exists = user.inventory.some(function (li) {
+                    return li && Number(li.rowIdx) === Number(ri.rowIdx);
+                  });
+                  if (!exists) user.inventory.push(ri);
+                });
+              }
+              const item = findItem_(user.inventory) || findItem_(remoteInv);
+              finishConsume_(user, item);
+            }).catch(function () {
+              resolve({ status: "error", message: "対象アイテムが見つかりません" });
+            });
+            return;
           }
 
-          resolve({
-            status: "success",
-            message: "「" + item.rewardName + "」を使いました！",
-            activeTicket: activeTicket
-          });
+          resolve({ status: "error", message: "対象アイテムが見つかりません" });
         });
       }
 
@@ -4136,6 +4204,14 @@ var global = typeof window !== 'undefined' ? window : this;
             __inventoryListCache = d.inventory || [];
             __inventoryListCacheUserId = String(userId);
             __inventoryListCacheAt = Date.now();
+            // 表示できた持ち物をローカルにも同期（「使う」がローカル欠落で失敗するのを防ぐ）
+            try {
+              const kid = JSON.parse(localStorage.getItem("app_kid_user") || "null");
+              if (kid && String(kid.id) === String(userId) && Array.isArray(d.inventory)) {
+                kid.inventory = d.inventory;
+                saveAppKidUserToLocal(kid);
+              }
+            } catch (_eSyncInv) {}
           }
           return d;
         };
@@ -4188,15 +4264,22 @@ var global = typeof window !== 'undefined' ? window : this;
         c.innerHTML = ""; 
         const btn = document.getElementById('toggle-inventory-btn'); 
         btn.innerText = showAllInventory ? "未消化だけ表示する" : "すべて表示する"; 
-        let filtered = userInventoryData; 
-        if(!showAllInventory) filtered = filtered.filter(i => i.status !== "使用済み"); 
+        let filtered = userInventoryData || []; 
+        if(!showAllInventory) filtered = filtered.filter(function (i) {
+          const st = String((i && i.status) || "");
+          return st !== "使用済み" && st !== "used";
+        }); 
         if(filtered.length === 0) { c.innerHTML = "<p>表示できるアイテムがありません。</p>"; return; } 
         filtered.forEach(item => { 
             const div = document.createElement('div'); div.className = "item-card"; 
             const isUsed = item.status === "使用済み";
             const limitLine = item.limitMinutes > 0 ? `<div style="font-size:13px;color:#90CAF9;">制限時間: ${item.limitMinutes} 分</div>` : "";
             const usedLine = item.usedAt ? `<div style="font-size:12px;color:#aaa;">使用日時: ${new Date(item.usedAt).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}</div>` : "";
-            const btnHtml = isUsed ? `<button class="submit-btn btn-gray" style="width: 100%; padding: 10px; font-size: 18px;" disabled>使用済み</button>` : `<button class="submit-btn btn-green" style="width: 100%; padding: 10px; font-size: 18px;" onclick="consumeReward(${item.rowIdx}, this)">使う！</button>`; 
+            const isUsedLike = isUsed || item.status === "used";
+            const safeRowIdx = Number(item.rowIdx);
+            const btnHtml = isUsedLike
+              ? `<button class="submit-btn btn-gray" style="width: 100%; padding: 10px; font-size: 18px;" disabled>使用済み</button>`
+              : `<button class="submit-btn btn-green" style="width: 100%; padding: 10px; font-size: 18px;" onclick="consumeReward(${safeRowIdx}, this)">使う！</button>`; 
             div.innerHTML = `<div class="item-title">🎒 ${item.rewardName}</div><div style="font-size: 12px; color: #aaa; margin-bottom: 6px;">交換日: ${new Date(item.date).toLocaleString()}</div>${limitLine}${usedLine}${btnHtml}`; 
             c.appendChild(div); 
         }); 
@@ -4213,10 +4296,21 @@ var global = typeof window !== 'undefined' ? window : this;
             toggleBtnLoading(btn, false, origText);
             if(d.status==="success") { 
                 alert(d.message); 
-                const item = userInventoryData.find(i => i.rowIdx === rowIdx);
-                if (item) {
-                  item.status = "使用済み";
-                  item.usedAt = d.activeTicket ? d.activeTicket.usedAt : new Date().toISOString();
+                if (Array.isArray(d.inventory)) {
+                  userInventoryData = d.inventory;
+                  try {
+                    const fresh = JSON.parse(localStorage.getItem('app_kid_user') || 'null') || user;
+                    fresh.inventory = d.inventory;
+                    saveAppKidUserToLocal(fresh);
+                  } catch (_eInv) {}
+                } else {
+                  const item = (userInventoryData || []).find(function (i) {
+                    return i && Number(i.rowIdx) === Number(rowIdx);
+                  });
+                  if (item) {
+                    item.status = "使用済み";
+                    item.usedAt = d.activeTicket ? d.activeTicket.usedAt : new Date().toISOString();
+                  }
                 }
                 __inventoryListCache = userInventoryData;
                 __inventoryListCacheAt = Date.now();
@@ -4225,7 +4319,10 @@ var global = typeof window !== 'undefined' ? window : this;
             } else {
                 alert(d.message || "使用できませんでした");
             }
-        }).catch(e => toggleBtnLoading(btn, false, origText)); 
+        }).catch(e => {
+            toggleBtnLoading(btn, false, origText);
+            alert("使用処理に失敗しました。もういちどためしてね。");
+        }); 
     }
 
     // ====== 第2弾：外部学習（申請 → 管理者PIN承認） ======
@@ -6757,7 +6854,7 @@ var global = typeof window !== 'undefined' ? window : this;
           modeName: info.modeName,
           unitName: info.unitName,
           setId: String(q.setId != null ? q.setId : setId),
-          allQuestions: raw,
+          allQuestions: prep.questions,
           formatMode: prep.formatMode
         });
       };
@@ -7108,8 +7205,20 @@ var global = typeof window !== 'undefined' ? window : this;
     function buildKanjiQuestionsFromRawRecordsIfNeeded_(rawList) {
       const arr = Array.isArray(rawList) ? rawList : [];
       if (!arr.length) return [];
-      // 既に type プロパティがある場合はビルド済み問題とみなす
-      if (arr[0] && arr[0].type) return arr;
+      // 既に type 付きでも、熟語の生フィールドが残っている／熟語形式が1件も無い場合は再構築する
+      if (arr[0] && arr[0].type) {
+        const hasJukugoType = arr.some(function (q) {
+          return q && (q.type === "jukugo_yomi" || q.type === "jukugo_sentence_to_ruby");
+        });
+        const hasJukugoRaw = arr.some(function (q) {
+          return q && (q["漢字熟語A"] || q["ターゲット漢字"] || q["A読み"]);
+        });
+        // 完成済み熟語問題だけならそのまま使う
+        if (hasJukugoType && !hasJukugoRaw) return arr;
+        // 単漢字の完成済みのみ（熟語生データなし）ならそのまま
+        if (!hasJukugoRaw && !listLooksLikeJukugoMaterial_(arr)) return arr;
+        // それ以外（生フィールド残存・熟語なのに type だけ単漢字 等）は再構築へ進む
+      }
 
       const cellText_ = function (v) {
         const s = String(v == null ? "" : v).trim();
@@ -7121,23 +7230,38 @@ var global = typeof window !== 'undefined' ? window : this;
 
       arr.forEach(function (row, idx) {
         if (!row || typeof row !== "object") return;
-        const targetKanji = cellText_(row["ターゲット漢字"]);
+        const targetKanji = cellText_(row["ターゲット漢字"] || row.targetKanji);
         const kanji = cellText_(row["漢字"] || row.kanji) || targetKanji;
-        if (!kanji) return;
-
-        const setId = String(row["セット"] != null && row["セット"] !== "" ? row["セット"] : "1");
+        const setId = String(row["セット"] != null && row["セット"] !== "" ? row["セット"] : (row.setId != null ? row.setId : "1"));
         const rowIndex = Number(row.rowIndex || idx + 1);
 
-        // 熟語シート行 → 熟語ABCスロットを収集
-        if (targetKanji || cellText_(row["漢字熟語A"]) || cellText_(row["A読み"])) {
+        // 熟語スロット収集は漢字必須チェックより先（熟語行を落とさない）
+        const jukugoWordA = cellText_(row["漢字熟語A"] || row["漢字熟語Ａ"] || row["熟語A"] || row.jukugoWord);
+        const readingA = cellText_(row["A読み"] || row["Ａ読み"] || row["読みA"] || row.jukugoReading);
+        const hasJukugoCols = !!(targetKanji || jukugoWordA || readingA ||
+          cellText_(row["漢字熟語B"] || row["B読み"] || row["漢字熟語C"] || row["C読み"]));
+        if (hasJukugoCols) {
           ["A", "B", "C"].forEach(function (slot) {
-            const word = cellText_(row["漢字熟語" + slot]);
-            const reading = cellText_(row[slot + "読み"]);
-            const example = cellText_(row[slot + "例文"]);
-            const category = cellText_(row[slot + "区分"]);
+            const slotFw = slot === "A" ? "Ａ" : slot === "B" ? "Ｂ" : "Ｃ";
+            const word = cellText_(
+              row["漢字熟語" + slot] || row["漢字熟語" + slotFw] || row["熟語" + slot] ||
+              (slot === "A" ? row.jukugoWord : "")
+            );
+            const reading = cellText_(
+              row[slot + "読み"] || row[slotFw + "読み"] || row["読み" + slot] ||
+              (slot === "A" ? row.jukugoReading : "")
+            );
+            const example = cellText_(
+              row[slot + "例文"] || row[slotFw + "例文"] || row["例文" + slot] ||
+              (slot === "A" ? (row.exampleSentence || row.exampleSentenceRaw) : "")
+            );
+            const category = cellText_(row[slot + "区分"] || row[slotFw + "区分"] || row.category);
             if (!word || !reading) return;
+            if (row.type === "jukugo_yomi" || row.type === "jukugo_sentence_to_ruby") {
+              if (slot !== "A" && slot !== String(row.slot || "A")) return;
+            }
             jukugoPool.push({
-              targetKanji: targetKanji || kanji,
+              targetKanji: targetKanji || kanji || cellText_(row.kanji) || word.charAt(0) || "",
               word: word,
               reading: reading,
               example: example,
@@ -7148,6 +7272,9 @@ var global = typeof window !== 'undefined' ? window : this;
             });
           });
         }
+
+        // 単漢字問題は漢字が無い行では作らない（熟語スロットは上で収集済み）
+        if (!kanji) return;
 
         // 音読み・訓読み・例文の解析（単漢字）
         const readings = [];
@@ -7172,7 +7299,7 @@ var global = typeof window !== 'undefined' ? window : this;
         });
 
         // 熟語だけの行は単漢字問題を作らない
-        if (!readings.length && (targetKanji || cellText_(row["漢字熟語A"]))) return;
+        if (!readings.length && hasJukugoCols) return;
 
         // 1. 書き順チェック (stroke_order_trace)
         builtQuestions.push({
@@ -7297,7 +7424,7 @@ var global = typeof window !== 'undefined' ? window : this;
           const uniq = {};
           const choices = [correctPrimary];
           uniq[correctPrimary] = true;
-          const shuffledPool = shuffleKanjiQuizArray(readingPool.slice());
+          const shuffledPool = shuffleKanjiQuizChoicesArray(readingPool.slice());
           for (let i = 0; i < shuffledPool.length && choices.length < choiceCount; i++) {
             const r = shuffledPool[i];
             if (uniq[r]) continue;
@@ -7350,14 +7477,109 @@ var global = typeof window !== 'undefined' ? window : this;
       return builtQuestions;
     }
 
-    function prepareKanjiQuizQuestionsForPlay(rawList, formatModeOverride) {
-      var mode = formatModeOverride || getKanjiQuizFormatMode();
-      var builtList = buildKanjiQuestionsFromRawRecordsIfNeeded_(rawList);
-      var normalized = (Array.isArray(builtList) ? builtList : []).map(function (q) {
+    /** 行データが漢字熟語シート由来かどうか（見出し／フィールドで判定） */
+    function looksLikeJukugoRawRecord_(row) {
+      if (!row || typeof row !== "object") return false;
+      if (row.type === "jukugo_yomi" || row.type === "jukugo_sentence_to_ruby") return true;
+      if (row.jukugoWord || row["漢字熟語A"] || row["ターゲット漢字"]) return true;
+      if (row["A読み"] != null || row["B読み"] != null || row["C読み"] != null) return true;
+      return false;
+    }
+    function listLooksLikeJukugoMaterial_(list) {
+      const arr = Array.isArray(list) ? list : [];
+      if (!arr.length) return false;
+      let jukugoHits = 0;
+      const n = Math.min(arr.length, 12);
+      for (let i = 0; i < n; i++) {
+        if (looksLikeJukugoRawRecord_(arr[i])) jukugoHits++;
+      }
+      return jukugoHits >= Math.max(1, Math.ceil(n / 3));
+    }
+    /**
+     * 生レコード／型付き混在を問わず、指定形式の問題配列を得る。
+     * 既に type 付きでも熟語形式が0件なら、生フィールドから再構築する。
+     */
+    function ensureKanjiQuestionsForFormat_(rawList, mode) {
+      var arr = Array.isArray(rawList) ? rawList.slice() : [];
+      var built = buildKanjiQuestionsFromRawRecordsIfNeeded_(arr);
+      var normalized = (Array.isArray(built) ? built : []).map(function (q) {
         if (!q || q.type !== "okurigana_shift") return q;
         return rebuildOkuriganaQuestionByAlgorithm_(q);
       });
       var filtered = filterKanjiQuizQuestionsByFormat(normalized, mode);
+      if (filtered.length) return filtered;
+
+      // 熟語形式なのに0件 → type 付きの誤キャッシュ／単漢字扱いを捨てて生データから再生成
+      var isJukugoMode = mode === "jukugo_yomi" || mode === "jukugo_type_yomi";
+      if (isJukugoMode || listLooksLikeJukugoMaterial_(arr)) {
+        var stripped = arr.map(function (row) {
+          if (!row || typeof row !== "object") return row;
+          // type だけ外し、漢字熟語A 等の生フィールドを残す
+          if (!looksLikeJukugoRawRecord_(row) && !row["漢字"] && !row["ターゲット漢字"]) return row;
+          var copy = Object.assign({}, row);
+          delete copy.type;
+          delete copy.questionId;
+          delete copy.questionIndex;
+          return copy;
+        });
+        // 先頭判定を騙さないよう、type 無し行を優先
+        stripped.sort(function (a, b) {
+          var at = a && a.type ? 1 : 0;
+          var bt = b && b.type ? 1 : 0;
+          return at - bt;
+        });
+        built = buildKanjiQuestionsFromRawRecordsIfNeeded_(stripped);
+        // build が「既に type あり」と誤認した場合の強制再構築
+        if (built && built.length && built[0] && built[0].type && !built.some(function (q) {
+          return q && (q.type === "jukugo_yomi" || q.type === "jukugo_sentence_to_ruby");
+        })) {
+          built = buildKanjiQuestionsFromRawRecordsForced_(stripped);
+        } else if (!built.some(function (q) {
+          return q && (q.type === "jukugo_yomi" || q.type === "jukugo_sentence_to_ruby");
+        })) {
+          built = buildKanjiQuestionsFromRawRecordsForced_(stripped);
+        }
+        normalized = (Array.isArray(built) ? built : []).map(function (q) {
+          if (!q || q.type !== "okurigana_shift") return q;
+          return rebuildOkuriganaQuestionByAlgorithm_(q);
+        });
+        filtered = filterKanjiQuizQuestionsByFormat(normalized, mode);
+      }
+      return filtered;
+    }
+    /** type 有無を無視して必ず生レコードから組み立てる */
+    function buildKanjiQuestionsFromRawRecordsForced_(rawList) {
+      const arr = Array.isArray(rawList) ? rawList : [];
+      if (!arr.length) return [];
+      // 先頭の type を消したコピーで通常ビルダーを再利用
+      const stripped = arr.map(function (row) {
+        if (!row || typeof row !== "object") return row;
+        const copy = Object.assign({}, row);
+        delete copy.type;
+        return copy;
+      });
+      // 通常ビルダーは arr[0].type で早期 return するため、確実に type 無しにする
+      if (stripped[0] && stripped[0].type) delete stripped[0].type;
+      return buildKanjiQuestionsFromRawRecordsIfNeeded_(stripped);
+    }
+    function prepareKanjiQuizQuestionsForPlay(rawList, formatModeOverride) {
+      var mode = formatModeOverride || getKanjiQuizFormatMode();
+      // 教材が熟語なのに単漢字形式のままなら熟語読みへ寄せる
+      if (listLooksLikeJukugoMaterial_(rawList) && mode !== "jukugo_yomi" && mode !== "jukugo_type_yomi") {
+        mode = "jukugo_yomi";
+        try {
+          localStorage.setItem(LS_KANJI_QUIZ_FORMAT, mode);
+          const sel = document.getElementById("kanji-quiz-format-select");
+          if (sel) sel.value = mode;
+          applyKanjiQuizSheetKind_("jukugo");
+        } catch (_eFmt) {}
+      }
+      var filtered = ensureKanjiQuestionsForFormat_(rawList, mode);
+      if (!filtered.length && (mode === "jukugo_type_yomi")) {
+        // タイプ形式が空なら読み選択へフォールバック
+        filtered = ensureKanjiQuestionsForFormat_(rawList, "jukugo_yomi");
+        if (filtered.length) mode = "jukugo_yomi";
+      }
       if (!filtered.length) {
         alert('この しかた では もんだいがありません。\nほかの しかたを えらんでください。');
         return null;
@@ -12104,32 +12326,40 @@ var global = typeof window !== 'undefined' ? window : this;
       updateStrokeOrderDemoButton_();
     }
     function startKanjiQuizPlay(ctx) {
-      const mode = ctx.formatMode != null ? ctx.formatMode : getKanjiQuizFormatMode();
+      let mode = ctx.formatMode != null ? ctx.formatMode : getKanjiQuizFormatMode();
       let questions;
       let allQuestionsStored;
       if (ctx.nigateBypassFilter && Array.isArray(ctx.questions) && ctx.questions.length) {
         questions = shuffleKanjiQuizQuestionsArray(ctx.questions.slice());
         allQuestionsStored = questions.slice();
-      } else if (Array.isArray(ctx.allQuestions) && ctx.allQuestions.length) {
-        const built = buildKanjiQuestionsFromRawRecordsIfNeeded_(ctx.allQuestions);
-        const filtered = filterKanjiQuizQuestionsByFormat(built, mode);
-        if (!filtered.length) {
-          hideKanjiQuizSetLoadingOverlay_();
-          alert("この しかた では もんだいがありません。\nほかの しかたを えらんでください。");
-          return;
+      } else {
+        var sourceList = Array.isArray(ctx.allQuestions) && ctx.allQuestions.length
+          ? ctx.allQuestions
+          : (ctx.questions || []);
+        // prepare 済みならそのまま使う（再フィルタで熟語が消える事故を防ぐ）
+        var wantType = ({
+          write_kanji: "ruby_to_kanji",
+          select_kana: "okurigana_shift",
+          type_yomi: "sentence_to_ruby",
+          stroke_order: "stroke_order_trace",
+          jukugo_yomi: "jukugo_yomi",
+          jukugo_type_yomi: "jukugo_sentence_to_ruby"
+        })[mode] || "ruby_to_kanji";
+        var preFiltered = sourceList.filter(function (q) { return q && q.type === wantType; });
+        var filtered;
+        if (preFiltered.length) {
+          filtered = preFiltered;
+        } else {
+          var prepPlay = prepareKanjiQuizQuestionsForPlay(sourceList, mode);
+          if (!prepPlay || !prepPlay.questions || !prepPlay.questions.length) {
+            hideKanjiQuizSetLoadingOverlay_();
+            return;
+          }
+          filtered = prepPlay.questions;
+          mode = prepPlay.formatMode || mode;
         }
         allQuestionsStored = filtered.slice();
         questions = shuffleKanjiQuizQuestionsArray(filtered.slice());
-      } else {
-        const built = buildKanjiQuestionsFromRawRecordsIfNeeded_(ctx.questions);
-        const base = Array.isArray(built) ? built.slice() : [];
-        if (!base.length) {
-          hideKanjiQuizSetLoadingOverlay_();
-          alert("このセットには問題がありません。");
-          return;
-        }
-        questions = shuffleKanjiQuizQuestionsArray(base);
-        allQuestionsStored = questions.slice();
       }
       if (!questions.length) {
         hideKanjiQuizSetLoadingOverlay_();
@@ -13011,9 +13241,59 @@ var global = typeof window !== 'undefined' ? window : this;
         payload.trainingStepIndex = meta.trainingStepIndex;
         payload.trainingMenuId = meta.trainingMenuId;
       }
+
+      // ここで加点を確定（インターセプトや window 公開関数に依存しない）
+      var computed = null;
+      try {
+        computed = computeKanjiScoreBatchClient_(payload);
+      } catch (eComp) {
+        console.warn("computeKanjiScoreBatchClient_ failed:", eComp);
+      }
+      if (computed) {
+        payload.earnedPoints = computed.earnedPoints;
+        payload.newTotal = computed.newTotal;
+        payload.itemEarned = computed.itemEarned;
+        payload.kanjiChallengePatches = computed.kanjiChallengePatches;
+        payload.dailyLimitChars = computed.dailyLimitChars;
+        payload.lastStudyKey = computed.lastStudyKey;
+        payload.lastStudyAt = computed.lastStudyAt;
+        if (computed.trainingProgressJson) payload.trainingProgressJson = computed.trainingProgressJson;
+      } else {
+        // 最低限：素点合算（設定が読めなくても正解に点が入るようにする）
+        var fallbackEarned = 0;
+        var fallbackItems = items.map(function (it) {
+          if (!it || it.questionCorrect === false) return 0;
+          if (it.earnedOverride != null && !isNaN(Number(it.earnedOverride))) {
+            return Math.max(0, Number(it.earnedOverride));
+          }
+          var s = Number(it.score) || 0;
+          if (s >= 90) return 10;
+          if (s >= 80) return 5;
+          if (s >= 70) return 4;
+          if (s >= 60) return 3;
+          if (s >= 50) return 1;
+          return 0;
+        });
+        fallbackItems.forEach(function (n) { fallbackEarned += n; });
+        fallbackEarned = Math.round(fallbackEarned * 100) / 100;
+        payload.earnedPoints = fallbackEarned;
+        payload.newTotal = Math.round(((Number(user.points) || 0) + fallbackEarned) * 100) / 100;
+        payload.itemEarned = fallbackItems;
+        user.points = payload.newTotal;
+        try { saveAppKidUserToLocal(user); } catch (_eFb) {}
+      }
+
       // 二重加算防止のため sessionStore 直呼びはしない（gasApiFetchJson インターセプトのみ）
       return gasApiFetchJson(payload).then(function (d) {
         if (!d || d.status !== "success") throw new Error((d && d.message) || "一括保存に失敗");
+        // レスポンスに点が無い／0 なのにこちらで計算済みなら、計算結果を優先
+        if ((d.earnedPoints == null || Number(d.earnedPoints) === 0) && payload.earnedPoints > 0) {
+          d.earnedPoints = payload.earnedPoints;
+          d.newTotal = payload.newTotal;
+          d.itemEarned = payload.itemEarned;
+          d.dailyLimitChars = payload.dailyLimitChars;
+          d.kanjiChallengePatches = payload.kanjiChallengePatches;
+        }
         if (d.kanjiChallengePatches && typeof d.kanjiChallengePatches === "object") {
           Object.keys(d.kanjiChallengePatches).forEach(function (ch) {
             mergeKanjiChallengePatchClient(ch, d.kanjiChallengePatches[ch]);
