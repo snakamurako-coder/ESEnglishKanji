@@ -160,6 +160,21 @@
   /**
    * 特訓メニュー管理データの取得（Firestore 優先）
    */
+  function normalizeMenusRoutesInPlace_(menus) {
+    if (!Array.isArray(menus)) return menus;
+    var normFn = (global.appSettingsStore && typeof global.appSettingsStore.normalizeTrainingRouteItem === 'function')
+      ? global.appSettingsStore.normalizeTrainingRouteItem
+      : null;
+    if (!normFn) return menus;
+    menus.forEach(function (menu) {
+      if (!menu || !Array.isArray(menu.routes)) return;
+      menu.routes = menu.routes.map(function (r, idx) {
+        return normFn(r, idx) || r;
+      }).filter(Boolean);
+    });
+    return menus;
+  }
+
   function getTrainingAdminData(pin) {
     return new Promise(function (resolve, reject) {
       var db = getDb();
@@ -168,6 +183,7 @@
           if (doc.exists) {
             var data = doc.data();
             if (data && Array.isArray(data.menus) && data.menus.length > 0) {
+              normalizeMenusRoutesInPlace_(data.menus);
               resolve(data);
               return;
             }
@@ -993,10 +1009,18 @@
           }
         }
 
-        // 2. system/training_admin への復元
+        // 2. system/training_admin への復元（取込スキーマ差を正規化）
         if (data.trainingAdmin && typeof data.trainingAdmin === 'object') {
           var tAdmin = Object.assign({}, data.trainingAdmin);
-          if (Array.isArray(tAdmin.menus)) counts.menusCount = tAdmin.menus.length;
+          if (Array.isArray(tAdmin.menus)) {
+            normalizeMenusRoutesInPlace_(tAdmin.menus);
+            counts.menusCount = tAdmin.menus.length;
+            var routeTotal = 0;
+            tAdmin.menus.forEach(function (m) {
+              if (m && Array.isArray(m.routes)) routeTotal += m.routes.length;
+            });
+            counts.trainingRoutesCount = routeTotal;
+          }
           promises.push(saveTrainingAdminDataToFirestore(tAdmin));
         }
 

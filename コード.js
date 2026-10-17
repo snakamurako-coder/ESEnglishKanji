@@ -5308,14 +5308,21 @@ function handleImportFullConfigAdmin(req) {
             const row = vals[r];
             const unitName = String(row[1] || "").trim();
             if (!unitName) continue;
+            // 学習側・管理UIと同じキー（unitName/qFormat/aFormat/stepIndex）で出力する
+            // row[0]=対象ユーザー, row[1]=単元, row[2]=出題形式, row[3]=こたえ方, row[4]=順序
+            const aFormat = String(row[3] || "").trim();
+            const blankRaw = row[5];
+            const blankCount = (aFormat === "穴埋め4択" || aFormat === "穴埋めタイピング")
+              ? (blankRaw !== "" && blankRaw != null ? blankRaw : "")
+              : "";
             routes.push({
-              step: Number(row[0]) || r,
-              unit: unitName,
-              format: String(row[2] || "").trim(),
-              ansType: String(row[3] || "").trim(),
-              mode: String(row[4] || "通常").trim(),
-              fillCount: row[5] ? Number(row[5]) : null,
-              targetUsers: "全員"
+              stepIndex: r,
+              targetUsers: String(row[0] || "全員").trim() || "全員",
+              unitName: unitName,
+              qFormat: String(row[2] || "").trim(),
+              aFormat: aFormat,
+              mode: String(row[4] || "ランダム").trim() || "ランダム",
+              blankCount: blankCount
             });
           }
         }

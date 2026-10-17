@@ -3619,8 +3619,24 @@ var global = typeof window !== 'undefined' ? window : this;
 
         const processData = (d) => {
             if(d.status === "success") {
-                dailyRouteData = d.route;
-                currentProgressData = d.progress;
+                // GAS互換 route と、旧ストア戻り routes の両方を受け入れる
+                const list = Array.isArray(d.route) ? d.route
+                  : (Array.isArray(d.routes) ? d.routes : []);
+                dailyRouteData = list.map(function (raw, idx) {
+                  if (window.appSettingsStore && typeof window.appSettingsStore.normalizeTrainingRouteItem === "function") {
+                    return window.appSettingsStore.normalizeTrainingRouteItem(raw, idx) || raw;
+                  }
+                  return raw;
+                }).filter(Boolean);
+                currentProgressData = (d.progress && typeof d.progress === "object") ? d.progress : {};
+                if (!Object.keys(currentProgressData).length) {
+                  try {
+                    const user = JSON.parse(localStorage.getItem("app_kid_user") || "null");
+                    if (user && user.trainingProgressJson) {
+                      currentProgressData = getTodayTrainingProgressBlock(user.trainingProgressJson, currentTrainingMenuId);
+                    }
+                  } catch (_) {}
+                }
                 renderTrainingRoute();
             } else if (routeContainer) {
                 routeContainer.innerHTML = "<p>ルートの取得に失敗しました。</p>";

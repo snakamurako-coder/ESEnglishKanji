@@ -186,13 +186,107 @@
   }
 
   /**
+   * 特訓ルート1件を学習側が期待する形に正規化
+   * （管理UI保存形: unitName/qFormat/aFormat … と、
+   *  スプレッドシート取込形: unit/format/ansType/step/fillCount の両方に対応）
+   */
+  function normalizeTrainingRouteItem_(r, idx) {
+    if (!r || typeof r !== 'object') return null;
+    var unitName = String(r.unitName != null ? r.unitName : (r.unit || '')).trim();
+    if (!unitName) return null;
+    var stepRaw = r.stepIndex != null ? r.stepIndex : r.step;
+    var stepIndex = Number(stepRaw);
+    if (!stepIndex || isNaN(stepIndex)) stepIndex = (idx | 0) + 1;
+    var blank = '';
+    if (r.blankCount != null && String(r.blankCount).trim() !== '') blank = r.blankCount;
+    else if (r.fillCount != null && String(r.fillCount).trim() !== '') blank = r.fillCount;
+    return {
+      stepIndex: stepIndex,
+      targetUsers: String(r.targetUsers != null ? r.targetUsers : '全員'),
+      unitName: unitName,
+      qFormat: String(r.qFormat != null ? r.qFormat : (r.format || '')),
+      aFormat: String(r.aFormat != null ? r.aFormat : (r.ansType || '')),
+      mode: String(r.mode != null && String(r.mode).trim() !== '' ? r.mode : 'ランダム'),
+      blankCount: blank
+    };
+  }
+
+  function extractTodayTrainingProgress_(trainingProgressJson, menuId) {
+    var json = trainingProgressJson && typeof trainingProgressJson === 'object' ? trainingProgressJson : {};
+    var todayStr = new Date().toISOString().split('T')[0];
+    var todayBlock = json[todayStr] || {};
+    var mid = String(menuId != null ? menuId : 1);
+    if (todayBlock[mid] && typeof todayBlock[mid] === 'object' && !Array.isArray(todayBlock[mid])) {
+      return todayBlock[mid];
+    }
+    // 旧形式（メニュー1のみ・stepIndex:true が直下）
+    if (mid === '1') {
+      var out = {};
+      var hasLegacy = false;
+      Object.keys(todayBlock).forEach(function (k) {
+        if (todayBlock[k] === true) {
+          hasLegacy = true;
+          out[k] = true;
+        }
+      });
+      if (hasLegacy) return out;
+    }
+    return {};
+  }
+
+  function loadUserTrainingProgress_(userId, menuId) {
+    return new Promise(function (resolve) {
+      try {
+        var localUser = JSON.parse(localStorage.getItem('app_kid_user') || 'null');
+        if (localUser && String(localUser.id) === String(userId) && localUser.trainingProgressJson) {
+          resolve(extractTodayTrainingProgress_(localUser.trainingProgressJson, menuId));
+          return;
+        }
+      } catch (_) {}
+
+      var db = getDb();
+      if (!db || !userId) {
+        resolve({});
+        return;
+      }
+      db.collection('users').doc(String(userId)).get().then(function (doc) {
+        if (!doc.exists) {
+          resolve({});
+          return;
+        }
+        var data = doc.data() || {};
+        resolve(extractTodayTrainingProgress_(data.trainingProgressJson || {}, menuId));
+      }).catch(function () {
+        resolve({});
+      });
+    });
+  }
+
+  /**
    * 特訓ルートの取得（Firestore 完結）
+   * GAS互換: { status, route, progress, menuId }
    */
   function getTrainingRoute(menuId, userId) {
     return new Promise(function (resolve) {
+      var mid = parseInt(menuId, 10);
+      if (isNaN(mid) || mid < 1 || mid > 12) mid = 1;
+
+      var finish = function (routeItems, menuName, basePoints) {
+        loadUserTrainingProgress_(userId, mid).then(function (progress) {
+          resolve({
+            status: 'success',
+            route: routeItems || [],
+            progress: progress || {},
+            menuId: mid,
+            menuName: menuName || '',
+            basePoints: basePoints || {}
+          });
+        });
+      };
+
       var db = getDb();
       if (!db) {
-        resolve({ status: 'success', routes: [] });
+        finish([], '', {});
         return;
       }
 
@@ -200,26 +294,29 @@
         if (doc.exists) {
           var data = doc.data();
           if (data && Array.isArray(data.menus)) {
-            var menu = data.menus.find(function (m) { return String(m.id) === String(menuId); });
+            var menu = data.menus.find(function (m) { return String(m.id) === String(mid); });
             if (menu && Array.isArray(menu.routes)) {
-              // targetUsers でフィルタリング（「全員」または該当 userId）
-              var matched = menu.routes.filter(function (r) {
-                if (!r.targetUsers || r.targetUsers === '全員') return true;
-                return String(r.targetUsers).indexOf(String(userId)) >= 0;
+              var matched = [];
+              menu.routes.forEach(function (raw, idx) {
+                var r = normalizeTrainingRouteItem_(raw, idx);
+                if (!r) return;
+                var tu = String(r.targetUsers || '全員');
+                if (tu === '全員' || !userId || tu.indexOf(String(userId)) >= 0) {
+                  matched.push(r);
+                }
               });
-              resolve({
-                status: 'success',
-                menuName: menu.name || '',
-                routes: matched,
-                basePoints: data.basePoints || {}
-              });
+              finish(
+                matched,
+                menu.displayName || menu.name || '',
+                data.basePoints || {}
+              );
               return;
             }
           }
         }
-        resolve({ status: 'success', routes: [], basePoints: {} });
+        finish([], '', {});
       }).catch(function () {
-        resolve({ status: 'success', routes: [], basePoints: {} });
+        finish([], '', {});
       });
     });
   }
@@ -260,7 +357,8 @@
     getAppSettings: getAppSettings,
     saveAppSettings: saveAppSettings,
     getTrainingRoute: getTrainingRoute,
-    getExternalLearningMenus: getExternalLearningMenus
+    getExternalLearningMenus: getExternalLearningMenus,
+    normalizeTrainingRouteItem: normalizeTrainingRouteItem_
   };
 
 })(typeof window !== 'undefined' ? window : this);
