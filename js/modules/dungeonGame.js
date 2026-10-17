@@ -697,8 +697,8 @@ function addDungeonPoints_(kind, amount, meta) {
   else if (kind === "floor") S.st.ptsFloor += pts;
   else if (kind === "boss") S.st.ptsBoss += pts;
   S.st.ptsTotal = S.st.ptsQuiz + S.st.ptsFloor + S.st.ptsBoss;
-  if (meta && meta.toast) {
-    try { pop("+" + pts + "pt", "heal", 0, true); } catch (_) {}
+  if (meta && meta.toast !== false) {
+    try { showHudPointsGain_(pts); } catch (_) {}
   }
   return pts;
 }
@@ -1279,7 +1279,74 @@ function render(){
 }
 
 function mini(c,v,mx,l){
-  return '<span class="mini"><em>'+l+' '+v+'</em><span class="bar '+c+'"><i style="width:'+(Math.max(0,Math.min(100,100*v/mx)))+'%"></i></span></span>';
+  return '<span class="mini"><em>'+l+' '+v+'</em><span class="bar '+c+'"><i style="width:'+(Math.max(0,Math.min(100,100*v/Math.max(1,mx))))+'%"></i></span></span>';
+}
+
+function getAppKidPointsBase_() {
+  try {
+    const u = JSON.parse(localStorage.getItem("app_kid_user") || "null");
+    if (u && typeof u.points === "number") return Math.max(0, Math.round(u.points));
+  } catch (_) {}
+  return 0;
+}
+/** HUD表示用：口座保有pt + まだ未反映の迷宮獲得分 */
+function getDisplayedAppPoints_() {
+  return getAppKidPointsBase_() + pendingDungeonPoints_();
+}
+
+function showHudPointsGain_(amount) {
+  const pts = Math.max(0, Math.round(Number(amount) || 0));
+  if (!pts) return;
+  renderHUD();
+  const hudEl = $("#hudBar");
+  const ptsWrap = hudEl && hudEl.querySelector(".mini-apppts");
+  const ptsNum = hudEl && hudEl.querySelector("#hudAppPtsNum");
+  if (ptsNum) {
+    ptsNum.classList.remove("hud-pts-bump");
+    void ptsNum.offsetWidth;
+    ptsNum.classList.add("hud-pts-bump");
+    setTimeout(function () { ptsNum.classList.remove("hud-pts-bump"); }, 900);
+  }
+  if (ptsWrap) {
+    ptsWrap.classList.remove("hud-pts-flash");
+    void ptsWrap.offsetWidth;
+    ptsWrap.classList.add("hud-pts-flash");
+    setTimeout(function () { ptsWrap.classList.remove("hud-pts-flash"); }, 900);
+  }
+  // HUD上に大げさな "+50" フロート
+  const host = ptsWrap || hudEl;
+  if (host) {
+    if (getComputedStyle(host).position === "static") host.style.position = "relative";
+    const floater = document.createElement("div");
+    floater.className = "hud-pts-float";
+    floater.textContent = "+" + pts;
+    host.appendChild(floater);
+    setTimeout(function () { try { floater.remove(); } catch (_) {} }, 1600);
+  }
+  // ステージ中央にも大きめに重ね表示
+  try {
+    pop("+" + pts + "pt", "pts", 0, true);
+    pulse("fx-pts", 700);
+  } catch (_) {}
+}
+
+function showHudExpGain_(amount) {
+  const n = Math.max(0, Math.round(Number(amount) || 0));
+  if (!n) return;
+  renderHUD();
+  const xpWrap = $("#hudBar") && $("#hudBar").querySelector(".mini-xp");
+  if (xpWrap) {
+    xpWrap.classList.remove("hud-xp-flash");
+    void xpWrap.offsetWidth;
+    xpWrap.classList.add("hud-xp-flash");
+    setTimeout(function () { xpWrap.classList.remove("hud-xp-flash"); }, 800);
+    if (getComputedStyle(xpWrap).position === "static") xpWrap.style.position = "relative";
+    const floater = document.createElement("div");
+    floater.className = "hud-xp-float";
+    floater.textContent = "+" + n + " EXP";
+    xpWrap.appendChild(floater);
+    setTimeout(function () { try { floater.remove(); } catch (_) {} }, 1400);
+  }
 }
 
 function renderHUD(){
@@ -1289,8 +1356,21 @@ function renderHUD(){
     hudEl.innerHTML = '<span class="fl">単語迷宮 百階</span><span style="color:var(--muted)">ぼうけんを はじめよう</span>';
     return;
   }
-  const p=S.p;
-  hudEl.innerHTML='<span class="fl">地下 '+S.floor+' 階'+(S.floor%10===0?" 🐉":"")+'</span><span>Lv'+p.lv+(S.practice?"・練習":"")+'</span>'+mini("hp",p.hp,pMaxHp(p.lv),"HP")+mini("mp",p.mp,pMaxMp(p.lv),"MP")+mini("sp",p.gauge,100,"必殺");
+  const p = S.p;
+  const need = Math.max(1, expNext(p.lv));
+  const have = Math.max(0, Number(p.exp) || 0);
+  const remain = Math.max(0, need - have);
+  const appPts = getDisplayedAppPoints_();
+  hudEl.innerHTML =
+    '<span class="fl">地下 ' + S.floor + ' 階' + (S.floor % 10 === 0 ? " 🐉" : "") + '</span>' +
+    '<span>Lv' + p.lv + (S.practice ? "・練習" : "") + '</span>' +
+    mini("hp", p.hp, pMaxHp(p.lv), "HP") +
+    mini("mp", p.mp, pMaxMp(p.lv), "MP") +
+    mini("sp", p.gauge, 100, "必殺") +
+    '<span class="mini mini-xp"><em>次Lvまで ' + remain + '</em><span class="bar xp"><i style="width:' +
+      (Math.max(0, Math.min(100, 100 * have / need))) + '%"></i></span></span>' +
+    '<span class="mini mini-apppts"><em>Pt <b id="hudAppPtsNum">' + appPts + '</b></em>' +
+      '<span class="bar pts"><i style="width:100%"></i></span></span>';
 }
 
 function renderStage(){
@@ -2137,7 +2217,7 @@ function doDefend(stance,res){
 
 function victory(){
   const p=S.p, m=S.b.m, i=S.b.i;
-  S.st.kills++; p.exp+=m.exp; const lv0=p.lv;
+  S.st.kills++; const gainedExp = m.exp; p.exp+=gainedExp; const lv0=p.lv;
   let t=m.name+"を たおした！ けいけんち "+m.exp+"。", up=false;
   while(p.exp>=expNext(p.lv)){
     p.exp-=expNext(p.lv); p.lv++; up=true;
@@ -2145,6 +2225,7 @@ function victory(){
     t+=" レベル "+p.lv+" に あがった！";
     const sk=skills().find(k=>k.lv===p.lv); if(sk) t+=" "+sk.n+"を おぼえた！";
   }
+  try { showHudExpGain_(gainedExp); } catch (_) {}
   if(m.boss){
     p.it.pot++; p.it.eth++; p.hp=pMaxHp(p.lv); p.mp=pMaxMp(p.lv);
     t+=" ポーションと まりょくの水を てにいれた。HPとMPが 全回復した！";
