@@ -18,6 +18,7 @@
 
   var app = null;
   var db = null;
+  var storage = null;
 
   try {
     if (typeof firebase !== 'undefined') {
@@ -43,6 +44,10 @@
           });
         }
       }
+
+      if (typeof firebase.storage === 'function') {
+        storage = firebase.storage();
+      }
     }
   } catch (e) {
     console.error("Firebase initialization failed:", e);
@@ -50,8 +55,12 @@
 
   global.firebaseApp = app;
   global.firebaseDb = db;
+  global.firebaseStorage = storage;
   global.getFirestoreDb = function () {
     return global.firebaseDb || db || null;
+  };
+  global.getFirebaseStorage = function () {
+    return global.firebaseStorage || storage || null;
   };
 
 })(typeof window !== 'undefined' ? window : this);

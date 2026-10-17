@@ -55,7 +55,36 @@ if (-not $SkipBuild) {
   }
 }
 
-# 4. Clean corrupted .firebase cache if present
+# 4. Sync dungeon SE/BGM into ./SE for Hosting + IndexedDB cache
+function Sync-DungeonAudio {
+  $dest = Join-Path $Root 'SE'
+  $candidates = @(
+    (Join-Path $Root '..\DungeonRPGindex\SE'),
+    (Join-Path $env:USERPROFILE 'コード開発\Projects\DungeonRPGindex\SE')
+  )
+  $src = $null
+  foreach ($c in $candidates) {
+    if ($c -and (Test-Path $c)) { $src = $c; break }
+  }
+  if (-not $src) {
+    if (Test-Path $dest) {
+      Write-Host "SE folder present (no external sync source)." -ForegroundColor DarkGray
+      return
+    }
+    Write-Warning "Dungeon SE folder not found. Audio may be missing until SE/ is provided."
+    return
+  }
+  Write-Step "Syncing dungeon audio: $src -> SE/"
+  New-Item -ItemType Directory -Force -Path $dest | Out-Null
+  Copy-Item -Path (Join-Path $src '*') -Destination $dest -Force
+  $count = (Get-ChildItem $dest -File -ErrorAction SilentlyContinue | Measure-Object).Count
+  Write-Host "Synced $count audio files into SE/" -ForegroundColor Green
+}
+if (-not $RulesOnly) {
+  Sync-DungeonAudio
+}
+
+# 5. Clean corrupted .firebase cache if present
 if (Test-Path '.firebase') {
   Get-ChildItem -Path '.firebase' -Filter '*.cache' -ErrorAction SilentlyContinue | ForEach-Object {
     if ($_.Length -eq 0) {
@@ -64,7 +93,7 @@ if (Test-Path '.firebase') {
   }
 }
 
-# 5. Deploy
+# 6. Deploy
 $deployOnly = if ($RulesOnly) { 'firestore:rules' } elseif ($HostingOnly) { 'hosting' } else { 'hosting,firestore:rules' }
 $stepLabel = if ($RulesOnly) { 'Deploying Rules only (Firestore)...' } elseif ($HostingOnly) { 'Deploying Hosting only...' } else { 'Deploying Full Stack (Hosting + Firestore Rules)...' }
 

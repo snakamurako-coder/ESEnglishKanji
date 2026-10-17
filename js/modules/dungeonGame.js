@@ -982,61 +982,114 @@ function seLoadFromFiles(files){
   return n;
 }
 
-/* 相対パス "SE/..." からの自動読み込み試行 */
-function autoLoadRelativeAudio(){
-  let loadedCount = 0;
-  let tried = 0;
-  AUDIO_MANIFEST.forEach(item=>{
-    const path = "SE/" + item.file;
-    const aud = new Audio(path);
-    aud.preload = "auto";
-
-    let registered = false;
-    const onReady = ()=>{
-      if(registered) return;
-      registered = true;
-      if(item.type==="bgm"){
-        setupBgmElement(aud, item.id);
-        BGM[item.id] = aud;
-        if(bgmOn && bgmWant() === item.id && (bgmCur === 0 || bgmCur === item.id)){
-          bgmUpdate();
-        }
-      }else{
-        aud.volume = seVol;
-        SE[item.id] = aud;
-      }
-      loadedCount++;
-      updateSoundUI();
-    };
-
-    aud.addEventListener("canplaythrough", onReady, { once: true });
-    aud.addEventListener("canplay", onReady, { once: true });
-    aud.addEventListener("loadeddata", onReady, { once: true });
-
-    aud.onerror = ()=>{
-      tried++;
-      if(tried === AUDIO_MANIFEST.length && loadedCount === 0){
-        updateSoundUI();
-      }
-    };
-
-    // 初期オブジェクトとしても事前登録（即時タップ対応）
-    if(item.type==="bgm"){
-      setupBgmElement(aud, item.id);
-      BGM[item.id] = aud;
-    }else{
-      aud.volume = seVol;
-      SE[item.id] = aud;
+/** Firebase Storage → IndexedDB 経由で SE/BGM を読み込む（失敗時は相対パス SE/ にフォールバック） */
+let audioLoadPromise_ = null;
+function registerDungeonAudio_(item, aud) {
+  if (!item || !aud) return;
+  if (item.type === "bgm") {
+    setupBgmElement(aud, item.id);
+    BGM[item.id] = aud;
+    if (bgmOn && bgmWant() === item.id && (bgmCur === 0 || bgmCur === item.id)) {
+      bgmUpdate();
     }
+  } else {
+    aud.volume = seVol;
+    SE[item.id] = aud;
+  }
+}
+
+function autoLoadRelativeAudio() {
+  return loadDungeonAudioFromCache_();
+}
+
+function loadDungeonAudioFromCache_() {
+  if (audioLoadPromise_) return audioLoadPromise_;
+  const store = (typeof window !== "undefined") ? window.audioCacheStore : null;
+  const files = AUDIO_MANIFEST.map(function (m) { return m.file; });
+  const statEl = $("#mSoundStatus");
+  if (statEl) statEl.textContent = "読み込み状態: Firebase音声を取得中…";
+
+  function loadViaRelativeFallback_() {
+    let loadedCount = 0;
+    let tried = 0;
+    AUDIO_MANIFEST.forEach(function (item) {
+      const path = "SE/" + item.file;
+      const aud = new Audio(path);
+      aud.preload = "auto";
+      let registered = false;
+      const onReady = function () {
+        if (registered) return;
+        registered = true;
+        registerDungeonAudio_(item, aud);
+        loadedCount++;
+        updateSoundUI();
+      };
+      aud.addEventListener("canplaythrough", onReady, { once: true });
+      aud.addEventListener("canplay", onReady, { once: true });
+      aud.addEventListener("loadeddata", onReady, { once: true });
+      aud.onerror = function () {
+        tried++;
+        if (tried === AUDIO_MANIFEST.length && loadedCount === 0) updateSoundUI();
+      };
+      // 未ロードでも枠だけ先に置く（即時タップでエラーにならないよう後で差し替え）
+      registerDungeonAudio_(item, aud);
+    });
+  }
+
+  if (!store || typeof store.createAudio !== "function") {
+    loadViaRelativeFallback_();
+    audioLoadPromise_ = Promise.resolve({ ok: 0, fail: files.length, mode: "fallback" });
+    return audioLoadPromise_;
+  }
+
+  // Hosting /SE を優先（Storage 未セットアップ環境でも動作）。取得後は IndexedDB に永続化。
+  audioLoadPromise_ = store.preloadAll(files, {
+    concurrency: 4,
+    preferStorage: false,
+    onProgress: function (done, total) {
+      if (statEl) {
+        statEl.textContent = "読み込み状態: 音声キャッシュ " + done + "/" + total;
+      }
+    }
+  }).then(function (result) {
+    return Promise.all(AUDIO_MANIFEST.map(function (item) {
+      return store.createAudio(item.file).then(function (aud) {
+        registerDungeonAudio_(item, aud);
+      }).catch(function () {
+        // 個別失敗は相対パスへ
+        return new Promise(function (resolve) {
+          const aud = new Audio("SE/" + item.file);
+          aud.preload = "auto";
+          aud.addEventListener("canplay", function () {
+            registerDungeonAudio_(item, aud);
+            resolve();
+          }, { once: true });
+          aud.onerror = function () { resolve(); };
+          // タイムアウト相当: すぐ登録だけ試みる
+          setTimeout(resolve, 800);
+        });
+      });
+    })).then(function () {
+      updateSoundUI();
+      bgmUpdate();
+      return result || { ok: 0, fail: 0 };
+    });
+  }).catch(function (err) {
+    console.warn("[dungeon audio] Firebase/IndexedDB 読込失敗、相対パスへフォールバック", err);
+    loadViaRelativeFallback_();
+    updateSoundUI();
+    return { ok: 0, fail: files.length, mode: "fallback", error: String(err && err.message || err) };
   });
+
+  return audioLoadPromise_;
 }
 
 function updateSoundUI(){
   const nSE = Object.keys(SE).length;
   const nBGM = Object.keys(BGM).length;
   const stText = (nSE || nBGM)
-    ? `効果音 ${nSE}/${SE_TOTAL} ・ BGM ${nBGM}/${BGM_TOTAL} 読み込み済み`
-    : `音未読み込み（「SEフォルダから自動ロード試行」またはフォルダ選択で読込）`;
+    ? `効果音 ${nSE}/${SE_TOTAL} ・ BGM ${nBGM}/${BGM_TOTAL}（Firebase→IndexedDB）`
+    : `音未読み込み（Firebase取得中、またはフォルダ選択で読込）`;
   
   const statEl = $("#mSoundStatus");
   if(statEl) statEl.textContent = "読み込み状態: " + stText;
@@ -2554,8 +2607,8 @@ $("#mBgmVol").oninput = (e)=>{
 };
 
 $("#mAutoLoadBtn").onclick = ()=>{
-  autoLoadRelativeAudio();
-  se("decide");
+  audioLoadPromise_ = null;
+  loadDungeonAudioFromCache_().then(function () { se("decide"); });
 };
 $("#mDirBtn").onclick = ()=> $("#mInputSeDir").click();
 $("#mFileBtn").onclick = ()=> $("#mInputSeFiles").click();

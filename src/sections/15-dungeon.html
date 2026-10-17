@@ -82,12 +82,12 @@
               </div>
 
               <div class="m-box">
-                <h3>📁 音声ファイルの読み込み</h3>
+                <h3>📁 音声（Firebase→IndexedDB）</h3>
                 <p style="font-size:12px;color:var(--muted);margin:0 0 8px">
-                  ゲームに同梱された <code>SE/</code> フォルダの音声を読み込みます。Webサーバーや環境により自動で読めない場合は、下のボタンからフォルダまたはファイルを選択してください。
+                  Firebase 上の音声（/SE）を端末の IndexedDB に保存して再生します。初回のみ取得し、以降はオフラインでも再生できます。手動でフォルダ／ファイルを選ぶこともできます。
                 </p>
                 <div class="btns">
-                  <button id="mAutoLoadBtn" type="button">🔄 SEフォルダから自動ロード試行</button>
+                  <button id="mAutoLoadBtn" type="button">🔄 Firebase音声を再取得</button>
                   <button id="mDirBtn" type="button">📁 フォルダから選ぶ</button>
                   <button id="mFileBtn" type="button">🎶 ファイルを個別選択</button>
                   <input type="file" id="mInputSeDir" webkitdirectory multiple hidden>

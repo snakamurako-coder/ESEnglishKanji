@@ -16,6 +16,9 @@ data/
 
 node_modules/
 
+# 単語迷宮 SE/BGM（デプロイ時に外部から同期・Git追跡しない）
+SE/
+
 # 移植用キーボードリファレンスデータ（ローカル生成物・Git追跡除外）
 keyboard-export/
 standalone-keyboard.html
