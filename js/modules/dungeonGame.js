@@ -978,9 +978,34 @@ function pendingDungeonPoints_() {
   S.st = ensurePointStats_(S.st);
   return Math.max(0, Math.round(S.st.ptsTotal - (S.st.ptsFlushed || 0)));
 }
+
+/** 進行中の清算 Promise（並行呼び出しを1本化） */
+let dungeonFlushInFlight_ = null;
+
+function syncDungeonUserPoints_(userId, newTotal) {
+  if (typeof newTotal !== "number" || !isFinite(newTotal)) return;
+  try {
+    const u = JSON.parse(localStorage.getItem("app_kid_user") || "null");
+    if (u && String(u.id) === String(userId)) {
+      u.points = Math.max(0, Math.round(newTotal));
+      if (typeof window.saveAppKidUserToLocal === "function") window.saveAppKidUserToLocal(u);
+      else localStorage.setItem("app_kid_user", JSON.stringify(u));
+    }
+  } catch (_) {}
+}
+
+/**
+ * 未清算ポイントを口座へ反映。
+ * 重要: pending は送信前に ptsFlushed へ即予約し、終了→塔選択→ホームの連続操作でも二重加算しない。
+ */
 function flushDungeonPointsToAccount_(reason) {
-  const pending = pendingDungeonPoints_();
-  if (!pending || !S || S.practice) {
+  if (dungeonFlushInFlight_) return dungeonFlushInFlight_;
+  if (!S || S.practice) {
+    return Promise.resolve({ earnedPoints: 0, skipped: true });
+  }
+  S.st = ensurePointStats_(S.st);
+  const pending = Math.max(0, Math.round(S.st.ptsTotal - (S.st.ptsFlushed || 0)));
+  if (!pending) {
     return Promise.resolve({ earnedPoints: 0, skipped: true });
   }
   let user = null;
@@ -988,8 +1013,22 @@ function flushDungeonPointsToAccount_(reason) {
   if (!user || !user.id) {
     return Promise.resolve({ earnedPoints: 0, skipped: true, reason: "no-user" });
   }
+
+  // ★ 同期的に予約（この時点で pending は 0 になる）
+  const earned = pending;
+  S.st.ptsFlushed = (S.st.ptsFlushed || 0) + earned;
+  if (!S.st._flushRunId) {
+    S.st._flushRunId = String(Date.now()) + "_" + Math.floor(Math.random() * 1e6);
+  }
+  // セーブがある進行中なら、予約済み ptsFlushed をすぐ永続化（再開時の再清算防止）
+  try {
+    if (S.screen === "explore" || S.screen === "battle") autosave();
+  } catch (_) {}
+
+  // 同一ラン・同一清算水位で submitId を安定化（リトライ時の二重セッション防止）
   const submitId = "dungeon_" + (currentTower && currentTower.id ? currentTower.id : "tower") +
-    "_" + Date.now() + "_" + Math.floor(Math.random() * 1e6);
+    "_" + S.st._flushRunId + "_to" + S.st.ptsFlushed;
+
   const payload = {
     action: "save_learning_session",
     userId: user.id,
@@ -998,51 +1037,75 @@ function flushDungeonPointsToAccount_(reason) {
     unitSheetName: "単語迷宮:" + (currentTower && currentTower.name ? currentTower.name : "百階"),
     learningCategory: "english",
     challengeType: "dungeon",
-    earnedPoints: pending,
+    earnedPoints: earned,
     results: [],
     dungeonMeta: {
       reason: reason || "",
       ptsQuiz: S.st.ptsQuiz,
       ptsFloor: S.st.ptsFloor,
       ptsBoss: S.st.ptsBoss,
+      ptsTotal: S.st.ptsTotal,
+      ptsFlushed: S.st.ptsFlushed,
       cleared: S.cleared,
       floor: S.floor
     }
   };
-  const applyLocal = function (earned, newTotal) {
-    S.st.ptsFlushed = (S.st.ptsFlushed || 0) + earned;
-    if (typeof newTotal === "number" && isFinite(newTotal)) {
-      try {
-        const u = JSON.parse(localStorage.getItem("app_kid_user") || "null");
-        if (u && String(u.id) === String(user.id)) {
-          u.points = newTotal;
-          if (typeof window.saveAppKidUserToLocal === "function") window.saveAppKidUserToLocal(u);
-          else localStorage.setItem("app_kid_user", JSON.stringify(u));
-        }
-      } catch (_) {}
-    }
-  };
+
   const fetcher = (typeof window.gasApiFetchJson === "function")
     ? window.gasApiFetchJson
     : (typeof gasApiFetchJson === "function" ? gasApiFetchJson : null);
-  if (!fetcher) {
-    // オフライン即時加点（ローカルのみ）
+
+  const finishLocalOnly_ = function () {
     const base = Number(user.points) || 0;
-    const newTotal = base + pending;
-    applyLocal(pending, newTotal);
-    return Promise.resolve({ earnedPoints: pending, newTotal: newTotal, localOnly: true });
-  }
-  return fetcher(payload).then(function (d) {
-    const earned = (d && typeof d.earnedPoints === "number") ? d.earnedPoints : pending;
-    applyLocal(earned, d && d.newTotal);
-    return d || { earnedPoints: earned };
-  }).catch(function (err) {
-    console.warn("[dungeon points] flush failed, local fallback", err);
-    const base = Number(user.points) || 0;
-    const newTotal = base + pending;
-    applyLocal(pending, newTotal);
-    return { earnedPoints: pending, newTotal: newTotal, localOnly: true };
+    // sessionStore 未経由時のみローカル加算。既に口座へ載っている場合は上書きしないよう再読込して加算
+    let latest = base;
+    try {
+      const u = JSON.parse(localStorage.getItem("app_kid_user") || "null");
+      if (u && String(u.id) === String(user.id) && typeof u.points === "number") latest = u.points;
+    } catch (_) {}
+    // ptsFlushed 予約済み分がまだ口座に無いときだけ加算するマーカー
+    const markerKey = "dungeon-flush-applied-" + submitId;
+    let already = false;
+    try { already = !!localStorage.getItem(markerKey); } catch (_) {}
+    if (!already) {
+      const newTotal = latest + earned;
+      syncDungeonUserPoints_(user.id, newTotal);
+      try { localStorage.setItem(markerKey, "1"); } catch (_) {}
+      return { earnedPoints: earned, newTotal: newTotal, localOnly: true };
+    }
+    return { earnedPoints: earned, newTotal: latest, localOnly: true, alreadyApplied: true };
+  };
+
+  dungeonFlushInFlight_ = Promise.resolve().then(function () {
+    if (!fetcher) return finishLocalOnly_();
+    return fetcher(payload).then(function (d) {
+      // ptsFlushed は予約済み。口座残高だけ同期する（再加算しない）
+      if (d && d.alreadyProcessed) {
+        if (typeof d.newTotal === "number") syncDungeonUserPoints_(user.id, d.newTotal);
+        try { localStorage.setItem("dungeon-flush-applied-" + submitId, "1"); } catch (_) {}
+        return d;
+      }
+      if (d && typeof d.newTotal === "number") {
+        syncDungeonUserPoints_(user.id, d.newTotal);
+        try { localStorage.setItem("dungeon-flush-applied-" + submitId, "1"); } catch (_) {}
+        return d || { earnedPoints: earned, newTotal: d.newTotal };
+      }
+      // サーバーが newTotal を返さない場合も、sessionStore 側で既に加算済みの可能性がある
+      try { localStorage.setItem("dungeon-flush-applied-" + submitId, "1"); } catch (_) {}
+      return d || { earnedPoints: earned };
+    }).catch(function (err) {
+      console.warn("[dungeon points] flush failed, local fallback", err);
+      return finishLocalOnly_();
+    });
+  }).then(function (res) {
+    dungeonFlushInFlight_ = null;
+    return res;
+  }, function (err) {
+    dungeonFlushInFlight_ = null;
+    throw err;
   });
+
+  return dungeonFlushInFlight_;
 }
 
 const pAtk=L=>CFG.atk0+CFG.atkLv*(L-1);
@@ -2000,7 +2063,7 @@ function winExploreMenuTimeUp_(){
     '</div></div>';
   const sq = $("#btnSaveQuit");
   if (sq) sq.onclick = function () {
-    try { autosave(); } catch (_) {}
+    // 清算→ptsFlushed込みでセーブは backToTowerSelect 内で行う（先セーブだと再付与の原因になる）
     stopAllBgm_();
     backToTowerSelect();
   };
@@ -2030,7 +2093,7 @@ function winExploreMenu(){
   $("#eqb").onclick=winEquip;
   const sq = $("#btnSaveQuit");
   if (sq) sq.onclick = function () {
-    try { autosave(); } catch (_) {}
+    // 清算→ptsFlushed込みセーブは backToTowerSelect 内（先セーブによる二重清算を防止）
     stopAllBgm_();
     backToTowerSelect();
   };
@@ -4856,9 +4919,9 @@ if (document.readyState === 'loading') {
    ========================================================================== */
 function handleTopBack() {
   if (S && S.screen && (S.screen === "explore" || S.screen === "battle")) {
-    if (confirm("塔の選択画面に戻りますか？\n（現在の進行状況はセーブされます）")) {
-      autosave();
+    if (confirm("塔の選択画面に戻りますか？\n（ポイントを清算し、進行状況をセーブします）")) {
       if (window.AppKeyboard) AppKeyboard.hide();
+      // flush→autosave は backToTowerSelect 内で実施
       backToTowerSelect();
     }
   } else {
