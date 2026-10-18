@@ -13644,6 +13644,184 @@ var global = typeof window !== 'undefined' ? window : this;
         return `<option value="${f.value}">${f.label}</option>`;
       }).join('');
       updateAnswerTypeUI();
+      const dungeonNote = document.getElementById("dungeon-practice-settings-note");
+      if (dungeonNote) dungeonNote.remove();
+    }
+
+    /**
+     * 単語迷宮の塔選択「難易度別練習」から通常学習モード（設定画面）を起動する。
+     * 迷宮UIは終了し、自由学習と同じ設定→スタートの流れになる。
+     */
+    function startEnglishLearnerFromDungeon(opts) {
+      opts = opts || {};
+      const unitName = String(opts.unitName || "").trim();
+      const format = String(opts.format || "ja_to_en");
+      const ansType = String(opts.ansType || "4choice");
+      const modeKind = String(opts.modeKind || "vocab");
+      const difficulty = Math.max(1, Math.min(10, Math.round(Number(opts.difficulty) || 1)));
+      const label = String(opts.label || ("難易度 " + difficulty));
+      const towerName = String(opts.towerName || "");
+
+      if (!unitName) {
+        alert("練習する単元が指定されていません。");
+        return;
+      }
+
+      document.body.classList.remove("in-dungeon-game");
+      try {
+        if (window.AppKeyboard && typeof AppKeyboard.hide === "function") AppKeyboard.hide();
+      } catch (_e) {}
+
+      const dungeonSec = document.getElementById("section-dungeon");
+      if (dungeonSec) {
+        dungeonSec.classList.remove("active");
+        dungeonSec.style.display = "none";
+      }
+
+      // 設定画面へ遷移し、読み込み中を示す
+      switchSection("section-settings");
+      const titleEl = document.getElementById("settings-title");
+      if (titleEl) {
+        titleEl.textContent = "📚 単語迷宮の練習を準備中…（" + (towerName || "塔") + " / 難易度" + difficulty + "）";
+      }
+
+      prefetchMaterials().then(function () {
+        const mats = materialsData || [];
+        const unitNorm = (typeof normalizeUnitNameForCompare === "function")
+          ? normalizeUnitNameForCompare(unitName)
+          : String(unitName).toLowerCase();
+
+        let found = null;
+        let fallback = null;
+        for (let i = 0; i < mats.length; i++) {
+          const m = mats[i];
+          if (String(m.category || "").toLowerCase() === "kanji") continue;
+          const units = Array.isArray(m.units) ? m.units : [];
+          const hit = units.find(function (u) {
+            if (String(u) === unitName) return true;
+            if (typeof normalizeUnitNameForCompare === "function") {
+              return normalizeUnitNameForCompare(u) === unitNorm;
+            }
+            return false;
+          });
+          if (!hit) continue;
+          const modeName = String(m.modeName || "");
+          const isVocab = /単語/.test(modeName);
+          const isExpr = /表現/.test(modeName);
+          const cand = { modeId: m.modeId, modeName: modeName, unit: String(hit) };
+          if (!fallback) fallback = cand;
+          if (modeKind === "vocab" && isVocab) { found = cand; break; }
+          if (modeKind === "expr" && isExpr) { found = cand; break; }
+        }
+        if (!found) found = fallback;
+
+        if (!found) {
+          alert("「" + unitName + "」の教材データが見つかりませんでした。\n英語の自由学習で同じ単元があるか確認してください。");
+          if (typeof openDungeonGame === "function") openDungeonGame();
+          else switchSection("section-dungeon");
+          return;
+        }
+
+        const mId = found.modeId;
+        const mName = found.modeName;
+        const uName = found.unit;
+        const cacheKey = "app_cached_questions_" + mId + "_" + uName;
+        const cached = localStorage.getItem(cacheKey);
+
+        const applyLearnerSettings_ = function () {
+          isTrainingMode = false;
+          currentModeId = mId;
+          currentModeName = mName;
+          currentUnitName = uName;
+          openSettingsScreen();
+
+          const fSelect = document.getElementById("setting-format");
+          if (fSelect) {
+            const hasFmt = Array.from(fSelect.options || []).some(function (o) { return o.value === format; });
+            if (!hasFmt) {
+              // 迷宮用の形式が選択肢に無い場合は追加
+              const opt = document.createElement("option");
+              opt.value = format;
+              opt.textContent = String(opts.qFormat || format);
+              fSelect.appendChild(opt);
+            }
+            fSelect.value = format;
+          }
+          updateAnswerTypeUI();
+          const aSelect = document.getElementById("setting-answer-type");
+          if (aSelect) {
+            const hasAns = Array.from(aSelect.options || []).some(function (o) { return o.value === ansType; });
+            if (!hasAns) {
+              const opt = document.createElement("option");
+              opt.value = ansType;
+              opt.textContent = String(opts.aFormat || ansType);
+              aSelect.appendChild(opt);
+            }
+            aSelect.value = ansType;
+          }
+          toggleBlankSetting();
+
+          const orderEl = document.getElementById("setting-order");
+          if (orderEl) orderEl.value = "random";
+          const playEl = document.getElementById("setting-play-mode");
+          if (playEl) playEl.value = "normal";
+
+          if (titleEl) {
+            titleEl.textContent = "📚 迷宮練習 Lv" + difficulty + " " + label +
+              " ／ 【" + mName + "】" + (typeof formatUnitSheetDisplayLabel === "function"
+                ? formatUnitSheetDisplayLabel(uName) : uName);
+          }
+
+          // 迷宮から来たことが分かる注記
+          let note = document.getElementById("dungeon-practice-settings-note");
+          if (!note) {
+            note = document.createElement("p");
+            note.id = "dungeon-practice-settings-note";
+            note.style.cssText = "text-align:center;color:#90CAF9;font-size:13px;margin:8px auto 0;max-width:420px;line-height:1.45;";
+            const startBtn = document.querySelector("#section-settings .submit-btn");
+            if (startBtn && startBtn.parentNode) {
+              startBtn.parentNode.insertBefore(note, startBtn);
+            } else {
+              const sec = document.getElementById("section-settings");
+              if (sec) sec.appendChild(note);
+            }
+          }
+          note.textContent = "単語迷宮「" + (towerName || "塔") + "」の難易度" + difficulty +
+            "と同じ形式です。内容を確認して「スタート！」を押してください。";
+        };
+
+        const processData = function (d) {
+          if (!d || d.status !== "success" || !Array.isArray(d.questions) || !d.questions.length) {
+            alert("問題データの取得に失敗しました" + (d && d.message ? (": " + d.message) : "。"));
+            if (typeof openDungeonGame === "function") openDungeonGame();
+            return;
+          }
+          currentQuestions = d.questions;
+          applyLearnerSettings_();
+        };
+
+        if (cached) {
+          try {
+            processData(JSON.parse(cached));
+            return;
+          } catch (_e) {}
+        }
+
+        gasApiFetchJson({ action: "get_questions", modeId: mId, unitName: uName })
+          .then(function (d) {
+            if (d && d.status === "success") {
+              try { localStorage.setItem(cacheKey, JSON.stringify(d)); } catch (_e2) {}
+            }
+            processData(d);
+          })
+          .catch(function () {
+            alert("通信エラーが発生しました。もう一度試してください。");
+            if (typeof openDungeonGame === "function") openDungeonGame();
+          });
+      }).catch(function () {
+        alert("教材一覧の読み込みに失敗しました。");
+        if (typeof openDungeonGame === "function") openDungeonGame();
+      });
     }
 
     function updateAnswerTypeUI() {
@@ -16205,6 +16383,8 @@ var global = typeof window !== 'undefined' ? window : this;
         switchSection('section-dungeon');
       }
     };
+
+    global.startEnglishLearnerFromDungeon = startEnglishLearnerFromDungeon;
 
     global.enterParentAdminDungeon = function() {
       switchSection('section-parent-admin-dungeon');

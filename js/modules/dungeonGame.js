@@ -659,13 +659,256 @@ const SCHEMA=[
  ["必殺技・とくぎ",[["spPow","必殺技の威力（通常の何倍か）",3,0.5,50,0.1],["spSureLv","必殺技が必中になるLv",10,1,999,1],["spDrainLv","必殺技が吸収を得るLv",20,1,999,1],["spDrain","必殺技の吸収量（与ダメージの%）",20,0,100,1],["spAllLv","必殺技が全体攻撃になるLv",30,1,999,1],["s1lv","二連切：習得Lv",5,1,999,1],["s1mp","二連切：消費MP",4,0,999,1],["s1pow","二連切：1発の威力（%）",60,1,1000,5],["s2lv","回転切り：習得Lv",10,1,999,1],["s2mp","回転切り：消費MP",6,0,999,1],["s2pow","回転切り：威力（%）",60,1,1000,5],["s3lv","三連斬：習得Lv",15,1,999,1],["s3mp","三連斬：消費MP",8,0,999,1],["s3pow","三連斬：1発の威力（%）",50,1,1000,5],["s4lv","竜巻切り：習得Lv",20,1,999,1],["s4mp","竜巻切り：消費MP",10,0,999,1],["s4pow","竜巻切り：威力（%）",70,1,1000,5]]],
  ["回復",[["stairHeal","階段を降りたときのHP・MP回復（%）",20,0,100,1],["revive","復活の首飾りで戻るHP（%）",50,1,100,1]]],
  ["どうぐ",[["iPot","初期所持：ポーション",3,0,99,1],["iEth","初期所持：まりょくの水",2,0,99,1],["iWing","初期所持：導きのコンパス",1,0,99,1],["iGate","初期所持：さいしんの渦",1,0,99,1],["iNeck","初期所持：復活の首飾り",1,0,99,1],["chestMin","1階あたりの宝箱の数",1,0,10,1],["chest2","宝箱がもう1つ出る確率（%）",40,0,100,1],["dNeck","宝箱：復活の首飾りの確率（%）",1.5,0,100,0.1],["dPot","宝箱：ポーションの比率",50,0,1000,1],["dEth","宝箱：まりょくの水の比率",28,0,1000,1],["dWing","宝箱：コンパスの比率",12,0,1000,1],["dGate","宝箱：さいしんの渦の比率",10,0,1000,1]]],
- ["学習ポイント",[["ptQuiz","正解時：難易度(1〜10)×この値",1,0,999,1],["ptFloor","踏破時：階層(1〜100)×この値",150,0,9999,1],["ptBoss","守護竜撃退：階層(10,20,…,100)×この値",50,0,9999,1]]]
+ ["学習ポイント",[["ptQuiz","正解時：難易度(1〜10)×この値",1,0,999,1],["ptFloor","踏破時：階層(1〜100)×この値",150,0,9999,1],["ptBoss","守護竜撃退：階層(10,20,…,100)×この値",50,0,9999,1]]],
+ ["プレイ時間上限（分/日）",[
+   ["playLim1","月曜",10,0,600,1],["playLim2","火曜",10,0,600,1],["playLim3","水曜",10,0,600,1],
+   ["playLim4","木曜",10,0,600,1],["playLim5","金曜",10,0,600,1],
+   ["playLim6","土曜",60,0,600,1],["playLim0","日曜",60,0,600,1]
+ ]],
+ ["階ごとの最低難易度（これ未満は選べない）",[
+   ["diffMinBand0","1〜5階",1,1,10,1],["diffMinBand1","6〜10階",2,1,10,1],["diffMinBand2","11〜15階",3,1,10,1],
+   ["diffMinBand3","16〜20階",4,1,10,1],["diffMinBand4","21〜25階",5,1,10,1],["diffMinBand5","26〜30階",6,1,10,1],
+   ["diffMinBand6","31〜35階",7,1,10,1],["diffMinBand7","36〜40階",8,1,10,1],["diffMinBand8","41〜45階",9,1,10,1],
+   ["diffMinBand9","46〜50階",10,1,10,1],["diffMinBand10","51階以降（1＝全難易度フリー）",1,1,10,1]
+ ]]
 ];
 const DEF={}; SCHEMA.forEach(g=>g[1].forEach(r=>{DEF[r[0]]=r[2]}));
 const CFG=Object.assign({},DEF), CKEY="tango-meikyu-v1-cfg";
 function setCfg(o){if(o)for(const k in DEF)if(typeof o[k]==="number"&&isFinite(o[k]))CFG[k]=o[k]}
 function saveCfg(){try{localStorage.setItem(CKEY,JSON.stringify(CFG))}catch(e){}}
 try{setCfg(JSON.parse(localStorage.getItem(CKEY)))}catch(e){}
+
+/* ---- 階ごとの選択可能難易度 ---- */
+function getDiffMinForFloor_(floor) {
+  const f = Math.max(1, Math.min(100, Math.round(Number(floor) || 1)));
+  if (f >= 51) {
+    const v = Number(CFG.diffMinBand10);
+    return Math.max(1, Math.min(10, isFinite(v) ? v : 1));
+  }
+  const band = Math.min(9, Math.floor((f - 1) / 5));
+  const v = Number(CFG["diffMinBand" + band]);
+  const fallback = band + 1;
+  return Math.max(1, Math.min(10, isFinite(v) ? v : fallback));
+}
+function getAllowedDiffRange_(floor) {
+  const min = getDiffMinForFloor_(floor);
+  return { min: min, max: 10 };
+}
+function clampDiffToFloor_() {
+  if (!S) return;
+  const range = getAllowedDiffRange_(S.floor || 1);
+  let d = Math.round(Number(S.diff) || 5);
+  if (d < range.min) d = range.min;
+  if (d > range.max) d = range.max;
+  S.diff = d;
+}
+
+/* ---- 曜日別プレイ時間上限 ---- */
+function getDungeonUserId_() {
+  try {
+    const u = JSON.parse(localStorage.getItem("app_kid_user") || "null");
+    if (u && u.id) return String(u.id);
+  } catch (_) {}
+  return "guest";
+}
+function getDungeonUserName_() {
+  try {
+    const u = JSON.parse(localStorage.getItem("app_kid_user") || "null");
+    if (u && u.name) return String(u.name);
+  } catch (_) {}
+  return "プレイヤー";
+}
+function todayStrLocal_() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return y + "-" + m + "-" + day;
+}
+function playLimitMinutesToday_() {
+  const dow = new Date().getDay(); // 0=日 … 6=土
+  const key = "playLim" + dow;
+  const v = Number(CFG[key]);
+  if (!isFinite(v) || v < 0) return dow === 0 || dow === 6 ? 60 : 10;
+  return v;
+}
+function playTimeStorageKey_() {
+  return "tango-meikyu-playtime-" + getDungeonUserId_();
+}
+function loadPlayTimeState_() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(playTimeStorageKey_()) || "null");
+    const today = todayStrLocal_();
+    if (raw && raw.date === today && typeof raw.usedMs === "number") {
+      return { date: today, usedMs: Math.max(0, raw.usedMs) };
+    }
+  } catch (_) {}
+  return { date: todayStrLocal_(), usedMs: 0 };
+}
+function savePlayTimeState_(st) {
+  try { localStorage.setItem(playTimeStorageKey_(), JSON.stringify(st)); } catch (_) {}
+}
+function getPlayRemainMs_() {
+  const limitMs = playLimitMinutesToday_() * 60 * 1000;
+  const st = loadPlayTimeState_();
+  return Math.max(0, limitMs - (st.usedMs || 0));
+}
+function isPlayTimeExhausted_() {
+  if (S && S.practice) return false;
+  return getPlayRemainMs_() <= 0;
+}
+function accumulatePlayMs_(ms) {
+  if (!ms || ms < 0) return;
+  if (S && S.practice) return;
+  if (!isDungeonActive()) return;
+  if (!S || (S.screen !== "explore" && S.screen !== "battle")) return;
+  const st = loadPlayTimeState_();
+  st.usedMs = (st.usedMs || 0) + ms;
+  savePlayTimeState_(st);
+}
+function formatRemainClock_(ms) {
+  const totalSec = Math.max(0, Math.ceil(ms / 1000));
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  return m + ":" + String(s).padStart(2, "0");
+}
+function updatePlayTimeHud_() {
+  const els = document.querySelectorAll("#playTimeRemain, .play-time-remain");
+  if (!els.length) return;
+  const remain = getPlayRemainMs_();
+  const exhausted = remain <= 0 && !(S && S.practice);
+  const text = exhausted ? "残り 0:00（本日終了）" : ("残り " + formatRemainClock_(remain));
+  els.forEach(function (el) {
+    el.textContent = text;
+    el.classList.toggle("is-exhausted", exhausted);
+  });
+}
+let playTimeTickTimer_ = null;
+function ensurePlayTimeTicker_() {
+  if (playTimeTickTimer_) return;
+  playTimeTickTimer_ = setInterval(function () {
+    if (!isDungeonActive()) return;
+    accumulatePlayMs_(1000);
+    updatePlayTimeHud_();
+    if (isPlayTimeExhausted_() && S && S.screen === "explore") {
+      // 移動不可になったことを一度だけ案内
+      const w = winEl();
+      if (w && !w.querySelector("#btnSaveQuit")) {
+        try { winExploreMenuTimeUp_(); } catch (_) {}
+      }
+    }
+  }, 1000);
+}
+
+/* ---- 塔ランキング（最深踏破） ---- */
+const RANK_LOCAL_KEY_ = "tango-meikyu-rankings-v1";
+function loadRankingsLocal_() {
+  try { return JSON.parse(localStorage.getItem(RANK_LOCAL_KEY_) || "{}") || {}; } catch (_) { return {}; }
+}
+function saveRankingsLocal_(all) {
+  try { localStorage.setItem(RANK_LOCAL_KEY_, JSON.stringify(all || {})); } catch (_) {}
+}
+function mergeRankingEntry_(list, entry, limit) {
+  const lim = limit || 20;
+  const arr = Array.isArray(list) ? list.slice() : [];
+  const uid = String(entry.userId || "");
+  const filtered = arr.filter(function (r) { return String(r.userId) !== uid; });
+  filtered.push({
+    userId: uid,
+    name: String(entry.name || "プレイヤー"),
+    floor: Math.max(0, Math.round(Number(entry.floor) || 0)),
+    lv: Math.max(1, Math.round(Number(entry.lv) || 1)),
+    at: String(entry.at || new Date().toISOString())
+  });
+  filtered.sort(function (a, b) {
+    if (b.floor !== a.floor) return b.floor - a.floor;
+    return String(b.at).localeCompare(String(a.at));
+  });
+  return filtered.slice(0, lim);
+}
+function submitTowerRanking_(towerId, floor, lv) {
+  if (!towerId || !floor || floor < 1) return Promise.resolve();
+  const entry = {
+    userId: getDungeonUserId_(),
+    name: getDungeonUserName_(),
+    floor: floor,
+    lv: lv || 1,
+    at: new Date().toISOString()
+  };
+  const localAll = loadRankingsLocal_();
+  const prev = localAll[towerId] || [];
+  const bestPrev = prev.find(function (r) { return String(r.userId) === entry.userId; });
+  if (bestPrev && bestPrev.floor > entry.floor) {
+    // 自己ベスト更新なし
+  } else {
+    localAll[towerId] = mergeRankingEntry_(prev, entry, 20);
+    saveRankingsLocal_(localAll);
+  }
+
+  const db = (typeof getFirestoreDb === "function") ? getFirestoreDb() : (window.firebaseDb || null);
+  if (!db) return Promise.resolve(localAll[towerId] || []);
+  const ref = db.collection("system").doc("dungeon_rankings");
+  return ref.get().then(function (doc) {
+    const data = doc.exists ? (doc.data() || {}) : {};
+    const towers = data.towers && typeof data.towers === "object" ? data.towers : {};
+    const merged = mergeRankingEntry_(towers[towerId] || localAll[towerId] || [], entry, 20);
+    // 自己ベストより浅いならクラウドも更新しない
+    const mine = (towers[towerId] || []).find(function (r) { return String(r.userId) === entry.userId; });
+    if (mine && mine.floor > entry.floor) return towers[towerId];
+    towers[towerId] = merged;
+    localAll[towerId] = merged;
+    saveRankingsLocal_(localAll);
+    return ref.set({
+      towers: towers,
+      updatedAt: (typeof firebase !== "undefined" && firebase.firestore && firebase.firestore.FieldValue)
+        ? firebase.firestore.FieldValue.serverTimestamp() : new Date().toISOString()
+    }, { merge: true }).then(function () { return merged; });
+  }).catch(function () {
+    return localAll[towerId] || [];
+  });
+}
+function fetchTowerRanking_(towerId) {
+  const local = (loadRankingsLocal_()[towerId]) || [];
+  const db = (typeof getFirestoreDb === "function") ? getFirestoreDb() : (window.firebaseDb || null);
+  if (!db) return Promise.resolve(local);
+  return db.collection("system").doc("dungeon_rankings").get().then(function (doc) {
+    if (!doc.exists) return local;
+    const data = doc.data() || {};
+    const list = data.towers && data.towers[towerId] ? data.towers[towerId] : local;
+    const all = loadRankingsLocal_();
+    all[towerId] = list;
+    saveRankingsLocal_(all);
+    return list;
+  }).catch(function () { return local; });
+}
+function formatRankAt_(iso) {
+  try {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return String(iso || "");
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    const hh = String(d.getHours()).padStart(2, "0");
+    const mm = String(d.getMinutes()).padStart(2, "0");
+    return y + "/" + m + "/" + day + " " + hh + ":" + mm;
+  } catch (_) { return ""; }
+}
+function renderRankingHtml_(list) {
+  if (!list || !list.length) {
+    return '<div class="dungeon-rank-box"><div class="dungeon-rank-title">🏆 最深踏破ランキング</div><p class="dungeon-rank-empty">まだ記録がありません</p></div>';
+  }
+  const rows = list.slice(0, 10).map(function (r, i) {
+    return '<li><span class="rk">' + (i + 1) + '</span><span class="nm">' + escapeHtmlDungeon_(r.name) +
+      '</span><span class="fl">地下' + r.floor + '階</span><span class="lv">Lv' + r.lv +
+      '</span><span class="at">' + escapeHtmlDungeon_(formatRankAt_(r.at)) + '</span></li>';
+  }).join("");
+  return '<div class="dungeon-rank-box"><div class="dungeon-rank-title">🏆 最深踏破ランキング</div><ol class="dungeon-rank-list">' + rows + '</ol></div>';
+}
+function escapeHtmlDungeon_(s) {
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
 
 /** 学習ポイント集計の初期値（踏破＝階段クリアした階。到達だけでは加算しない） */
 function emptyPointStats_() {
@@ -958,8 +1201,11 @@ function resume(){
   forceBgmRestart_();
 }
 function enterFloor(msg){
+  clampDiffToFloor_();
   genFloor(S.floor);S.screen="explore";S.b=null;log(msg);
   render();curtain("地下 "+S.floor+" 階");
+  ensurePlayTimeTicker_();
+  updatePlayTimeHud_();
   winExplore(S.floor%10===0?"つよい けはいが する…":"どちらへ すすむ？");
   forceBgmRestart_();
 }
@@ -970,6 +1216,10 @@ function autosave(){
   // 各塔につき進行中セーブは1件（上書き）
   REC.save={floor:S.floor,cleared:S.cleared,diff:S.diff,p:clone(S.p),st:clone(S.st)};
   saveRec();
+  // 進行中の最深踏破もランキングに反映
+  if (S.cleared > 0 && currentTower && currentTower.id) {
+    try { submitTowerRanking_(currentTower.id, S.cleared, S.p && S.p.lv); } catch (_) {}
+  }
 }
 
 /* ==========================================================================
@@ -1539,7 +1789,8 @@ let choiceIndex = 0; // 4択クイズの選択肢インデックス (0..3)
 let curDiffRefresh = null; // 現在の難易度再描画コールバック
 
 function changeDiff(delta){
-  const nextDiff = Math.max(1, Math.min(10, S.diff + delta));
+  const range = getAllowedDiffRange_(S.floor || 1);
+  let nextDiff = Math.max(range.min, Math.min(range.max, S.diff + delta));
   if(nextDiff !== S.diff){
     S.diff = nextDiff;
     se("select");
@@ -1548,6 +1799,8 @@ function changeDiff(delta){
     } else {
       updatePadFocus();
     }
+  } else {
+    se("disabled");
   }
 }
 
@@ -1627,17 +1880,32 @@ function winEnd(){
 }
 
 function diffRow(){
+  clampDiffToFloor_();
+  const range = getAllowedDiffRange_(S.floor || 1);
   let h='<div class="diff"><span class="dtitle">難易度</span>';
-  for(let n=1;n<=10;n++) h+='<button type="button" class="dchip'+(n===S.diff?" on":"")+'" data-l="'+n+'" aria-label="難易度'+n+'">'+n+'</button>';
+  for(let n=1;n<=10;n++){
+    const allowed = n >= range.min && n <= range.max;
+    h += '<button type="button" class="dchip' + (n === S.diff ? " on" : "") + (allowed ? "" : " locked") +
+      '" data-l="' + n + '"' + (allowed ? "" : " disabled") +
+      ' aria-label="難易度' + n + (allowed ? "" : "（この階では選べません）") + '">' + n + '</button>';
+  }
   h+='<span class="dnav-hint">◀▶選択 / ▼コマンド</span></div>';
   const lvName = (typeof LV_INFO !== "undefined" && LV_INFO[S.diff]) ? LV_INFO[S.diff].name : ("Lv " + S.diff);
-  return h+'<p class="dnote">'+lvName+'・正解で効果 '+bonus(S.diff)+'%＋速さ補正（不正解は '+CFG.base+'%）</p>';
+  const lockNote = range.min > 1
+    ? '（この階は難易度 ' + range.min + '〜' + range.max + '）'
+    : '';
+  return h+'<p class="dnote">'+lvName+'・正解で効果 '+bonus(S.diff)+'%＋速さ補正（不正解は '+CFG.base+'%）'+lockNote+'</p>';
 }
 function bindDiff(refresh){
   const w=winEl(); if(!w) return;
   curDiffRefresh = refresh;
+  clampDiffToFloor_();
   w.querySelectorAll(".dchip").forEach(b=>b.onclick=()=>{
-    S.diff=+b.dataset.l;
+    if (b.disabled || b.classList.contains("locked")) { se("disabled"); return; }
+    const range = getAllowedDiffRange_(S.floor || 1);
+    let next = +b.dataset.l;
+    if (next < range.min || next > range.max) { se("disabled"); return; }
+    S.diff = next;
     refresh();
     updatePadFocus();
   });
@@ -1656,6 +1924,10 @@ function winNext(t){
 function winExplore(t){
   clearQuizState();
   const w=winEl(); if(!w) return;
+  if (isPlayTimeExhausted_()) {
+    winExploreMenuTimeUp_();
+    return;
+  }
   w.innerHTML='<div class="explore-idle"><p class="msg">'+t+'</p><div class="explore-nav-bar"><span class="nav-hint">🧭 十字キーで移動</span><button id="btnOpenMenu" type="button" class="btn-field-menu">📋 メニュー [START/＋]</button></div></div>';
   const b=$("#btnOpenMenu");
   if(b) b.onclick=()=>winExploreMenu();
@@ -1663,17 +1935,47 @@ function winExplore(t){
   updatePadFocus();
 }
 
+function winExploreMenuTimeUp_(){
+  const w=winEl(); if(!w) return;
+  w.innerHTML='<div class="explore-menu"><p class="msg" style="color:var(--danger);font-weight:bold;">⏰ きょうのプレイ時間が終わりました</p>'+
+    '<p class="msg" style="font-size:13px;color:var(--muted);">移動はできません。セーブして終了してください。</p><div class="btns">'+
+    '<button id="btnSaveQuit" type="button" style="background:var(--gold);color:#000;font-weight:bold;">💾 セーブして塔選択へ</button>'+
+    '<button id="btnSystemSettings" type="button">⚙️ せってい</button>'+
+    '</div></div>';
+  const sq = $("#btnSaveQuit");
+  if (sq) sq.onclick = function () {
+    try { autosave(); } catch (_) {}
+    stopAllBgm_();
+    backToTowerSelect();
+  };
+  const setBtn = $("#btnSystemSettings");
+  if (setBtn) setBtn.onclick = function () { openMenu(); };
+  padFocusRow = 1; padBtnIndex = 0; curDiffRefresh = null;
+  updatePadFocus();
+}
+
 function winExploreMenu(){
   se("menu_open");
   const w=winEl(); if(!w) return;
+  if (isPlayTimeExhausted_()) {
+    winExploreMenuTimeUp_();
+    return;
+  }
   w.innerHTML='<div class="explore-menu"><p class="msg">📋 探索メニュー</p><div class="btns">'+
     '<button id="bag" type="button">🎒 どうぐ</button>'+
     '<button id="eqb" type="button">🛡️ そうび'+(needEquip()?'<span class="badge">NEW</span>':'')+'</button>'+
+    '<button id="btnSaveQuit" type="button">💾 セーブして塔選択へ</button>'+
     '<button id="btnSystemSettings" type="button">⚙️ せってい<small>[SELECT / ー]</small></button>'+
     '<button id="btnCloseMenu" type="button">◀ とじる<small>[Bボタン]</small></button>'+
     '</div></div>';
   $("#bag").onclick=()=>winItems("どちらへ すすむ？");
   $("#eqb").onclick=winEquip;
+  const sq = $("#btnSaveQuit");
+  if (sq) sq.onclick = function () {
+    try { autosave(); } catch (_) {}
+    stopAllBgm_();
+    backToTowerSelect();
+  };
   $("#btnSystemSettings").onclick=()=>openMenu();
   $("#btnCloseMenu").onclick=()=>{
     se("cancel");
@@ -1687,6 +1989,11 @@ function toggleFieldMenu(){
   if(S.screen!=="explore") return;
   const w=winEl();
   if(w && w.querySelector(".explore-menu")){
+    if (isPlayTimeExhausted_()) {
+      se("disabled");
+      winExploreMenuTimeUp_();
+      return;
+    }
     se("cancel");
     winExplore("どちらへ すすむ？");
   } else {
@@ -2387,6 +2694,11 @@ function moveMonsters(){
 
 function move(dx,dy){
   if(S.screen!=="explore")return;
+  if(isPlayTimeExhausted_()){
+    se("disabled");
+    try { winExploreMenuTimeUp_(); } catch (_) {}
+    return;
+  }
   const m=S.map, nx=m.px+dx, ny=m.py+dy, i=ny*W+nx;
   if(nx<0||ny<0||nx>=W||ny>=H||m.cells[i]!==0){ se("disabled"); return; }
   haptic(15);
@@ -2446,6 +2758,10 @@ function finishRun(kind){
     ptsPending: pendingDungeonPoints_()
   };
   if (!S.practice && S.floor > REC.best) { REC.best = S.floor; r.isNew = true; saveRec(); }
+  // 最深踏破ランキング（踏破済み階＝cleared）を提出
+  if (!S.practice && r.cleared > 0 && currentTower && currentTower.id) {
+    try { submitTowerRanking_(currentTower.id, r.cleared, r.lv); } catch (_) {}
+  }
   if (kind === "over" || kind === "clear") {
     // ラン終了時はセーブを消す（コンパスで戻れる踏破階は REC に残さない＝新規スタート想定）
     if (!S.practice) { REC.save = null; saveRec(); }
@@ -2648,8 +2964,13 @@ function handleButtonB(){
   }
   const w = winEl(); if(!w) return;
 
-  // 探索メニューが開いていれば閉じる
+  // 探索メニューが開いていれば閉じる（時間切れ時はセーブ画面を維持）
   if(S.screen === "explore" && w.querySelector(".explore-menu")){
+    if (isPlayTimeExhausted_()) {
+      se("disabled");
+      winExploreMenuTimeUp_();
+      return;
+    }
     se("cancel");
     winExplore("どちらへ すすむ？");
     return;
@@ -2713,6 +3034,8 @@ function applyLayout(){
 
   bindPadButtons();
   render();
+  ensurePlayTimeTicker_();
+  updatePlayTimeHud_();
 
   // 現在の画面に応じたウィンドウを確実に再描画
   if(S.screen === "title"){
@@ -2732,7 +3055,7 @@ function renderGameBoyHTML(root){
       <header class="top-nav">
         <div class="top-left">
           <button class="btn-back-menu" id="topBackBtn" type="button" aria-label="戻る">◀ 戻る</button>
-          <h1 class="game-title">単語迷宮<small>百階</small></h1>
+          <h1 class="game-title">単語迷宮<small>百階</small><span id="playTimeRemain" class="play-time-remain" aria-live="polite">残り —</span></h1>
         </div>
         <div class="top-right">
           <div class="best-tag">最高 <b id="best">—</b></div>
@@ -2821,7 +3144,7 @@ function renderSwitchHTML(root){
       <header class="top-nav">
         <div class="top-left">
           <button class="btn-back-menu" id="topBackBtn" type="button" aria-label="戻る">◀ 戻る</button>
-          <h1 class="game-title">単語迷宮<small>百階</small></h1>
+          <h1 class="game-title">単語迷宮<small>百階</small><span id="playTimeRemain" class="play-time-remain" aria-live="polite">残り —</span></h1>
         </div>
         <div class="top-right">
           <div class="best-tag">最高 <b id="best">—</b></div>
@@ -4545,6 +4868,127 @@ function startDungeonWithTower(towerId, startFloor, isPractice) {
   bindDungeonBgmUnlockOnce_();
 }
 
+/** 迷宮難易度 → 通常学習モードの出題設定 */
+function getDungeonDiffPracticeConfig_(lv) {
+  const L = Math.max(1, Math.min(10, Math.round(Number(lv) || 1)));
+  const info = (typeof LV_INFO !== "undefined" && LV_INFO[L]) ? LV_INFO[L] : null;
+  const label = info ? info.name : ("難易度 " + L);
+  const map = {
+    1:  { modeKind: "vocab", format: "ja_to_en",      ansType: "4choice",     qFormat: "日本語→英単語", aFormat: "4択" },
+    2:  { modeKind: "vocab", format: "en_to_ja",      ansType: "4choice",     qFormat: "英単語→日本語", aFormat: "4択" },
+    3:  { modeKind: "vocab", format: "ja_to_en",      ansType: "fill_typing", qFormat: "日本語→英単語", aFormat: "穴埋めタイピング" },
+    4:  { modeKind: "vocab", format: "ja_to_en",      ansType: "voice",       qFormat: "日本語→英単語", aFormat: "音声" },
+    5:  { modeKind: "vocab", format: "ja_to_en",      ansType: "typing",      qFormat: "日本語→英単語", aFormat: "タイピング" },
+    6:  { modeKind: "expr",  format: "ja_to_en_sort", ansType: "sort_all",    qFormat: "日本語→英語（並び替え）", aFormat: "すべて用いる" },
+    7:  { modeKind: "expr",  format: "ja_to_en_sort", ansType: "sort_dummy",  qFormat: "日本語→英語（並び替え）", aFormat: "不要語混入" },
+    8:  { modeKind: "expr",  format: "ja_to_en_sort", ansType: "sort_missing",qFormat: "日本語→英語（並び替え）", aFormat: "不足語補足" },
+    9:  { modeKind: "expr",  format: "ja_to_en",      ansType: "voice",       qFormat: "日本語→英単語", aFormat: "音声" },
+    10: { modeKind: "expr",  format: "ja_to_en",      ansType: "typing",      qFormat: "日本語→英単語", aFormat: "タイピング" }
+  };
+  const base = map[L] || map[1];
+  return Object.assign({ difficulty: L, label: label }, base);
+}
+
+function getTowerPracticeUnits_(tower, modeKind) {
+  if (!tower) return [];
+  if (modeKind === "expr") {
+    if (Array.isArray(tower.exprUnits) && tower.exprUnits.length > 0) return tower.exprUnits.slice();
+    return (ALL_EXPR_UNITS || []).slice();
+  }
+  if (Array.isArray(tower.vocabUnits) && tower.vocabUnits.length > 0) return tower.vocabUnits.slice();
+  return (ALL_VOCAB_UNITS || []).slice();
+}
+
+function renderTowerPracticeDiffButtons_(towerId) {
+  let h = '<div class="dungeon-practice-diffs">';
+  for (let n = 1; n <= 10; n++) {
+    const cfg = getDungeonDiffPracticeConfig_(n);
+    const short = cfg.modeKind === "vocab" ? "単語" : "表現";
+    h += '<button type="button" class="dungeon-practice-diff-btn" title="' + escapeHtmlDungeon_(cfg.label) +
+      '" onclick="startDungeonDiffPractice(\'' + towerId + '\',' + n + ')">' +
+      '<span class="dp-lv">Lv' + n + '</span><span class="dp-kind">' + short + '</span></button>';
+  }
+  h += '</div>';
+  return h;
+}
+
+function startDungeonDiffPractice(towerId, difficulty) {
+  loadTowers();
+  const tower = TOWERS.find(function (t) { return t.id === towerId; }) || TOWERS[0];
+  if (!tower) {
+    alert("塔が見つかりません。");
+    return;
+  }
+  const cfg = getDungeonDiffPracticeConfig_(difficulty);
+  const units = getTowerPracticeUnits_(tower, cfg.modeKind);
+  if (!units.length) {
+    alert((cfg.modeKind === "expr" ? "表現" : "単語") + "の単元がありません。塔の教材設定を確認してください。");
+    return;
+  }
+  if (units.length === 1) {
+    launchDungeonDiffPractice_(tower, units[0], cfg);
+    return;
+  }
+  // 複数単元 → カード内で単元選択
+  const card = document.querySelector('.dungeon-tower-card[data-tower-id="' + towerId + '"]');
+  const host = card && card.querySelector(".dungeon-practice-unit-host");
+  if (!host) {
+    launchDungeonDiffPractice_(tower, units[0], cfg);
+    return;
+  }
+  host.style.display = "block";
+  host.innerHTML =
+    '<p class="dungeon-practice-unit-title">難易度 ' + cfg.difficulty + '（' + escapeHtmlDungeon_(cfg.label) + '）の単元をえらんでね</p>' +
+    '<div class="dungeon-practice-unit-list">' +
+    units.map(function (u) {
+      return '<button type="button" class="dungeon-btn dungeon-practice-unit-btn" data-unit="' +
+        escapeHtmlDungeon_(u).replace(/"/g, "&quot;") + '">' + escapeHtmlDungeon_(u) + "</button>";
+    }).join("") +
+    '</div>' +
+    '<button type="button" class="dungeon-btn" style="margin-top:8px;font-size:12px;" data-cancel="1">やめる</button>';
+  host.querySelectorAll(".dungeon-practice-unit-btn").forEach(function (btn) {
+    btn.onclick = function () {
+      const unit = btn.getAttribute("data-unit") || btn.textContent;
+      launchDungeonDiffPractice_(tower, unit, cfg);
+    };
+  });
+  const cancel = host.querySelector("[data-cancel]");
+  if (cancel) {
+    cancel.onclick = function () {
+      host.style.display = "none";
+      host.innerHTML = "";
+    };
+  }
+  try { host.scrollIntoView({ block: "nearest", behavior: "smooth" }); } catch (_) {}
+}
+
+function launchDungeonDiffPractice_(tower, unitName, cfg) {
+  try { stopAllBgm_(); } catch (_) {}
+  document.body.classList.remove("in-dungeon-game");
+  if (window.AppKeyboard) {
+    try { AppKeyboard.hide(); } catch (_) {}
+  }
+  const launcher = (typeof window.startEnglishLearnerFromDungeon === "function")
+    ? window.startEnglishLearnerFromDungeon
+    : null;
+  if (!launcher) {
+    alert("通常の学習モードを起動できませんでした。ページを再読み込みしてください。");
+    return;
+  }
+  launcher({
+    towerId: tower.id,
+    towerName: tower.name,
+    unitName: unitName,
+    difficulty: cfg.difficulty,
+    label: cfg.label,
+    modeKind: cfg.modeKind,
+    format: cfg.format,
+    ansType: cfg.ansType,
+    qFormat: cfg.qFormat,
+    aFormat: cfg.aFormat
+  });
+}
+
 function renderTowerCards() {
   const listEl = document.getElementById("dungeon-tower-list");
   if (!listEl) return;
@@ -4553,13 +4997,15 @@ function renderTowerCards() {
   // 旧セーブ移行は1回だけ（先頭塔へ）
   if (TOWERS[0]) migrateLegacyRecIfNeeded_(TOWERS[0].id);
 
+  const localAll = loadRankingsLocal_();
   listEl.innerHTML = TOWERS.map(tower => {
     const rec = loadTowerRec(tower.id);
     const hasSave = !!(rec.save && rec.save.floor);
     const isCleared = rec.best >= (tower.maxFloor || 100);
+    const localRank = localAll[tower.id] || [];
 
     return `
-      <div class="dungeon-tower-card ${isCleared ? 'best-cleared' : ''}">
+      <div class="dungeon-tower-card ${isCleared ? 'best-cleared' : ''}" data-tower-id="${tower.id}">
         <div>
           <h2 class="dungeon-tower-title">🏰 ${tower.name}</h2>
           <p class="dungeon-tower-desc">${tower.desc || '問題に挑戦して最深階を目指そう！'}</p>
@@ -4569,6 +5015,13 @@ function renderTowerCards() {
           <span>最大: <b>${tower.maxFloor || 100}階</b></span>
           <span>セーブ: <b>${hasSave ? '地下 ' + rec.save.floor + ' 階' : 'なし（各塔1件）'}</b></span>
         </div>
+        <div class="dungeon-rank-host" data-rank-for="${tower.id}">${renderRankingHtml_(localRank)}</div>
+        <div class="dungeon-practice-box">
+          <div class="dungeon-practice-title">📚 難易度別練習（通常の学習モード）</div>
+          <p class="dungeon-practice-hint">迷宮と同じ形式で、設定画面からスタートできます</p>
+          ${renderTowerPracticeDiffButtons_(tower.id)}
+          <div class="dungeon-practice-unit-host" style="display:none;"></div>
+        </div>
         <div style="display:flex;gap:8px;margin-top:12px;">
           ${hasSave ? `<button type="button" class="dungeon-btn" style="flex:1;background:var(--gold);color:#000;font-weight:bold;font-size:13px;padding:6px;" onclick="startDungeonWithTower('${tower.id}')">▶ つづきから（地下 ${rec.save.floor} 階）</button>` : ''}
           <button type="button" class="dungeon-btn" style="flex:1;background:${hasSave ? '#201f30' : 'var(--gold)'};color:${hasSave ? '#fff' : '#000'};font-weight:bold;font-size:13px;padding:6px;" onclick="startDungeonWithTower('${tower.id}', 1, false)">${hasSave ? '最初から' : '⚔️ 挑戦する'}</button>
@@ -4576,6 +5029,14 @@ function renderTowerCards() {
       </div>
     `;
   }).join("");
+
+  // クラウドの最新ランキングを非同期で差し替え
+  TOWERS.forEach(function (tower) {
+    fetchTowerRanking_(tower.id).then(function (list) {
+      const host = listEl.querySelector('.dungeon-rank-host[data-rank-for="' + tower.id + '"]');
+      if (host) host.innerHTML = renderRankingHtml_(list);
+    }).catch(function () {});
+  });
 }
 
 function exitDungeonToHome() {
@@ -4948,6 +5409,7 @@ function renderAdminParamsTable() {
   global.backToTowerSelect = backToTowerSelect;
   global.exitDungeonToHome = exitDungeonToHome;
   global.startDungeonWithTower = startDungeonWithTower;
+  global.startDungeonDiffPractice = startDungeonDiffPractice;
 
   global.openParentAdminDungeon = openParentAdminDungeon;
   global.exitParentAdminDungeon = exitParentAdminDungeon;
