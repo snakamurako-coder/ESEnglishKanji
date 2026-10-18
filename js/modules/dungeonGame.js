@@ -1207,7 +1207,8 @@ function enterFloor(msg){
   ensurePlayTimeTicker_();
   updatePlayTimeHud_();
   winExplore(S.floor%10===0?"つよい けはいが する…":"どちらへ すすむ？");
-  forceBgmRestart_();
+  // 同じ探索BGMは巻き戻さず継続（途切れ防止）
+  ensureBgmPlaying_();
 }
 function autosave(){
   if(S.practice)return;
@@ -1298,7 +1299,7 @@ function saveSnd(){
 
 function bgmWant(){
   // 全滅・踏破クリア後はBGM停止（ファンファーレ等は SE で鳴らす）
-  if(S.screen==="over" || S.screen==="clear" || S.screen==="title") return 0;
+  if(S.screen==="over" || S.screen==="clear" || S.screen==="retire" || S.screen==="title") return 0;
   if(S.screen==="explore")return 1;
   if(S.screen==="battle")return S.b&&S.b.m.boss?3:2;
   return 0;
@@ -1317,8 +1318,35 @@ function stopAllBgm_(){
 }
 
 /**
- * 再入室・再開時に BGM を強制再生
- * （離脱で pause したあと、ブラウザの自動再生制限で止まっているケースを救済）
+ * 再生中の BGM を止めずに維持／一時停止中なら同じ位置から再開する。
+ * （操作のたびに巻き戻さない）
+ */
+function ensureBgmPlaying_(){
+  if (!bgmOn) return;
+  const want = bgmWant();
+  if (!want) return;
+  const a = BGM[want];
+  if (!a) {
+    bgmUpdate();
+    return;
+  }
+  if (bgmCur !== want) {
+    bgmUpdate();
+    return;
+  }
+  try {
+    setupBgmElement(a, want);
+    a.volume = bgmVol;
+    if (a.paused) {
+      const pr = a.play();
+      if (pr && typeof pr.catch === "function") pr.catch(function () {});
+    }
+  } catch (e) {}
+}
+
+/**
+ * 再入室・再開時に BGM を先頭から強制再生
+ * （塔選択から入室した直後など、明示的に始め直すときだけ使う）
  */
 function forceBgmRestart_(){
   if (!bgmOn) return;
@@ -1327,7 +1355,7 @@ function forceBgmRestart_(){
     stopAllBgm_();
     return;
   }
-  // 同じ曲でも再開できるように、現在曲 ID をクリアしてから bgmUpdate
+  // 同じ曲でも先頭から再開できるように、現在曲 ID をクリアしてから bgmUpdate
   bgmCur = 0;
   bgmUpdate();
   const a = BGM[want];
@@ -1452,9 +1480,23 @@ let audioLoadPromise_ = null;
 function registerDungeonAudio_(item, aud) {
   if (!item || !aud) return;
   if (item.type === "bgm") {
+    const prev = BGM[item.id];
+    const keepPlaying = !!(prev && bgmCur === item.id && !prev.paused && bgmOn);
+    let keepTime = 0;
+    if (keepPlaying) {
+      try { keepTime = prev.currentTime || 0; } catch (_) { keepTime = 0; }
+      try { prev.pause(); } catch (_) {}
+    }
     setupBgmElement(aud, item.id);
     BGM[item.id] = aud;
-    if (bgmOn && bgmWant() === item.id && (bgmCur === 0 || bgmCur === item.id)) {
+    if (keepPlaying) {
+      try {
+        aud.volume = bgmVol;
+        if (keepTime > 0 && isFinite(keepTime)) aud.currentTime = keepTime;
+        const pr = aud.play();
+        if (pr && typeof pr.catch === "function") pr.catch(function () {});
+      } catch (_) {}
+    } else if (bgmOn && bgmWant() === item.id && bgmCur === 0) {
       bgmUpdate();
     }
   } else {
@@ -1708,19 +1750,21 @@ function renderStage(){
     stage.innerHTML='<div class="result"><div class="big">百階</div><p>正解の むずかしさと速さが、そのまま力になる。</p><p style="color:var(--muted)">地下100階まで、どこまで もぐれるか。</p></div>';
     return;
   }
-  if(S.screen==="over"||S.screen==="clear"){
+  if(S.screen==="over"||S.screen==="clear"||S.screen==="retire"){
     const r=S.result;
     const ptsLine = r.practice ? '' :
       ('<p style="margin-top:6px;">獲得ポイント <b style="color:var(--gold)">' + (r.ptsAwarded != null ? r.ptsAwarded : (r.ptsTotal || 0)) + ' pt</b>' +
         '<br><span style="font-size:12px;color:var(--muted)">正解 ' + (r.ptsQuiz || 0) +
         ' ／ 踏破 ' + (r.ptsFloor || 0) +
         ' ／ 守護竜 ' + (r.ptsBoss || 0) + '</span></p>');
-    stage.innerHTML='<div class="result"><div class="big">'+(S.screen==="clear"?"踏破":"全滅")+'</div>'+
+    const bigLabel = S.screen==="clear" ? "踏破" : (S.screen==="retire" ? "冒険終了" : "全滅");
+    stage.innerHTML='<div class="result"><div class="big">'+bigLabel+'</div>'+
       '<p>到達 地下 '+r.floor+' 階 ／ 最終踏破 地下 '+(r.cleared != null ? r.cleared : 0)+' 階 ／ Lv '+r.lv+'</p>'+
       '<p>正答率 '+r.acc+'%（'+r.ok+' / '+r.total+'）・たおした数 '+r.kills+'</p>'+
       ptsLine+
       (r.isNew?'<p class="new">★ きろく こうしん！ ★</p>':'')+
       (r.practice?'<p style="color:var(--muted)">練習のため記録・ポイントなし</p>':'')+
+      (S.screen==="retire"?'<p style="color:var(--muted);font-size:12px;">自分の判断で切り上げました。セーブは消えています。</p>':'')+
       '</div>';
     return;
   }
@@ -1876,7 +1920,19 @@ function winMenu(msg){
 }
 function winTitle(){ winMenu("ぼうけんを はじめますか？"); }
 function winEnd(){
-  winMenu(S.screen==="clear"?"百階を ふみこえた！":(REC.save&&!S.practice?"ちからつきた… 地下 "+REC.save.floor+" 階の はじめから やりなおせる。":"ちからつきた…"));
+  if (S.screen === "clear") {
+    winMenu("百階を ふみこえた！");
+    return;
+  }
+  if (S.screen === "retire") {
+    const cleared = (S.result && S.result.cleared) ? S.result.cleared : (S.cleared || 0);
+    const pts = (S.result && typeof S.result.ptsTotal === "number") ? S.result.ptsTotal : 0;
+    winMenu("ここで冒険を終えた！最深踏破 地下 " + cleared + " 階。獲得 " + pts + "pt を清算した。");
+    return;
+  }
+  winMenu(REC.save && !S.practice
+    ? "ちからつきた… 地下 " + REC.save.floor + " 階の はじめから やりなおせる。"
+    : "ちからつきた…");
 }
 
 function diffRow(){
@@ -1961,10 +2017,12 @@ function winExploreMenu(){
     winExploreMenuTimeUp_();
     return;
   }
+  const clearedNow = S.cleared || 0;
   w.innerHTML='<div class="explore-menu"><p class="msg">📋 探索メニュー</p><div class="btns">'+
     '<button id="bag" type="button">🎒 どうぐ</button>'+
     '<button id="eqb" type="button">🛡️ そうび'+(needEquip()?'<span class="badge">NEW</span>':'')+'</button>'+
     '<button id="btnSaveQuit" type="button">💾 セーブして塔選択へ</button>'+
+    '<button id="btnRetire" type="button" style="border-color:#e8604f;color:#ffb4a8;">🏁 ここで冒険を終える<small>最深踏破 '+clearedNow+'階・ポイント清算</small></button>'+
     '<button id="btnSystemSettings" type="button">⚙️ せってい<small>[SELECT / ー]</small></button>'+
     '<button id="btnCloseMenu" type="button">◀ とじる<small>[Bボタン]</small></button>'+
     '</div></div>';
@@ -1976,6 +2034,8 @@ function winExploreMenu(){
     stopAllBgm_();
     backToTowerSelect();
   };
+  const retireBtn = $("#btnRetire");
+  if (retireBtn) retireBtn.onclick = confirmAndRetireAdventure_;
   $("#btnSystemSettings").onclick=()=>openMenu();
   $("#btnCloseMenu").onclick=()=>{
     se("cancel");
@@ -1983,6 +2043,26 @@ function winExploreMenu(){
   };
   padFocusRow = 1; padBtnIndex = 0; curDiffRefresh = null;
   updatePadFocus();
+}
+
+/** 自分の判断でランを切り上げ、ポイントを清算して終了画面へ */
+function confirmAndRetireAdventure_(){
+  if (!S || S.practice) {
+    alert("練習モードでは冒険終了は使えません。");
+    return;
+  }
+  if (S.screen !== "explore" && S.screen !== "battle") return;
+  const cleared = S.cleared || 0;
+  const pending = pendingDungeonPoints_();
+  const ok = confirm(
+    "ここで冒険を終えますか？\n\n" +
+    "・最深踏破: 地下 " + cleared + " 階\n" +
+    "・清算ポイント: " + pending + " pt\n" +
+    "・進行中のセーブは消えます（塔選択からやり直せます）"
+  );
+  if (!ok) { se("cancel"); return; }
+  se("decide");
+  finishRun("retire");
 }
 
 function toggleFieldMenu(){
@@ -2757,21 +2837,28 @@ function finishRun(kind){
     ptsTotal: st.ptsTotal,
     ptsPending: pendingDungeonPoints_()
   };
-  if (!S.practice && S.floor > REC.best) { REC.best = S.floor; r.isNew = true; saveRec(); }
+  // 最高記録: 自主終了は最深踏破階、全滅/クリアは到達階も考慮
+  const bestCand = (kind === "retire")
+    ? r.cleared
+    : Math.max(S.floor || 0, r.cleared || 0);
+  if (!S.practice && bestCand > REC.best) { REC.best = bestCand; r.isNew = true; saveRec(); }
   // 最深踏破ランキング（踏破済み階＝cleared）を提出
   if (!S.practice && r.cleared > 0 && currentTower && currentTower.id) {
     try { submitTowerRanking_(currentTower.id, r.cleared, r.lv); } catch (_) {}
   }
-  if (kind === "over" || kind === "clear") {
+  if (kind === "over" || kind === "clear" || kind === "retire") {
     // ラン終了時はセーブを消す（コンパスで戻れる踏破階は REC に残さない＝新規スタート想定）
     if (!S.practice) { REC.save = null; saveRec(); }
   }
   S.result = r; S.screen = kind;
   stopAllBgm_();
   render(); winEnd();
-  se(kind === "clear" ? "game_clear" : "game_over");
+  if (kind === "clear") se("game_clear");
+  else if (kind === "retire") se("flee");
+  else se("game_over");
   if (r.isNew) se("new_record", 2600);
-  flushDungeonPointsToAccount_(kind === "clear" ? "clear" : "over").then(function (d) {
+  const flushReason = kind === "clear" ? "clear" : (kind === "retire" ? "retire" : "over");
+  flushDungeonPointsToAccount_(flushReason).then(function (d) {
     const earned = d && d.earnedPoints ? d.earnedPoints : 0;
     if (S.result) {
       S.result.ptsAwarded = earned;
@@ -3044,7 +3131,7 @@ function applyLayout(){
     winExplore(S.floor%10===0?"つよい けはいが する…":"どちらへ すすむ？");
   } else if(S.screen === "battle"){
     if(S.b && S.b.m) winCmd("どうする？");
-  } else if(S.screen === "over" || S.screen === "clear"){
+  } else if(S.screen === "over" || S.screen === "clear" || S.screen === "retire"){
     winEnd();
   }
 }
@@ -4784,8 +4871,9 @@ function bindDungeonBgmUnlockOnce_() {
   const sec = document.getElementById("section-dungeon");
   if (!sec || sec.__bgmUnlockBound) return;
   sec.__bgmUnlockBound = true;
+  // 自動再生制限の解除のみ。操作のたびに先頭へ巻き戻さない
   const unlock = function () {
-    try { forceBgmRestart_(); } catch (_) {}
+    try { ensureBgmPlaying_(); } catch (_) {}
   };
   sec.addEventListener("pointerdown", unlock, { passive: true });
   sec.addEventListener("touchstart", unlock, { passive: true });
