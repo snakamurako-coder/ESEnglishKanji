@@ -843,12 +843,44 @@ function makeMon(f,ai,boss){
   return {g:v[0],name:v[1],hp:s.hp,max:s.hp,atk:s.atk,exp:s.exp,eva:a.eva,boss:!!boss};
 }
 
-/* ---------- 記録とセーブ ---------- */
-const KEY="tango-meikyu-v1";
-function loadRec(){try{return Object.assign({best:0,save:null},JSON.parse(localStorage.getItem(KEY))||{})}catch(e){return {best:0,save:null}}}
-function saveRec(){try{localStorage.setItem(KEY,JSON.stringify(REC))}catch(e){}}
-let REC=loadRec();
-const clone=o=>JSON.parse(JSON.stringify(o));
+/* ---------- 記録とセーブ（塔ごとに best + 進行中セーブ1件） ---------- */
+const LEGACY_KEY = "tango-meikyu-v1";
+function loadRec() {
+  // 起動直後は currentTower 基準。塔切替時は loadTowerRec で差し替える
+  return loadTowerRec(currentTower && currentTower.id);
+}
+function saveRec() {
+  saveTowerRec(REC, currentTower && currentTower.id);
+  // 旧グローバルキーへもミラー（後方互換・移行用）
+  try {
+    if (currentTower && currentTower.id === "default") {
+      localStorage.setItem(LEGACY_KEY, JSON.stringify(REC));
+    }
+  } catch (e) {}
+}
+function migrateLegacyRecIfNeeded_(towerId) {
+  try {
+    if (localStorage.getItem("tango-meikyu-rec-migrated")) return;
+    const legacy = localStorage.getItem(LEGACY_KEY);
+    if (!legacy) {
+      localStorage.setItem("tango-meikyu-rec-migrated", "1");
+      return;
+    }
+    // 旧・全体セーブは指定塔（なければはじまりの塔）へ1回だけ移す
+    const tid = towerId || "tower_starter";
+    const towerKey = getTowerRecKey(tid);
+    if (!localStorage.getItem(towerKey)) {
+      localStorage.setItem(towerKey, legacy);
+    }
+    localStorage.setItem("tango-meikyu-rec-migrated", "1");
+  } catch (e) {}
+}
+let REC = (function () {
+  const tid = (currentTower && currentTower.id) || "default";
+  migrateLegacyRecIfNeeded_(tid);
+  return loadTowerRec(tid);
+})();
+const clone = o => JSON.parse(JSON.stringify(o));
 
 /* ---------- どうぐ・クイズの種類 ---------- */
 const ITEMS={pot:{ic:"🧪",n:"ポーション"},eth:{ic:"💧",n:"まりょくの水"},wing:{ic:"🧭",n:"導きのコンパス"},gate:{ic:"🌀",n:"さいしんの渦"},neck:{ic:"📿",n:"復活の首飾り"}};
@@ -912,22 +944,30 @@ function newState(f,practice){
 }
 function start(f,practice){
   S=newState(f,practice);
+  // 「最初から」は当該塔の進行中セーブを消す（最高記録 best は残す）
   if(!practice){REC.save=null;saveRec()}
   se("game_start");enterFloor("地下 "+f+" 階に おりたった。");
+  forceBgmRestart_();
 }
 function resume(){
-  const v=REC.save;S=newState(v.floor,false);
+  const v=REC.save;
+  if(!v){ start(1,false); return; }
+  S=newState(v.floor,false);
   S.cleared=v.cleared;S.diff=v.diff||5;S.p=clone(v.p);S.p.it=fillItems(S.p.it);fillGear(S.p,S.cleared);S.st=ensurePointStats_(clone(v.st)||emptyPointStats_());
   se("game_start");enterFloor("地下 "+v.floor+" 階から さいかい。");
+  forceBgmRestart_();
 }
 function enterFloor(msg){
   genFloor(S.floor);S.screen="explore";S.b=null;log(msg);
   render();curtain("地下 "+S.floor+" 階");
   winExplore(S.floor%10===0?"つよい けはいが する…":"どちらへ すすむ？");
+  forceBgmRestart_();
 }
 function autosave(){
   if(S.practice)return;
+  if(S.screen!=="explore" && S.screen!=="battle")return;
   if(S.floor>REC.best)REC.best=S.floor;
+  // 各塔につき進行中セーブは1件（上書き）
   REC.save={floor:S.floor,cleared:S.cleared,diff:S.diff,p:clone(S.p),st:clone(S.st)};
   saveRec();
 }
@@ -1024,6 +1064,32 @@ function stopAllBgm_(){
     });
   }catch(e){}
   bgmCur = 0;
+}
+
+/**
+ * 再入室・再開時に BGM を強制再生
+ * （離脱で pause したあと、ブラウザの自動再生制限で止まっているケースを救済）
+ */
+function forceBgmRestart_(){
+  if (!bgmOn) return;
+  const want = bgmWant();
+  if (!want) {
+    stopAllBgm_();
+    return;
+  }
+  // 同じ曲でも再開できるように、現在曲 ID をクリアしてから bgmUpdate
+  bgmCur = 0;
+  bgmUpdate();
+  const a = BGM[want];
+  if (a) {
+    try {
+      a.volume = bgmVol;
+      if (a.paused) {
+        const pr = a.play();
+        if (pr && typeof pr.catch === "function") pr.catch(function () {});
+      }
+    } catch (e) {}
+  }
 }
 
 function setupBgmElement(aud, id){
@@ -1784,7 +1850,7 @@ function ask(L, kind, done, name) {
 
   if (q.type === "choice") {
     h += '<div class="choices' + (q.is5Choice ? ' choices-5' : '') + '">' +
-      q.choices.map((c, i) => '<button data-c="' + i + '" type="button">' + (i + 1) + '. ' + c + '</button>').join("") +
+      q.choices.map((c, i) => '<button data-c="' + i + '" type="button">' + c + '</button>').join("") +
       '</div>';
   } else if (q.type === "spell") {
     h += '<div class="spell-display" style="font-size:22px;letter-spacing:4px;color:var(--gold);text-align:center;margin:6px 0;font-family:var(--game);font-weight:bold;">' + q.hint + '</div>' +
@@ -2969,11 +3035,12 @@ function buildSoundTestGrid(){
   if ($("#chBattle")) { $("#chBattle").onclick = ()=>{ if(!S.p) return; closeMenu(); startBattle(null, {t:"mon", a:ri(4)}, false); }; }
   if ($("#chBoss")) { $("#chBoss").onclick = ()=>{ if(!S.p) return; closeMenu(); startBattle(null, {t:"boss"}, false); }; }
 $("#mResetSaveBtn").onclick = ()=>{
-  if(confirm("セーブデータを初期化しますか？（最高記録もリセットされます）")){
+  if(confirm("この塔のセーブデータを初期化しますか？（最高記録もリセットされます）")){
     REC = {best:0, save:null};
     saveRec();
     renderStatus();
-    alert("セーブデータを初期化しました。");
+    try { renderTowerCards(); } catch (_) {}
+    alert("この塔のセーブデータを初期化しました。");
   }
 };
 
@@ -4390,6 +4457,17 @@ function handleTopBack() {
   }
 }
 
+function bindDungeonBgmUnlockOnce_() {
+  const sec = document.getElementById("section-dungeon");
+  if (!sec || sec.__bgmUnlockBound) return;
+  sec.__bgmUnlockBound = true;
+  const unlock = function () {
+    try { forceBgmRestart_(); } catch (_) {}
+  };
+  sec.addEventListener("pointerdown", unlock, { passive: true });
+  sec.addEventListener("touchstart", unlock, { passive: true });
+}
+
 function openDungeonGame(startFloor, isPractice) {
   document.body.classList.add('in-dungeon-game');
   const sec = document.getElementById("section-dungeon");
@@ -4405,6 +4483,7 @@ function openDungeonGame(startFloor, isPractice) {
     document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
     if (sec) sec.classList.add('active');
   }
+  bindDungeonBgmUnlockOnce_();
   if (typeof startFloor === "number" && startFloor > 0) {
     startDungeonWithTower(currentTower.id, startFloor, !!isPractice);
   } else {
@@ -4446,17 +4525,24 @@ function startDungeonWithTower(towerId, startFloor, isPractice) {
   autoLoadRelativeAudio();
   if (window.AppKeyboard) AppKeyboard.init();
 
+  migrateLegacyRecIfNeeded_(tower.id);
   REC = loadTowerRec(tower.id);
   const bestTag = $("#best");
   if (bestTag) bestTag.textContent = REC.best ? "地下 " + REC.best + " 階" : "—";
 
+  // クリック直後に BGM を再開（他モード経由の再入室対策）
+  forceBgmRestart_();
+
   if (typeof startFloor === "number" && startFloor > 0) {
+    // startFloor 明示指定＝最初から／指定階スタート（進行中セーブは start 内でクリア）
     start(startFloor, !!isPractice);
   } else if (REC.save && !isPractice) {
     resume();
   } else {
     start(1, false);
   }
+  forceBgmRestart_();
+  bindDungeonBgmUnlockOnce_();
 }
 
 function renderTowerCards() {
@@ -4464,9 +4550,12 @@ function renderTowerCards() {
   if (!listEl) return;
   loadTowers();
 
+  // 旧セーブ移行は1回だけ（先頭塔へ）
+  if (TOWERS[0]) migrateLegacyRecIfNeeded_(TOWERS[0].id);
+
   listEl.innerHTML = TOWERS.map(tower => {
     const rec = loadTowerRec(tower.id);
-    const hasSave = !!rec.save;
+    const hasSave = !!(rec.save && rec.save.floor);
     const isCleared = rec.best >= (tower.maxFloor || 100);
 
     return `
@@ -4478,6 +4567,7 @@ function renderTowerCards() {
         <div class="dungeon-tower-meta">
           <span>最高到達: <b>${rec.best ? '地下 ' + rec.best + ' 階' : '未挑戦'}</b></span>
           <span>最大: <b>${tower.maxFloor || 100}階</b></span>
+          <span>セーブ: <b>${hasSave ? '地下 ' + rec.save.floor + ' 階' : 'なし（各塔1件）'}</b></span>
         </div>
         <div style="display:flex;gap:8px;margin-top:12px;">
           ${hasSave ? `<button type="button" class="dungeon-btn" style="flex:1;background:var(--gold);color:#000;font-weight:bold;font-size:13px;padding:6px;" onclick="startDungeonWithTower('${tower.id}')">▶ つづきから（地下 ${rec.save.floor} 階）</button>` : ''}
