@@ -4,10 +4,13 @@
     <div id="dungeon-tower-select" class="dungeon-wrap" style="padding:20px 14px;max-width:960px;margin:0 auto;">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:16px;">
         <h1 class="dungeon-h1" style="font-size:24px;color:#f5b027;font-family:var(--game,'DotGothic16',monospace);">🏰 挑戦する塔をえらぼう！</h1>
-        <button type="button" class="dungeon-btn dungeon-home-btn" onclick="exitDungeonToHome()" style="background:#201f30;border:1px solid #3c3954;color:#f4f3ec;border-radius:6px;padding:6px 14px;cursor:pointer;">🏠 ホーム</button>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+          <span id="dungeonSelectPlayTime" class="play-time-remain" style="font-size:13px;color:#f2b632;font-family:var(--game,'DotGothic16',monospace);">残り —</span>
+          <button type="button" class="dungeon-btn dungeon-home-btn" onclick="exitDungeonToHome()" style="background:#201f30;border:1px solid #3c3954;color:#f4f3ec;border-radius:6px;padding:6px 14px;cursor:pointer;">🏠 ホーム</button>
+        </div>
       </div>
       <p style="color:#8b88a5;font-size:14px;margin:0 0 16px;">
-        塔によって出題される問題セット（単語・表現）や階数が変わるよ。好きな塔に挑戦しよう！
+        塔によって出題される問題セット（単語・表現）や階数が変わるよ。好きな塔に挑戦しよう！プレイ時間は全塔合計・迷宮を開いている実時間で、毎日0:00にリセットされます。
       </p>
       
       <div id="dungeon-tower-list" style="display:grid;gap:14px;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));">

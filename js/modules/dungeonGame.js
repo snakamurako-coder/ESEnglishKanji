@@ -703,7 +703,11 @@ function clampDiffToFloor_() {
   S.diff = d;
 }
 
-/* ---- 曜日別プレイ時間上限 ---- */
+/* ---- 曜日別プレイ時間上限 ----
+ * ・ユーザー単位の合計（塔ごとではない）
+ * ・単語迷宮セクションを開いている間の実時間（Date.now 差分）
+ * ・日付が変わったとき（ローカル 0:00）に使用時間をリセット
+ */
 function getDungeonUserId_() {
   try {
     const u = JSON.parse(localStorage.getItem("app_kid_user") || "null");
@@ -733,12 +737,14 @@ function playLimitMinutesToday_() {
   return v;
 }
 function playTimeStorageKey_() {
+  // 塔IDを含めない＝全塔共通の合計プレイ時間
   return "tango-meikyu-playtime-" + getDungeonUserId_();
 }
 function loadPlayTimeState_() {
   try {
     const raw = JSON.parse(localStorage.getItem(playTimeStorageKey_()) || "null");
     const today = todayStrLocal_();
+    // 日付キーが違う＝ローカル 0:00 を過ぎて日付が変わった → 使用時間リセット
     if (raw && raw.date === today && typeof raw.usedMs === "number") {
       return { date: today, usedMs: Math.max(0, raw.usedMs) };
     }
@@ -758,11 +764,12 @@ function isPlayTimeExhausted_() {
   return getPlayRemainMs_() <= 0;
 }
 function accumulatePlayMs_(ms) {
-  if (!ms || ms < 0) return;
+  if (!ms || ms <= 0) return;
   if (S && S.practice) return;
+  // 単語迷宮を開いている間（塔選択含む）。塔ごとではなくユーザー合計。
   if (!isDungeonActive()) return;
-  if (!S || (S.screen !== "explore" && S.screen !== "battle")) return;
   const st = loadPlayTimeState_();
+  st.date = todayStrLocal_();
   st.usedMs = (st.usedMs || 0) + ms;
   savePlayTimeState_(st);
 }
@@ -773,31 +780,51 @@ function formatRemainClock_(ms) {
   return m + ":" + String(s).padStart(2, "0");
 }
 function updatePlayTimeHud_() {
-  const els = document.querySelectorAll("#playTimeRemain, .play-time-remain");
+  const els = document.querySelectorAll("#playTimeRemain, .play-time-remain, #dungeonSelectPlayTime");
   if (!els.length) return;
   const remain = getPlayRemainMs_();
   const exhausted = remain <= 0 && !(S && S.practice);
-  const text = exhausted ? "残り 0:00（本日終了）" : ("残り " + formatRemainClock_(remain));
+  const text = exhausted ? "残り 0:00（本日終了・0:00リセット）" : ("残り " + formatRemainClock_(remain));
   els.forEach(function (el) {
     el.textContent = text;
     el.classList.toggle("is-exhausted", exhausted);
   });
 }
 let playTimeTickTimer_ = null;
+let playTimeLastTs_ = 0;
+function flushPlayTimeWallClock_() {
+  const now = Date.now();
+  const prev = playTimeLastTs_ || now;
+  playTimeLastTs_ = now;
+  if (!isDungeonActive()) return;
+  if (S && S.practice) return;
+  let delta = now - prev;
+  if (delta < 0) delta = 0;
+  // 1ギャップの加算上限＝本日の上限（日付またぎや長時間放置の暴増を抑える）
+  const dayCap = playLimitMinutesToday_() * 60 * 1000;
+  if (dayCap > 0 && delta > dayCap) delta = dayCap;
+  if (delta > 0) accumulatePlayMs_(delta);
+  updatePlayTimeHud_();
+  if (isPlayTimeExhausted_() && S && S.screen === "explore") {
+    const w = winEl();
+    if (w && !w.querySelector("#btnSaveQuit")) {
+      try { winExploreMenuTimeUp_(); } catch (_) {}
+    }
+  }
+}
 function ensurePlayTimeTicker_() {
   if (playTimeTickTimer_) return;
+  playTimeLastTs_ = Date.now();
   playTimeTickTimer_ = setInterval(function () {
-    if (!isDungeonActive()) return;
-    accumulatePlayMs_(1000);
-    updatePlayTimeHud_();
-    if (isPlayTimeExhausted_() && S && S.screen === "explore") {
-      // 移動不可になったことを一度だけ案内
-      const w = winEl();
-      if (w && !w.querySelector("#btnSaveQuit")) {
-        try { winExploreMenuTimeUp_(); } catch (_) {}
-      }
-    }
+    flushPlayTimeWallClock_();
   }, 1000);
+  // タブ復帰時も、迷宮を開いたままの実時間差分を反映
+  if (typeof document !== "undefined" && !document.__dungeonPlayTimeVisBound) {
+    document.__dungeonPlayTimeVisBound = true;
+    document.addEventListener("visibilitychange", function () {
+      if (document.visibilityState === "visible") flushPlayTimeWallClock_();
+    });
+  }
 }
 
 /* ---- 塔ランキング（最深踏破） ---- */
@@ -4958,6 +4985,9 @@ function openDungeonGame(startFloor, isPractice) {
     if (sec) sec.classList.add('active');
   }
   bindDungeonBgmUnlockOnce_();
+  ensurePlayTimeTicker_();
+  playTimeLastTs_ = Date.now();
+  updatePlayTimeHud_();
   if (typeof startFloor === "number" && startFloor > 0) {
     startDungeonWithTower(currentTower.id, startFloor, !!isPractice);
   } else {
@@ -4979,6 +5009,8 @@ function backToTowerSelect() {
     if (selectView) selectView.style.display = "block";
     if (mainView) mainView.style.display = "none";
     renderTowerCards();
+    ensurePlayTimeTicker_();
+    updatePlayTimeHud_();
   };
   Promise.resolve(flushDungeonPointsToAccount_("tower-select")).then(afterFlush).catch(afterFlush);
 }
