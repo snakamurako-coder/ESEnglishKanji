@@ -150,10 +150,25 @@
   }
 
   /**
-   * 通知メールの保存（Firestore 即座書き込み・GAS通信なし）
+   * 通知メールの保存（Firestore 即座書き込み）
+   * 併せて GAS 側スプレッドシートにも同期を試みる（MailApp の宛先フォールバック用）
    */
   function saveNotifyEmails(pin, emails) {
     saveNotifyEmailsToFirestore(emails);
+    try {
+      var url = getGasUrl();
+      var list = Array.isArray(emails) ? emails : [];
+      if (url && typeof fetch === "function") {
+        fetch(url, {
+          method: "POST",
+          body: JSON.stringify({
+            action: "save_parent_notify_emails",
+            adminPin: pin || "",
+            emails: list
+          })
+        }).catch(function () {});
+      }
+    } catch (_eSync) {}
     return Promise.resolve(true);
   }
 

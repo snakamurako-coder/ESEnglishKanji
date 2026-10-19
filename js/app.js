@@ -263,13 +263,83 @@ var global = typeof window !== 'undefined' ? window : this;
       return attemptParse(parseRetries, 0);
     }
 
+    /** 保護者通知メール（Firestore admin_config.notifyEmails）を取得 */
+    function fetchParentNotifyEmailsForReward_() {
+      return new Promise(function (resolve) {
+        if (typeof window !== "undefined" && window.parentAdminStore && typeof window.parentAdminStore.getNotifyEmails === "function") {
+          // PIN なしでも Firestore 直読みできる実装なら利用
+          try {
+            window.parentAdminStore.getNotifyEmails("").then(function (emails) {
+              resolve(Array.isArray(emails) ? emails : []);
+            }).catch(function () { resolve([]); });
+            return;
+          } catch (_e) {}
+        }
+        if (typeof firebase === "undefined" || !firebase.firestore) {
+          resolve([]);
+          return;
+        }
+        firebase.firestore().collection("system").doc("admin_config").get().then(function (doc) {
+          const data = doc.exists ? (doc.data() || {}) : {};
+          resolve(Array.isArray(data.notifyEmails) ? data.notifyEmails : []);
+        }).catch(function () { resolve([]); });
+      });
+    }
+
+    /**
+     * 景品・持ち物使用時の保護者メール通知（GAS MailApp）。
+     * Firebase 完結の使用処理のあと、バックグラウンドで送る。
+     */
+    function notifyParentsRewardUse_(info) {
+      info = info || {};
+      return fetchParentNotifyEmailsForReward_().then(function (emails) {
+        const recipients = (emails || []).map(function (e) { return String(e || "").trim(); })
+          .filter(function (e) { return e && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e); });
+        if (!recipients.length) {
+          console.warn("[reward notify] 通知先メールが未設定です（管理メニュー → 通知メール設定）");
+          return { status: "skipped", reason: "no_recipients" };
+        }
+        const payload = {
+          action: "notify_reward_use",
+          userId: String(info.userId || ""),
+          userName: String(info.userName || "お子さま"),
+          rewardId: String(info.rewardId || ""),
+          rewardName: String(info.rewardName || "景品"),
+          limitMinutes: Math.max(0, Number(info.limitMinutes) || 0),
+          usedAt: String(info.usedAt || new Date().toISOString()),
+          endsAt: String(info.endsAt || ""),
+          ticketId: String(info.ticketId || Date.now()),
+          recipients: recipients
+        };
+        return gasApiFetchJsonRaw_(payload, { retries: 2, timeoutMs: 45000, parseRetries: 1 })
+          .then(function (d) {
+            if (!d || d.status !== "success") {
+              console.warn("[reward notify] GAS 応答異常", d);
+            } else if (d.mail && d.mail.sent === false) {
+              console.warn("[reward notify] 送信スキップ", d.mail);
+            }
+            return d;
+          })
+          .catch(function (err) {
+            console.warn("[reward notify] 送信失敗", err);
+            return { status: "error", message: String(err && err.message || err) };
+          });
+      });
+    }
+    global.notifyParentsRewardUse_ = notifyParentsRewardUse_;
+
     function gasApiFetchJson(bodyObj, opts) {
       const action = bodyObj && bodyObj.action;
 
       // =======================================================================
-      // 【唯一の例外】スプレッドシート完全バックアップ出力 / 設定インポートのみ GAS と通信
+      // GAS 通信が必要な例外（MailApp 通知・バックアップ等）
       // =======================================================================
-      if (action === "export_full_backup" || action === "import_full_config") {
+      if (
+        action === "export_full_backup" ||
+        action === "import_full_config" ||
+        action === "notify_reward_use" ||
+        action === "notify_reward_end"
+      ) {
         return gasApiFetchJsonRaw_(bodyObj, opts);
       }
 
@@ -597,6 +667,21 @@ var global = typeof window !== 'undefined' ? window : this;
             saveAppKidUserToLocal(user);
 
             const done = function () {
+              // 保護者メール通知（GAS MailApp）。失敗しても使用自体は成功のまま。
+              try {
+                notifyParentsRewardUse_({
+                  userId: uid,
+                  userName: user.name || user.displayName || "お子さま",
+                  rewardId: target.rewardId || item.rewardId || "",
+                  rewardName: target.rewardName || item.rewardName || "景品",
+                  limitMinutes: lim,
+                  usedAt: target.usedAt,
+                  endsAt: activeTicket ? activeTicket.endsAt : "",
+                  ticketId: String(wantIdx)
+                });
+              } catch (_eMail) {
+                console.warn("[reward notify] schedule failed", _eMail);
+              }
               resolve({
                 status: "success",
                 message: "「" + (target.rewardName || "景品") + "」を使いました！",

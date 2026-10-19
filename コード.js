@@ -913,6 +913,8 @@ function doPost(e) {
     else if (action === "change_pin") return handleChangePin(requestData);
     else if (action === "get_inventory") return handleGetInventory(requestData);
     else if (action === "consume_reward") return handleConsumeReward(requestData);
+    else if (action === "notify_reward_use") return handleNotifyRewardUse(requestData);
+    else if (action === "notify_reward_end") return handleNotifyRewardEnd(requestData);
     else if (action === "get_app_settings") return handleGetAppSettings(requestData);
     else if (action === "get_points_multiplier") return handleGetPointsMultiplier(requestData);
     else if (action === "get_external_learning") return handleGetExternalLearning(requestData);
@@ -2206,8 +2208,30 @@ function computeRewardNotifyAt_(usedAtDate, limitMinutes) {
   return new Date(endsAt.getTime() + 60 * 1000);
 }
 
-function sendMailToParents_(adminSs, subject, body) {
-  const recipients = getParentNotifyEmails_(adminSs);
+function normalizeNotifyRecipients_(list) {
+  const out = [];
+  const seen = {};
+  (Array.isArray(list) ? list : []).forEach(function (raw) {
+    const v = String(raw || "").trim();
+    if (!v || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) return;
+    const key = v.toLowerCase();
+    if (seen[key]) return;
+    seen[key] = true;
+    out.push(v);
+  });
+  return out;
+}
+
+function resolveNotifyRecipients_(adminSs, req) {
+  const fromReq = normalizeNotifyRecipients_(req && req.recipients);
+  if (fromReq.length) return fromReq;
+  return getParentNotifyEmails_(adminSs);
+}
+
+function sendMailToParents_(adminSs, subject, body, recipientsOpt) {
+  const recipients = recipientsOpt && recipientsOpt.length
+    ? normalizeNotifyRecipients_(recipientsOpt)
+    : getParentNotifyEmails_(adminSs);
   if (!recipients.length) return { sent: false, reason: "no_recipients" };
   MailApp.sendEmail({
     to: recipients.join(","),
@@ -2217,25 +2241,140 @@ function sendMailToParents_(adminSs, subject, body) {
   return { sent: true, recipients: recipients };
 }
 
-function sendRewardStartEmail_(adminSs, userName, rewardName, limitMinutes, endsAtDate) {
+function sendRewardStartEmail_(adminSs, userName, rewardName, limitMinutes, endsAtDate, recipientsOpt) {
   const endsText = endsAtDate ? formatJstDateTime_(endsAtDate) : "";
-  const subject = "【学習アプリ】ご褒美チケット使用開始: " + rewardName;
+  const hasLimit = Number(limitMinutes) > 0;
+  const subject = hasLimit
+    ? ("【学習アプリ】ご褒美チケット使用開始: " + rewardName)
+    : ("【学習アプリ】景品・持ち物を使用: " + rewardName);
   const body =
     userName + " さんが「" + rewardName + "」を使用しました。\n" +
-    "制限時間: " + limitMinutes + " 分\n" +
-    (endsText ? "終了予定: " + endsText + "（日本時間）\n" : "") +
-    "\n終了後（+1分）にもう一度お知らせします。";
-  return sendMailToParents_(adminSs, subject, body);
+    (hasLimit
+      ? ("制限時間: " + limitMinutes + " 分\n" +
+        (endsText ? "終了予定: " + endsText + "（日本時間）\n" : "") +
+        "\n終了後（+1分）にもう一度お知らせします。")
+      : "（時間制限なし）\n");
+  return sendMailToParents_(adminSs, subject, body, recipientsOpt);
 }
 
-function sendRewardEndEmail_(adminSs, userName, rewardName, usedAtDate, endsAtDate) {
+function sendRewardEndEmail_(adminSs, userName, rewardName, usedAtDate, endsAtDate, recipientsOpt) {
   const subject = "【学習アプリ】ご褒美チケット終了: " + rewardName;
   const body =
     userName + " さんの「" + rewardName + "」の制限時間が終了しました。\n" +
     "使用開始: " + (usedAtDate ? formatJstDateTime_(usedAtDate) : "不明") + "\n" +
     "終了予定: " + (endsAtDate ? formatJstDateTime_(endsAtDate) : "不明") + "（日本時間）\n";
-  return sendMailToParents_(adminSs, subject, body);
+  return sendMailToParents_(adminSs, subject, body, recipientsOpt);
 }
+
+/**
+ * Firebase 完結の「使う！」から呼ばれるメール通知。
+ * recipients はクライアント（Firestore の通知メール設定）から渡す。
+ */
+function handleNotifyRewardUse(req) {
+  try {
+    const adminSs = getAdminSpreadsheet_();
+    ensureAppSettingsDefaults_(adminSs);
+    const recipients = resolveNotifyRecipients_(adminSs, req);
+    if (!recipients.length) {
+      return sendResponse({
+        status: "success",
+        mail: { sent: false, reason: "no_recipients" },
+        message: "通知先メールが未設定です"
+      });
+    }
+    const userName = String(req.userName || "お子さま");
+    const rewardName = String(req.rewardName || "景品");
+    const limitMinutes = Math.max(0, Number(req.limitMinutes) || 0);
+    let usedAt = parseSheetDateTime_(req.usedAt) || new Date();
+    let endsAt = null;
+    if (req.endsAt) endsAt = parseSheetDateTime_(req.endsAt);
+    if (!endsAt && limitMinutes > 0) endsAt = computeRewardEndsAt_(usedAt, limitMinutes);
+
+    const mail = sendRewardStartEmail_(adminSs, userName, rewardName, limitMinutes, endsAt, recipients);
+
+    // 終了通知を ScriptProperties に登録（スプレッドシート inventory 行がなくても送れる）
+    if (mail.sent && limitMinutes > 0 && endsAt) {
+      const notifyAt = computeRewardNotifyAt_(usedAt, limitMinutes) || new Date(endsAt.getTime() + 60 * 1000);
+      const ticketId = String(req.ticketId || (req.userId + "_" + usedAt.getTime()));
+      const props = PropertiesService.getScriptProperties();
+      props.setProperty("reward_end_ticket_" + ticketId, JSON.stringify({
+        ticketId: ticketId,
+        userId: String(req.userId || ""),
+        userName: userName,
+        rewardName: rewardName,
+        usedAt: usedAt.toISOString(),
+        endsAt: endsAt.toISOString(),
+        notifyAt: notifyAt.toISOString(),
+        recipients: recipients,
+        createdAt: new Date().toISOString()
+      }));
+      try { ensureRewardNotificationPollTrigger_(); } catch (eTrig) {
+        console.warn("ensureRewardNotificationPollTrigger_", eTrig);
+      }
+    }
+
+    return sendResponse({
+      status: "success",
+      mail: mail,
+      message: mail.sent ? "通知メールを送信しました" : ("通知スキップ: " + (mail.reason || ""))
+    });
+  } catch (err) {
+    return sendResponse({ status: "error", message: "通知メール送信に失敗: " + err.message });
+  }
+}
+
+function handleNotifyRewardEnd(req) {
+  try {
+    const adminSs = getAdminSpreadsheet_();
+    ensureAppSettingsDefaults_(adminSs);
+    const recipients = resolveNotifyRecipients_(adminSs, req);
+    if (!recipients.length) {
+      return sendResponse({ status: "success", mail: { sent: false, reason: "no_recipients" } });
+    }
+    const userName = String(req.userName || "お子さま");
+    const rewardName = String(req.rewardName || "景品");
+    const usedAt = parseSheetDateTime_(req.usedAt);
+    const endsAt = parseSheetDateTime_(req.endsAt) || new Date();
+    const mail = sendRewardEndEmail_(adminSs, userName, rewardName, usedAt, endsAt, recipients);
+    const ticketId = String(req.ticketId || "");
+    if (ticketId) {
+      try { PropertiesService.getScriptProperties().deleteProperty("reward_end_ticket_" + ticketId); } catch (e) {}
+    }
+    return sendResponse({ status: "success", mail: mail });
+  } catch (err) {
+    return sendResponse({ status: "error", message: "終了通知に失敗: " + err.message });
+  }
+}
+
+function processPendingRewardEndTickets_() {
+  const props = PropertiesService.getScriptProperties();
+  const all = props.getProperties();
+  const adminSs = getAdminSpreadsheet_();
+  Object.keys(all).forEach(function (key) {
+    if (key.indexOf("reward_end_ticket_") !== 0) return;
+    let ticket = null;
+    try { ticket = JSON.parse(all[key]); } catch (e) { props.deleteProperty(key); return; }
+    if (!ticket) { props.deleteProperty(key); return; }
+    const notifyAt = parseSheetDateTime_(ticket.notifyAt) || parseSheetDateTime_(ticket.endsAt);
+    if (!notifyAt || Date.now() < notifyAt.getTime()) return;
+    try {
+      const usedAt = parseSheetDateTime_(ticket.usedAt);
+      const endsAt = parseSheetDateTime_(ticket.endsAt);
+      const mail = sendRewardEndEmail_(
+        adminSs,
+        ticket.userName || "お子さま",
+        ticket.rewardName || "景品",
+        usedAt,
+        endsAt,
+        ticket.recipients
+      );
+      if (mail.sent || mail.reason === "no_recipients") props.deleteProperty(key);
+    } catch (e) {
+      console.warn("processPendingRewardEndTickets_ " + key, e);
+    }
+  });
+}
+
 
 /**
  * スクリプトエディタから実行: MailApp 初回承認と通知メール設定の確認用。
@@ -2340,6 +2479,10 @@ function sendRewardEndNotificationForRow_() {
 
 function checkPendingRewardEndNotifications_() {
   try {
+    // Firebase 経由で登録された終了通知チケット
+    try { processPendingRewardEndTickets_(); } catch (eTicket) {
+      console.warn("processPendingRewardEndTickets_", eTicket);
+    }
     const adminSs = getAdminSpreadsheet_();
     const inventorySheet = adminSs.getSheetByName("inventory");
     if (!inventorySheet) return;
