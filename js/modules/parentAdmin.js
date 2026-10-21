@@ -63,6 +63,12 @@
     if (train) train.value = p;
   }
 
+  function getExternalAdminPin() {
+    if (parentAdminPinSession) return String(parentAdminPinSession);
+    const pinEl = document.getElementById('external-admin-pin-input') || document.getElementById('parent-admin-pin-input');
+    return pinEl ? String(pinEl.value || '').trim() : '';
+  }
+
   function openParentAdminMenu() {
     parentAdminPinSession = "";
     global.parentAdminPinSession = "";
@@ -1954,6 +1960,7 @@
   global.backToParentAdminHub = backToParentAdminHub;
   global.logoutParentAdmin = logoutParentAdmin;
   global.enterParentAdminExternal = enterParentAdminExternal;
+  global.getExternalAdminPin = getExternalAdminPin;
   global.enterParentAdminTraining = enterParentAdminTraining;
   global.enterParentAdminNotify = enterParentAdminNotify;
   global.enterParentAdminUserPoints = enterParentAdminUserPoints;

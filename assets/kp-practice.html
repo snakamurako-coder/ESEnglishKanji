@@ -1022,6 +1022,24 @@
 
   function evaluateKanji(isTrace) {
     const sEl = document.getElementById('score'), mEl = document.getElementById('msg');
+    try {
+    if (!Array.isArray(userStrokes) || !userStrokes.length) {
+      if (sEl) sEl.innerText = "- 点";
+      if (mEl) { mEl.style.color = '#e53935'; mEl.innerText = '先に漢字を書いてから採点してください。'; }
+      window.__kpLastHandBreakdown = null;
+      return;
+    }
+    if (!Array.isArray(referenceStrokes) || !referenceStrokes.length) {
+      if (sEl) sEl.innerText = "- 点";
+      if (mEl) { mEl.style.color = '#e53935'; mEl.innerText = 'お手本データがありません。漢字を選び直してください。'; }
+      window.__kpLastHandBreakdown = null;
+      return;
+    }
+    if (typeof kjOrderEvaluateStrokes !== 'function') {
+      if (mEl) { mEl.style.color = '#e53935'; mEl.innerText = '採点エンジンの読み込みに失敗しました。ページを再読み込みしてください。'; }
+      window.__kpLastHandBreakdown = null;
+      return;
+    }
     const W = getKpHandScoreWeights();
     const countPtsMax = Math.round(typeof W.strokeCountPts === 'number' ? W.strokeCountPts : 10);
     const orderPtsMax = Math.round(typeof W.strokeOrderPts === 'number' ? W.strokeOrderPts : 20);
@@ -1100,7 +1118,8 @@
     let score = Math.round(countAward + orderAward + trajPts + sePts + strPts + sizePts);
     score = Math.max(0, Math.min(totalMax, score));
 
-    const isStrict = document.getElementById('cb-strict-mode').checked;
+    const strictEl = document.getElementById('cb-strict-mode');
+    const isStrict = !!(strictEl && strictEl.checked);
     let typeErrors = 0;
     if (isStrict && countOk && assignment) {
       for (let refIdx = 0; refIdx < referenceStrokes.length; refIdx++) {
@@ -1176,6 +1195,15 @@
         breakdown: breakdown
       }, "*");
     } catch (_z) {}
+    } catch (eEval) {
+      try { console.error('evaluateKanji failed:', eEval); } catch (_eLog) {}
+      window.__kpLastHandBreakdown = null;
+      if (sEl) sEl.innerText = "- 点";
+      if (mEl) {
+        mEl.style.color = '#e53935';
+        mEl.innerText = '採点中にエラーが発生しました。もう一度お試しください。';
+      }
+    }
   }
 </script>
 <script>

@@ -320,19 +320,27 @@
   }
 
   function decideExternalRequest(reqId, pin, approve, memo = "") {
+    if (!reqId) {
+      alert("申請IDが見つかりません。一覧を開き直してください。");
+      return;
+    }
     if (!confirm(approve ? "この申請を承認してポイントを付与しますか？" : "この申請を却下しますか？")) return;
 
-    if (reqId && global.externalStore && typeof global.externalStore.decideRequest === 'function') {
+    if (global.externalStore && typeof global.externalStore.decideRequest === 'function') {
       global.externalStore.decideRequest(reqId, approve, memo)
-        .then(() => {
+        .then(function (res) {
+          if (res && res.alreadyDecided) {
+            alert("この申請はすでに処理済みです。");
+            return;
+          }
           alert(approve ? "承認しました！ポイントが加算されました。" : "却下しました。");
         })
-        .catch(err => {
+        .catch(function (err) {
           console.error("Firestore decideRequest error:", err);
-          alert("処理に失敗しました。");
+          alert("処理に失敗しました: " + (err && err.message ? err.message : "不明なエラー"));
         });
     } else {
-      alert("外部学習機能が初期化されていません。");
+      alert("外部学習機能が初期化されていません。ページを再読み込みしてください。");
     }
   }
 
