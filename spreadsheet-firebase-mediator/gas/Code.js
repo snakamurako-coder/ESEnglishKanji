@@ -31,6 +31,7 @@ function onOpen() {
       .addItem('1. 📚 教材マニフェストを検証・ビルド', 'menuBuildAndValidateManifest_')
       .addItem('2. 📥 取り組み記録シートを確認・更新', 'menuOpenStudyLogSheet_')
       .addItem('3. ✉️ 本日の学習サマリーをメール送信', 'menuSendDailyStudyReport_')
+      .addItem('3b. 📧 保護者通知メールの試し送信', 'menuTestParentNotifyMail_')
       .addSeparator()
       .addItem('4. 💾 全設定＆教材スプレッドシート一括出力（バックアップ）', 'menuExportFullBackupSpreadsheets_')
       .addSeparator()
@@ -105,6 +106,20 @@ function menuOpenStudyLogSheet_() {
 /**
  * 3. 本日の学習サマリーをメール送信
  */
+function menuTestParentNotifyMail_() {
+  const ui = SpreadsheetApp.getUi();
+  try {
+    const result = testParentNotifyMail('simple');
+    ui.alert(
+      '試し送信完了 ✉️',
+      '保護者通知メールを送信しました。\n\n宛先: ' + (result.recipients || []).join(', '),
+      ui.ButtonSet.OK
+    );
+  } catch (err) {
+    ui.alert('エラー ❌', err.message || String(err), ui.ButtonSet.OK);
+  }
+}
+
 function menuSendDailyStudyReport_() {
   const ui = SpreadsheetApp.getUi();
   try {
@@ -1624,17 +1639,26 @@ function handleNotifyRewardEnd_(req) {
 }
 
 /**
- * エディタから実行: MailApp 初回承認・通知先確認
+ * スクリプトエディタの関数一覧から実行（MailApp 初回承認用）。
  * @param {string=} kind "simple"（既定）
  */
+function testParentNotifyMail(kind) {
+  return testParentNotifyMail_(kind);
+}
+
+/** @deprecated エディタ互換。testParentNotifyMail を使ってください。 */
 function testParentNotifyMail_(kind) {
   const recipients = resolveNotifyRecipients_({});
   if (!recipients.length) {
-    throw new Error('通知メールが未登録です。アプリの「管理メニュー → 通知メール設定」で保存するか、スクリプトプロパティ NOTIFY_EMAILS を設定してください。');
+    throw new Error(
+      '通知メールが未登録です。\n' +
+      '・アプリ「管理メニュー → 通知メール設定」で保存\n' +
+      '・または 仲介GAS のスクリプトプロパティ NOTIFY_EMAILS（カンマ区切り）'
+    );
   }
   const mode = String(kind || 'simple').toLowerCase();
   const now = new Date();
-  if (mode === 'simple') {
+  if (mode === 'simple' || mode === 'all') {
     MailApp.sendEmail({
       to: recipients.join(','),
       subject: '【学習アプリ】通知メール試し送信（仲介GAS）',

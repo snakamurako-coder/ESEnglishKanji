@@ -1,9 +1,9 @@
 var global = typeof window !== 'undefined' ? window : this;
 
 // ▼ 旧学習アプリ GAS（非推奨・バックアップ互換のみ） ▼
-    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxPVGeRj3lGtFj7qJnNtP-XbovUt0S7nDw-6ZeSn9iP8KfomZwKCrMQIAKS7zoIGmIgew/exec";
+    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbyNZLeZzZQxBV1sqYcm_iPkUxm3ptzKBces2SRAO_BQyjSoFPv3hn4Vn_P5Ax3JqdI50Q/exec";
     /** 仲介 GAS（メール通知・バックアップ・教材出版 API） */
-    const MEDIATOR_API_URL = "https://script.google.com/macros/s/AKfycbw3kHj3mGXxB3tDUBtbnA0D2SqDdlsD9T0ef9oO3GRf3-QqqFdBPyBNcPvdXxxFnbqXfQ/exec";
+    const MEDIATOR_API_URL = "https://script.google.com/macros/s/AKfycbyNZLeZzZQxBV1sqYcm_iPkUxm3ptzKBces2SRAO_BQyjSoFPv3hn4Vn_P5Ax3JqdI50Q/exec";
     global.MEDIATOR_API_URL = MEDIATOR_API_URL;
     global.GAS_API_URL = GAS_API_URL;
 

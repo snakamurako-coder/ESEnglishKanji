@@ -11,7 +11,7 @@
     return (typeof global.getFirestoreDb === 'function') ? global.getFirestoreDb() : (global.firebaseDb || null);
   }
 
-  var DEFAULT_MEDIATOR_URL = 'https://script.google.com/macros/s/AKfycbw3kHj3mGXxB3tDUBtbnA0D2SqDdlsD9T0ef9oO3GRf3-QqqFdBPyBNcPvdXxxFnbqXfQ/exec';
+  var DEFAULT_MEDIATOR_URL = 'https://script.google.com/macros/s/AKfycbyNZLeZzZQxBV1sqYcm_iPkUxm3ptzKBces2SRAO_BQyjSoFPv3hn4Vn_P5Ax3JqdI50Q/exec';
 
   function getMediatorUrl() {
     return global.MEDIATOR_API_URL || DEFAULT_MEDIATOR_URL;

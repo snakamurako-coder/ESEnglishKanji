@@ -17,7 +17,7 @@ const BOOKS_DIR = path.join(DATA_DIR, 'books');
 
 function parseArgs() {
   const args = process.argv.slice(2);
-  const DEFAULT_MEDIATOR_URL = 'https://script.google.com/macros/s/AKfycbw3kHj3mGXxB3tDUBtbnA0D2SqDdlsD9T0ef9oO3GRf3-QqqFdBPyBNcPvdXxxFnbqXfQ/exec';
+  const DEFAULT_MEDIATOR_URL = 'https://script.google.com/macros/s/AKfycbyNZLeZzZQxBV1sqYcm_iPkUxm3ptzKBces2SRAO_BQyjSoFPv3hn4Vn_P5Ax3JqdI50Q/exec';
   const opts = { mediatorUrl: DEFAULT_MEDIATOR_URL, skipDeploy: false };
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--mediator-url' && args[i + 1]) {
