@@ -11,8 +11,14 @@
     return (typeof global.getFirestoreDb === 'function') ? global.getFirestoreDb() : (global.firebaseDb || null);
   }
 
+  var DEFAULT_MEDIATOR_URL = 'https://script.google.com/macros/s/AKfycbw3kHj3mGXxB3tDUBtbnA0D2SqDdlsD9T0ef9oO3GRf3-QqqFdBPyBNcPvdXxxFnbqXfQ/exec';
+
+  function getMediatorUrl() {
+    return global.MEDIATOR_API_URL || DEFAULT_MEDIATOR_URL;
+  }
+
   function getGasUrl() {
-    return global.GAS_API_URL || (typeof GAS_API_URL !== "undefined" ? GAS_API_URL : "");
+    return getMediatorUrl();
   }
 
   /**
@@ -162,7 +168,7 @@
         fetch(url, {
           method: "POST",
           body: JSON.stringify({
-            action: "save_parent_notify_emails",
+            action: "sync_notify_emails",
             adminPin: pin || "",
             emails: list
           })
@@ -1222,8 +1228,7 @@
      */
     updateMaterialsData: function (pin, customUrl) {
       return new Promise(function (resolve, reject) {
-        var DEFAULT_MEDIATOR_URL = 'https://script.google.com/macros/s/AKfycbxFDQaZj3Jn3SVNF2s2WD4DvwjbHthP8mToqWOqTGV4M5IHDJKsajnrJ20BJpj898u9uw/exec';
-        var targetUrl = (customUrl && String(customUrl).trim()) || DEFAULT_MEDIATOR_URL || getGasUrl();
+        var targetUrl = (customUrl && String(customUrl).trim()) || getMediatorUrl();
 
         if (!targetUrl) {
           reject(new Error("教材連携APIのURLが設定されていません"));

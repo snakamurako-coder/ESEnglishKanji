@@ -1,7 +1,23 @@
 var global = typeof window !== 'undefined' ? window : this;
 
-// ▼ GASのURLを貼り付けてください（※前回と同じURLならそのままで大丈夫） ▼
-    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxlXeRNrrj5dkD-ok-S-WGGLWrrwn7wAKA9N_4OKjkyDO8norUhAY_gU4ZmqAizVwjc/exec";
+// ▼ 旧学習アプリ GAS（非推奨・バックアップ互換のみ） ▼
+    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxPVGeRj3lGtFj7qJnNtP-XbovUt0S7nDw-6ZeSn9iP8KfomZwKCrMQIAKS7zoIGmIgew/exec";
+    /** 仲介 GAS（メール通知・バックアップ・教材出版 API） */
+    const MEDIATOR_API_URL = "https://script.google.com/macros/s/AKfycbw3kHj3mGXxB3tDUBtbnA0D2SqDdlsD9T0ef9oO3GRf3-QqqFdBPyBNcPvdXxxFnbqXfQ/exec";
+    global.MEDIATOR_API_URL = MEDIATOR_API_URL;
+    global.GAS_API_URL = GAS_API_URL;
+
+    function gasApiIsMediatorAction_(act) {
+      return act === "export_full_backup" || act === "import_full_config" || act === "update_materials_manifest"
+        || act === "notify_reward_use" || act === "notify_reward_end";
+    }
+    function gasApiResolvePostUrl_(bodyStr) {
+      try {
+        const parsed = JSON.parse(bodyStr || "{}");
+        if (gasApiIsMediatorAction_(parsed && parsed.action)) return MEDIATOR_API_URL;
+      } catch (_) {}
+      return GAS_API_URL;
+    }
     const LS_PENDING_FINISH_SAVE = "app_pending_finish_quiz_save_v1";
     const LS_FLUSHED_SUBMIT_IDS = "app_flushed_submit_ids_v1";
     const PENDING_FINISH_FLUSH_MAX_ATTEMPTS = 5;
@@ -35,11 +51,13 @@ var global = typeof window !== 'undefined' ? window : this;
     }
     function gasApiFetchOnce(bodyStr, timeoutMs, useFetch) {
       let isAllowed = false;
+      let postUrl = GAS_API_URL;
       try {
         const parsed = JSON.parse(bodyStr || "{}");
         const act = parsed && parsed.action;
-        if (act === "export_full_backup" || act === "import_full_config" || act === "update_materials_manifest") {
+        if (gasApiIsMediatorAction_(act)) {
           isAllowed = true;
+          postUrl = MEDIATOR_API_URL;
         }
       } catch (_) {}
       if (!isAllowed) {
@@ -53,7 +71,7 @@ var global = typeof window !== 'undefined' ? window : this;
       if (!useFetch && typeof XMLHttpRequest !== "undefined") {
         return new Promise(function (resolve, reject) {
           const xhr = new XMLHttpRequest();
-          xhr.open("POST", GAS_API_URL, true);
+          xhr.open("POST", postUrl, true);
           xhr.timeout = timeoutMs;
           xhr.onload = function () {
             resolve({ status: xhr.status, text: String(xhr.responseText || "") });
@@ -79,7 +97,7 @@ var global = typeof window !== 'undefined' ? window : this;
         redirect: "follow"
       };
       if (controller) init.signal = controller.signal;
-      return fetch(GAS_API_URL, init)
+      return fetch(postUrl, init)
         .then(function (r) {
           return r.text().then(function (text) {
             return { status: r.status, text: String(text || "") };
@@ -287,7 +305,7 @@ var global = typeof window !== 'undefined' ? window : this;
     }
 
     /**
-     * 景品・持ち物使用時の保護者メール通知（GAS MailApp）。
+     * 景品・持ち物使用時の保護者メール通知（仲介 GAS / MailApp）。
      * Firebase 完結の使用処理のあと、バックグラウンドで送る。
      */
     function notifyParentsRewardUse_(info) {

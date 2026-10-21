@@ -9,7 +9,7 @@
 
 async function main() {
   const args = process.argv.slice(2);
-  const DEFAULT_MEDIATOR_URL = 'https://script.google.com/macros/s/AKfycbxFDQaZj3Jn3SVNF2s2WD4DvwjbHthP8mToqWOqTGV4M5IHDJKsajnrJ20BJpj898u9uw/exec';
+  const DEFAULT_MEDIATOR_URL = 'https://script.google.com/macros/s/AKfycbw3kHj3mGXxB3tDUBtbnA0D2SqDdlsD9T0ef9oO3GRf3-QqqFdBPyBNcPvdXxxFnbqXfQ/exec';
   let mediatorUrl = DEFAULT_MEDIATOR_URL;
   let action = 'daily_report';
 

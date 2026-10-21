@@ -17,6 +17,7 @@
  *    2. スプレッドシートの「取り組み履歴」シートへ自動追記・アーカイブ（重複排除）
  *    3. 保護者がスプレッドシート上で学習推移・正答率・獲得ポイントを確認可能
  *    4. 日次学習サマリーメールの自動配信
+ *    5. 景品・持ち物使用時の保護者メール通知（notify_reward_use / notify_reward_end）
  */
 
 // ============================================================================
@@ -257,8 +258,27 @@ function handleApiRequest_(params) {
     }
 
     if (action === 'import_full_config' || action === 'fetch_backup_spreadsheet_data') {
-      const importResult = importFullConfigSpreadsheets_(body);
+      const importResult = importFullConfigSpreadsheets_(params);
       return jsonResponse_(importResult);
+    }
+
+    // ------------------------------------------------------------------------
+    // 保護者メール通知（景品・持ち物）— Firestore 設定の recipients を優先
+    // ------------------------------------------------------------------------
+    if (action === 'notify_reward_use') {
+      return jsonResponse_(handleNotifyRewardUse_(params));
+    }
+    if (action === 'notify_reward_end') {
+      return jsonResponse_(handleNotifyRewardEnd_(params));
+    }
+    if (action === 'save_parent_notify_emails' || action === 'sync_notify_emails') {
+      const emails = normalizeNotifyRecipients_(params.emails);
+      PropertiesService.getScriptProperties().setProperty('NOTIFY_EMAILS', emails.join(','));
+      return jsonResponse_({
+        status: 'success',
+        message: '通知メールを保存しました',
+        count: emails.length
+      });
     }
 
     if (action === 'ping') {
@@ -1358,5 +1378,269 @@ function importFullConfigSpreadsheets_(body) {
   } catch (err) {
     return { status: "error", message: "スプレッドシートのインポートに失敗しました: " + err.message };
   }
+}
+
+// ============================================================================
+// 景品・持ち物使用の保護者メール通知（MailApp）
+// ============================================================================
+
+var REWARD_NOTIFY_POLL_HANDLER_ = 'checkPendingRewardEndNotifications_';
+
+function formatJstDateTime_(dateObj) {
+  return Utilities.formatDate(dateObj, 'Asia/Tokyo', 'yyyy-MM-dd HH:mm:ss');
+}
+
+function parseSheetDateTime_(value) {
+  if (value instanceof Date && !isNaN(value.getTime())) return value;
+  const s = String(value || '').trim();
+  if (!s) return null;
+  const d = new Date(s);
+  if (!isNaN(d.getTime())) return d;
+  return null;
+}
+
+function normalizeNotifyRecipients_(list) {
+  const out = [];
+  const seen = {};
+  (Array.isArray(list) ? list : []).forEach(function (raw) {
+    const v = String(raw || '').trim();
+    if (!v || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) return;
+    const key = v.toLowerCase();
+    if (seen[key]) return;
+    seen[key] = true;
+    out.push(v);
+  });
+  return out;
+}
+
+function getAppSettingScalarFromAdminSs_(adminSs, key) {
+  if (!adminSs) return '';
+  const sheet = adminSs.getSheetByName('アプリ設定');
+  if (!sheet) return '';
+  const data = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]) === String(key)) return data[i][1];
+  }
+  return '';
+}
+
+function getParentNotifyEmailsFromAdminSs_(adminSs) {
+  const out = [];
+  for (let i = 1; i <= 4; i++) {
+    const v = String(getAppSettingScalarFromAdminSs_(adminSs, '通知メール_' + i) || '').trim();
+    if (v && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) out.push(v);
+  }
+  return out;
+}
+
+function getNotifyEmailsFromScriptProps_() {
+  const raw = PropertiesService.getScriptProperties().getProperty('NOTIFY_EMAILS') || '';
+  return normalizeNotifyRecipients_(raw.split(','));
+}
+
+function openAdminSpreadsheetForNotify_() {
+  const props = PropertiesService.getScriptProperties();
+  const adminSsId = props.getProperty('ADMIN_SS_ID');
+  if (!adminSsId) return null;
+  try {
+    return SpreadsheetApp.openById(adminSsId);
+  } catch (_) {
+    return null;
+  }
+}
+
+function resolveNotifyRecipients_(req) {
+  const fromReq = normalizeNotifyRecipients_(req && req.recipients);
+  if (fromReq.length) return fromReq;
+  const fromProps = getNotifyEmailsFromScriptProps_();
+  if (fromProps.length) return fromProps;
+  const adminSs = openAdminSpreadsheetForNotify_();
+  return getParentNotifyEmailsFromAdminSs_(adminSs);
+}
+
+function sendMailToParents_(subject, body, recipientsOpt) {
+  const recipients = normalizeNotifyRecipients_(recipientsOpt);
+  if (!recipients.length) return { sent: false, reason: 'no_recipients' };
+  MailApp.sendEmail({
+    to: recipients.join(','),
+    subject: subject,
+    body: body
+  });
+  return { sent: true, recipients: recipients };
+}
+
+function computeRewardEndsAt_(usedAtDate, limitMinutes) {
+  if (!usedAtDate || !limitMinutes) return null;
+  return new Date(usedAtDate.getTime() + limitMinutes * 60 * 1000);
+}
+
+function computeRewardNotifyAt_(usedAtDate, limitMinutes) {
+  const endsAt = computeRewardEndsAt_(usedAtDate, limitMinutes);
+  if (!endsAt) return null;
+  return new Date(endsAt.getTime() + 60 * 1000);
+}
+
+function sendRewardStartEmail_(userName, rewardName, limitMinutes, endsAtDate, recipientsOpt) {
+  const endsText = endsAtDate ? formatJstDateTime_(endsAtDate) : '';
+  const hasLimit = Number(limitMinutes) > 0;
+  const subject = hasLimit
+    ? ('【学習アプリ】ご褒美チケット使用開始: ' + rewardName)
+    : ('【学習アプリ】景品・持ち物を使用: ' + rewardName);
+  const body =
+    userName + ' さんが「' + rewardName + '」を使用しました。\n' +
+    (hasLimit
+      ? ('制限時間: ' + limitMinutes + ' 分\n' +
+        (endsText ? '終了予定: ' + endsText + '（日本時間）\n' : '') +
+        '\n終了後（+1分）にもう一度お知らせします。')
+      : '（時間制限なし）\n');
+  return sendMailToParents_(subject, body, recipientsOpt);
+}
+
+function sendRewardEndEmail_(userName, rewardName, usedAtDate, endsAtDate, recipientsOpt) {
+  const subject = '【学習アプリ】ご褒美チケット終了: ' + rewardName;
+  const body =
+    userName + ' さんの「' + rewardName + '」の制限時間が終了しました。\n' +
+    '使用開始: ' + (usedAtDate ? formatJstDateTime_(usedAtDate) : '不明') + '\n' +
+    '終了予定: ' + (endsAtDate ? formatJstDateTime_(endsAtDate) : '不明') + '（日本時間）\n';
+  return sendMailToParents_(subject, body, recipientsOpt);
+}
+
+function ensureRewardNotificationPollTrigger_() {
+  const triggers = ScriptApp.getProjectTriggers();
+  for (let i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() === REWARD_NOTIFY_POLL_HANDLER_) return false;
+  }
+  ScriptApp.newTrigger(REWARD_NOTIFY_POLL_HANDLER_)
+    .timeBased()
+    .everyMinutes(5)
+    .create();
+  return true;
+}
+
+function processPendingRewardEndTickets_() {
+  const props = PropertiesService.getScriptProperties();
+  const all = props.getProperties();
+  Object.keys(all).forEach(function (key) {
+    if (key.indexOf('reward_end_ticket_') !== 0) return;
+    let ticket = null;
+    try { ticket = JSON.parse(all[key]); } catch (e) { props.deleteProperty(key); return; }
+    if (!ticket) { props.deleteProperty(key); return; }
+    const notifyAt = parseSheetDateTime_(ticket.notifyAt) || parseSheetDateTime_(ticket.endsAt);
+    if (!notifyAt || Date.now() < notifyAt.getTime()) return;
+    try {
+      const usedAt = parseSheetDateTime_(ticket.usedAt);
+      const endsAt = parseSheetDateTime_(ticket.endsAt);
+      const mail = sendRewardEndEmail_(
+        ticket.userName || 'お子さま',
+        ticket.rewardName || '景品',
+        usedAt,
+        endsAt,
+        ticket.recipients
+      );
+      if (mail.sent || mail.reason === 'no_recipients') props.deleteProperty(key);
+    } catch (e) {
+      console.warn('processPendingRewardEndTickets_ ' + key, e);
+    }
+  });
+}
+
+function checkPendingRewardEndNotifications_() {
+  try {
+    processPendingRewardEndTickets_();
+  } catch (e) {
+    console.warn('checkPendingRewardEndNotifications_', e);
+  }
+}
+
+function handleNotifyRewardUse_(req) {
+  try {
+    const recipients = resolveNotifyRecipients_(req);
+    if (!recipients.length) {
+      return {
+        status: 'success',
+        mail: { sent: false, reason: 'no_recipients' },
+        message: '通知先メールが未設定です'
+      };
+    }
+    const userName = String(req.userName || 'お子さま');
+    const rewardName = String(req.rewardName || '景品');
+    const limitMinutes = Math.max(0, Number(req.limitMinutes) || 0);
+    let usedAt = parseSheetDateTime_(req.usedAt) || new Date();
+    let endsAt = null;
+    if (req.endsAt) endsAt = parseSheetDateTime_(req.endsAt);
+    if (!endsAt && limitMinutes > 0) endsAt = computeRewardEndsAt_(usedAt, limitMinutes);
+
+    const mail = sendRewardStartEmail_(userName, rewardName, limitMinutes, endsAt, recipients);
+
+    if (mail.sent && limitMinutes > 0 && endsAt) {
+      const notifyAt = computeRewardNotifyAt_(usedAt, limitMinutes) || new Date(endsAt.getTime() + 60 * 1000);
+      const ticketId = String(req.ticketId || (req.userId + '_' + usedAt.getTime()));
+      const props = PropertiesService.getScriptProperties();
+      props.setProperty('reward_end_ticket_' + ticketId, JSON.stringify({
+        ticketId: ticketId,
+        userId: String(req.userId || ''),
+        userName: userName,
+        rewardName: rewardName,
+        usedAt: usedAt.toISOString(),
+        endsAt: endsAt.toISOString(),
+        notifyAt: notifyAt.toISOString(),
+        recipients: recipients,
+        createdAt: new Date().toISOString()
+      }));
+      try { ensureRewardNotificationPollTrigger_(); } catch (eTrig) {
+        console.warn('ensureRewardNotificationPollTrigger_', eTrig);
+      }
+    }
+
+    return {
+      status: 'success',
+      mail: mail,
+      message: mail.sent ? '通知メールを送信しました' : ('通知スキップ: ' + (mail.reason || ''))
+    };
+  } catch (err) {
+    return { status: 'error', message: '通知メール送信に失敗: ' + err.message };
+  }
+}
+
+function handleNotifyRewardEnd_(req) {
+  try {
+    const recipients = resolveNotifyRecipients_(req);
+    if (!recipients.length) {
+      return { status: 'success', mail: { sent: false, reason: 'no_recipients' } };
+    }
+    const userName = String(req.userName || 'お子さま');
+    const rewardName = String(req.rewardName || '景品');
+    const usedAt = parseSheetDateTime_(req.usedAt);
+    const endsAt = parseSheetDateTime_(req.endsAt) || new Date();
+    const mail = sendRewardEndEmail_(userName, rewardName, usedAt, endsAt, recipients);
+    const ticketId = String(req.ticketId || '');
+    if (ticketId) {
+      try { PropertiesService.getScriptProperties().deleteProperty('reward_end_ticket_' + ticketId); } catch (e) {}
+    }
+    return { status: 'success', mail: mail };
+  } catch (err) {
+    return { status: 'error', message: '終了通知に失敗: ' + err.message };
+  }
+}
+
+/**
+ * エディタから実行: MailApp 初回承認・通知先確認
+ * @param {string=} kind "simple"（既定）
+ */
+function testParentNotifyMail_(kind) {
+  const recipients = resolveNotifyRecipients_({});
+  if (!recipients.length) {
+    throw new Error('通知メールが未登録です。アプリの「管理メニュー → 通知メール設定」で保存するか、スクリプトプロパティ NOTIFY_EMAILS を設定してください。');
+  }
+  const mode = String(kind || 'simple').toLowerCase();
+  const now = new Date();
+  if (mode === 'simple') {
+    MailApp.sendEmail({
+      to: recipients.join(','),
+      subject: '【学習アプリ】通知メール試し送信（仲介GAS）',
+      body: 'これは試し送信です。仲介GAS の MailApp 設定が正常です。\n\n送信日時: ' + formatJstDateTime_(now) + '（日本時間）\n'
+    });
+  }
+  return { ok: true, recipients: recipients, sentAt: formatJstDateTime_(now) };
 }
 
