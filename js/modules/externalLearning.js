@@ -287,6 +287,10 @@
       const card = document.createElement('div');
       card.className = "external-admin-card";
       card.dataset.reqId = item.id || '';
+      card.dataset.userId = item.userId != null ? String(item.userId) : '';
+      card.dataset.points = String(Number(item.points) || 0);
+      card.dataset.category = item.category || '';
+      card.dataset.status = item.status || 'pending';
       card.style.cssText = "background:#2a2a2a;border-radius:12px;padding:14px;border:1px solid #444;position:relative;";
       card.innerHTML = `<label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;">
           <input type="checkbox" class="external-bulk-check" style="transform:scale(1.5);margin-top:4px;" checked>
@@ -305,8 +309,10 @@
         </div>`;
       const btns = card.querySelectorAll('button');
       const memoField = card.querySelector('.external-admin-memo');
-      btns[0].onclick = () => decideExternalRequest(item.id, pin, true, memoField ? memoField.value : "");
-      btns[1].onclick = () => decideExternalRequest(item.id, pin, false, memoField ? memoField.value : "");
+      const approveBtn = btns[0];
+      const rejectBtn = btns[1];
+      approveBtn.onclick = () => decideExternalRequest(item.id, pin, true, memoField ? memoField.value : "", item, approveBtn);
+      rejectBtn.onclick = () => decideExternalRequest(item.id, pin, false, memoField ? memoField.value : "", item, rejectBtn);
       listEl.appendChild(card);
     });
 
@@ -319,29 +325,59 @@
     listEl.appendChild(back);
   }
 
-  function decideExternalRequest(reqId, pin, approve, memo = "") {
+  function decideExternalRequest(reqId, pin, approve, memo, itemHint, btnEl) {
+    memo = memo || "";
     if (!reqId) {
       alert("申請IDが見つかりません。一覧を開き直してください。");
       return;
     }
     if (!confirm(approve ? "この申請を承認してポイントを付与しますか？" : "この申請を却下しますか？")) return;
 
-    if (global.externalStore && typeof global.externalStore.decideRequest === 'function') {
-      global.externalStore.decideRequest(reqId, approve, memo)
-        .then(function (res) {
-          if (res && res.alreadyDecided) {
-            alert("この申請はすでに処理済みです。");
-            return;
-          }
-          alert(approve ? "承認しました！ポイントが加算されました。" : "却下しました。");
-        })
-        .catch(function (err) {
-          console.error("Firestore decideRequest error:", err);
-          alert("処理に失敗しました: " + (err && err.message ? err.message : "不明なエラー"));
-        });
-    } else {
+    if (!(global.externalStore && typeof global.externalStore.decideRequest === 'function')) {
       alert("外部学習機能が初期化されていません。ページを再読み込みしてください。");
+      return;
     }
+
+    var origLabel = btnEl ? btnEl.innerText : '';
+    if (btnEl) {
+      btnEl.disabled = true;
+      btnEl.innerText = "処理中…";
+    }
+    // 楽観的にカードを外して体感待ちをなくす（失敗時は購読で戻る）
+    var card = btnEl && btnEl.closest ? btnEl.closest('.external-admin-card') : null;
+    if (card && card.parentNode) {
+      card.style.opacity = '0.45';
+      card.style.pointerEvents = 'none';
+    }
+
+    global.externalStore.decideRequest(reqId, approve, memo, itemHint || null)
+      .then(function (res) {
+        if (res && res.alreadyDecided) {
+          alert("この申請はすでに処理済みです。");
+          return;
+        }
+        if (card && card.parentNode) {
+          try { card.parentNode.removeChild(card); } catch (_e) {}
+        }
+        // 重い alert の代わりに短いメッセージ（必要なら残す）
+        var msg = document.getElementById('external-admin-message');
+        if (msg) {
+          msg.style.color = '#81C784';
+          msg.innerText = approve ? "承認しました（ポイント加算済み）" : "却下しました";
+        }
+      })
+      .catch(function (err) {
+        console.error("Firestore decideRequest error:", err);
+        if (btnEl) {
+          btnEl.disabled = false;
+          btnEl.innerText = origLabel || (approve ? '承認する' : '却下');
+        }
+        if (card) {
+          card.style.opacity = '';
+          card.style.pointerEvents = '';
+        }
+        alert("処理に失敗しました: " + (err && err.message ? err.message : "不明なエラー"));
+      });
   }
 
   function bulkApproveExternalRequests(pin) {
@@ -356,7 +392,11 @@
         const memoField = card.querySelector('.external-admin-memo');
         requestsToApprove.push({
           reqId: card.dataset.reqId,
-          adminMemo: memoField ? memoField.value : ""
+          adminMemo: memoField ? memoField.value : "",
+          userId: card.dataset.userId || '',
+          points: Number(card.dataset.points) || 0,
+          category: card.dataset.category || '',
+          status: card.dataset.status || 'pending'
         });
       }
     });
@@ -368,18 +408,27 @@
 
     if (!confirm(`選択された ${requestsToApprove.length} 件の申請を一括で承認してポイントを付与しますか？`)) return;
 
-    if (global.externalStore && typeof global.externalStore.decideRequest === 'function') {
-      const promises = requestsToApprove.map(item =>
-        global.externalStore.decideRequest(item.reqId, true, item.adminMemo)
-      );
-      Promise.all(promises)
-        .then(() => {
-          alert("選択されたすべての申請を承認しました！");
+    if (global.externalStore && typeof global.externalStore.bulkApproveRequests === 'function') {
+      const msg = document.getElementById('external-admin-message');
+      if (msg) { msg.style.color = '#aaa'; msg.innerText = "一括承認中…"; }
+      global.externalStore.bulkApproveRequests(pin, requestsToApprove)
+        .then(function () {
+          if (msg) { msg.style.color = '#81C784'; msg.innerText = "一括承認しました"; }
         })
-        .catch(err => {
+        .catch(function (err) {
           console.error("Bulk approve error:", err);
+          if (msg) { msg.style.color = '#ff8a80'; msg.innerText = ""; }
           alert("一括承認中にエラーが発生しました。");
         });
+    } else if (global.externalStore && typeof global.externalStore.decideRequest === 'function') {
+      Promise.all(requestsToApprove.map(function (item) {
+        return global.externalStore.decideRequest(item.reqId, true, item.adminMemo, item);
+      })).then(function () {
+        alert("選択されたすべての申請を承認しました！");
+      }).catch(function (err) {
+        console.error("Bulk approve error:", err);
+        alert("一括承認中にエラーが発生しました。");
+      });
     } else {
       alert("外部学習機能が初期化されていません。");
     }
