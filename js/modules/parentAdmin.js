@@ -231,10 +231,28 @@
     };
 
     if (global.parentAdminStore && typeof global.parentAdminStore.getUsersPoints === 'function') {
+      var loadGen = (loadParentAdminUserPoints._gen = (loadParentAdminUserPoints._gen || 0) + 1);
+      var safetyTimer = setTimeout(function () {
+        if (loadGen !== loadParentAdminUserPoints._gen) return;
+        if (!container) return;
+        if (container.innerHTML.indexOf("読み込み中") < 0) return;
+        container.innerHTML = '<p style="color:#ff8a80;text-align:center;">読み込みがタイムアウトしました。<br><button type="button" class="menu-btn btn-orange" style="margin-top:12px;" onclick="loadParentAdminUserPoints()">再試行</button></p>';
+      }, 10000);
       global.parentAdminStore.getUsersPoints(parentAdminPinSession)
-        .then(onData)
-        .catch(err => {
-          if (container) container.innerHTML = '<p style="color:#ff8a80;text-align:center;">' + escapeHtml(err.message || '取得に失敗しました') + '</p>';
+        .then(function (users) {
+          clearTimeout(safetyTimer);
+          if (loadGen !== loadParentAdminUserPoints._gen) return;
+          onData(users);
+        })
+        .catch(function (err) {
+          clearTimeout(safetyTimer);
+          if (loadGen !== loadParentAdminUserPoints._gen) return;
+          if (container) {
+            container.innerHTML =
+              '<p style="color:#ff8a80;text-align:center;">' +
+              escapeHtml((err && err.message) || "取得に失敗しました") +
+              '<br><button type="button" class="menu-btn btn-orange" style="margin-top:12px;" onclick="loadParentAdminUserPoints()">再試行</button></p>';
+          }
         });
       return;
     }
@@ -265,8 +283,11 @@
 
     const onSuccess = (res) => {
       callToggleBtnLoading(btn, false, orig);
-      const finalPts = res.newPoints != null ? res.newPoints : newPts;
+      const finalPts =
+        res && res.points != null ? res.points
+          : (res && res.newPoints != null ? res.newPoints : newPts);
       if (disp) disp.innerText = String(finalPts);
+      if (inp) inp.value = String(finalPts);
       if (msg) { msg.innerText = (res && res.message) || "保存しました！"; msg.style.color = "#4CAF50"; }
       try {
         const kid = JSON.parse(localStorage.getItem('app_kid_user') || 'null');

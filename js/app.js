@@ -5318,8 +5318,8 @@ var global = typeof window !== 'undefined' ? window : this;
         }
         return;
       }
-      const KP_EMBED_VER = opts.embedVer || "14";
-      const KP_SRC = opts.src || "assets/kp-practice.html?v=20261021-eval-safe";
+      const KP_EMBED_VER = opts.embedVer || "15";
+      const KP_SRC_BASE = String(opts.src || "assets/kp-practice.html").split("?")[0];
       const onReady =
         typeof opts.onReady === "function"
           ? opts.onReady
@@ -5336,7 +5336,22 @@ var global = typeof window !== 'undefined' ? window : this;
         onReady();
         return;
       }
-      if (frame.dataset.kpLoading === "1") return;
+      // 既にロード中なら、完了を待って onReady を呼ぶ（早期 return で待ちが宙に浮くのを防ぐ）
+      if (frame.dataset.kpLoading === "1") {
+        var waitN = 0;
+        var waitId = setInterval(function () {
+          waitN++;
+          if (frame.dataset.kpLoaded === "1") {
+            clearInterval(waitId);
+            onReady();
+            return;
+          }
+          if (frame.dataset.kpLoading !== "1" || waitN >= 100) {
+            clearInterval(waitId);
+          }
+        }, 100);
+        return;
+      }
       frame.dataset.kpLoading = "1";
       delete frame.dataset.kanjiQuizPatched;
       let settled = false;
@@ -5345,10 +5360,13 @@ var global = typeof window !== 'undefined' ? window : this;
         settled = true;
         frame.dataset.kpLoading = "";
         frame.dataset.kpLoaded = "";
+        // クイズ中の alert は「クラッシュしてホームに戻った」ように見えるため抑制可
         if (opts.alertOnMissing !== false) {
           try {
             alert("高機能モードの読み込みに失敗しました。" + (detail ? "\n（" + detail + "）" : ""));
           } catch (_eA) {}
+        } else {
+          try { console.warn("[kp-embed] load failed:", detail); } catch (_eL) {}
         }
       }
       function markReady() {
@@ -5375,7 +5393,7 @@ var global = typeof window !== 'undefined' ? window : this;
       frame.addEventListener("load", onKpEmbedLoad);
       frame.addEventListener("error", function onKpEmbedErr() {
         frame.removeEventListener("error", onKpEmbedErr);
-        markFailed(KP_SRC + " の取得に失敗");
+        markFailed(KP_SRC_BASE + " の取得に失敗");
       });
       setTimeout(function () {
         if (!settled && frame.dataset.kpLoading === "1") {
@@ -5383,7 +5401,7 @@ var global = typeof window !== 'undefined' ? window : this;
         }
       }, 15000);
       try {
-        frame.src = KP_SRC + "?v=" + encodeURIComponent(KP_EMBED_VER);
+        frame.src = KP_SRC_BASE + "?v=" + encodeURIComponent(KP_EMBED_VER);
       } catch (_eSrc) {
         markFailed(String(_eSrc && _eSrc.message ? _eSrc.message : _eSrc));
       }
@@ -5391,8 +5409,17 @@ var global = typeof window !== 'undefined' ? window : this;
         if (frame.dataset.kpLoaded === "1") onReady();
       }, 700);
     }
-    function openKanjiPracticePro() {
-      openKanjiKpEmbedFrame_(getKanjiQuizScoreFrame());
+    function openKanjiPracticePro(opts) {
+      opts = opts || {};
+      // 書き順／手書きクイズのウォームアップでは alert しない
+      var playSec = document.getElementById("section-kanji-quiz-play");
+      var inQuizPlay = !!(playSec && playSec.classList.contains("active"));
+      openKanjiKpEmbedFrame_(getKanjiQuizScoreFrame(), {
+        alertOnMissing: opts.alertOnMissing != null ? opts.alertOnMissing : !inQuizPlay,
+        onReady: opts.onReady,
+        embedVer: opts.embedVer,
+        src: opts.src
+      });
     }
     function openKanjiWrongModelFramePro() {
       openKanjiKpEmbedFrame_(getKanjiQuizWrongModelFrame(), {
@@ -8684,8 +8711,13 @@ var global = typeof window !== 'undefined' ? window : this;
       if (!canvas) return;
       const L = kanjiQuizWriteLogicalSize;
       const dpr = window.devicePixelRatio || 1;
-      canvas.width = L * dpr;
-      canvas.height = L * dpr;
+      const needW = Math.max(1, Math.round(L * dpr));
+      const needH = Math.max(1, Math.round(L * dpr));
+      // サイズ不変なら bitmap を触らない（スタイラス描画中の再初期化＝書けない／線消失の原因）
+      if (canvas.width !== needW || canvas.height !== needH) {
+        canvas.width = needW;
+        canvas.height = needH;
+      }
       canvas.style.width = L + "px";
       canvas.style.height = L + "px";
       if (!__kanjiQuizWriteCanvasBound) {
@@ -9765,7 +9797,7 @@ var global = typeof window !== 'undefined' ? window : this;
     }
     function ensureKanjiPracticeFrameReady() {
       return new Promise(function (resolve) {
-        openKanjiPracticePro();
+        openKanjiPracticePro({ alertOnMissing: false });
         kanjiQuizEnsureScoreListener();
         const frame = document.getElementById("kp-pro-frame");
         if (!frame) {
@@ -10073,8 +10105,15 @@ var global = typeof window !== 'undefined' ? window : this;
         .replace(/[。．\.・•●◦‧]+[\s　]*$/, "")
         .trim();
     }
+    var __strokeOrderTtsTimer_ = null;
+    var __strokeOrderTtsSpokenKey_ = "";
     function clearStrokeOrderReadings_() {
       const el = document.getElementById("kanji-stroke-order-readings");
+      if (__strokeOrderTtsTimer_ != null) {
+        clearTimeout(__strokeOrderTtsTimer_);
+        __strokeOrderTtsTimer_ = null;
+      }
+      __strokeOrderTtsSpokenKey_ = "";
       if (!el) return;
       el.innerHTML = "";
       el.classList.remove("is-visible");
@@ -10089,28 +10128,47 @@ var global = typeof window !== 'undefined' ? window : this;
         window.speechSynthesis.cancel();
       }
     }
-    function playStrokeOrderReadingTTS_(phrases) {
-      stopStrokeOrderReadingTTS_();
-      const isEnabled = getUserPref("kanji_quiz_stroke_tts_enabled", "1") === "1";
-      if (!isEnabled) return;
-
+    function playStrokeOrderReadingTTS_(phrases, opts) {
+      opts = opts || {};
+      // 描画・キャンバス初期化を優先し、読み上げは次フレーム以降に遅延（「読み上げ待ちで書けない」感を減らす）
+      if (__strokeOrderTtsTimer_ != null) {
+        clearTimeout(__strokeOrderTtsTimer_);
+        __strokeOrderTtsTimer_ = null;
+      }
       const validPhrases = (Array.isArray(phrases) ? phrases : [])
         .map(cleanStrokeOrderTtsText_)
         .filter(function (t) { return !!t; });
       if (!validPhrases.length) return;
+      const speakKey =
+        (kanjiQuizSession ? String(kanjiQuizSession.index) + "|" : "") +
+        validPhrases.join("|");
+      if (!opts.force && speakKey && speakKey === __strokeOrderTtsSpokenKey_) return;
 
-      const textToSpeak = validPhrases.join("、 ");
-      if (window.PiperTtsStore) {
-        window.PiperTtsStore.speak(textToSpeak, { lang: "ja", rate: 1.1 }).then(function (handled) {
-          if (!handled) {
+      __strokeOrderTtsTimer_ = setTimeout(function () {
+        __strokeOrderTtsTimer_ = null;
+        const isEnabled = getUserPref("kanji_quiz_stroke_tts_enabled", "1") === "1";
+        if (!isEnabled) return;
+        // 問題が切り替わっていたら読まない
+        const keyNow =
+          (kanjiQuizSession ? String(kanjiQuizSession.index) + "|" : "") +
+          validPhrases.join("|");
+        if (keyNow !== speakKey) return;
+        __strokeOrderTtsSpokenKey_ = speakKey;
+
+        stopStrokeOrderReadingTTS_();
+        const textToSpeak = validPhrases.join("、 ");
+        if (window.PiperTtsStore) {
+          window.PiperTtsStore.speak(textToSpeak, { lang: "ja", rate: 1.1 }).then(function (handled) {
+            if (!handled) {
+              speakStrokeOrderViaSpeechSynthesis_(validPhrases);
+            }
+          }).catch(function () {
             speakStrokeOrderViaSpeechSynthesis_(validPhrases);
-          }
-        }).catch(function () {
-          speakStrokeOrderViaSpeechSynthesis_(validPhrases);
-        });
-        return;
-      }
-      speakStrokeOrderViaSpeechSynthesis_(validPhrases);
+          });
+          return;
+        }
+        speakStrokeOrderViaSpeechSynthesis_(validPhrases);
+      }, opts.delayMs != null ? opts.delayMs : 120);
     }
     function speakStrokeOrderViaSpeechSynthesis_(phrases) {
       if (!window.speechSynthesis) return;
@@ -10123,12 +10181,14 @@ var global = typeof window !== 'undefined' ? window : this;
         window.speechSynthesis.speak(ut);
       });
     }
-    function renderStrokeOrderReadings_(q) {
+    function renderStrokeOrderReadings_(q, opts) {
+      opts = opts || {};
       const el = document.getElementById("kanji-stroke-order-readings");
       if (!el) return;
       if (!q || q.type !== "stroke_order_trace") {
         clearStrokeOrderReadings_();
         stopStrokeOrderReadingTTS_();
+        __strokeOrderTtsSpokenKey_ = "";
         return;
       }
       const readings = Array.isArray(q.readings) ? q.readings : [];
@@ -10195,14 +10255,17 @@ var global = typeof window !== 'undefined' ? window : this;
           setUserPref("kanji_quiz_stroke_tts_enabled", chk.checked ? "1" : "0");
           if (!chk.checked) {
             stopStrokeOrderReadingTTS_();
+            __strokeOrderTtsSpokenKey_ = "";
           } else {
-            playStrokeOrderReadingTTS_(ttsPhrases);
+            playStrokeOrderReadingTTS_(ttsPhrases, { force: true, delayMs: 0 });
           }
         });
       }
       el.classList.add("is-visible");
       el.style.display = "flex";
-      playStrokeOrderReadingTTS_(ttsPhrases);
+      if (!opts.skipTts) {
+        playStrokeOrderReadingTTS_(ttsPhrases, { delayMs: 120 });
+      }
     }
     var __kanjiHandScoreToastTimer = null;
     var __kanjiEarnedPtsToastTimer = null;
@@ -12308,13 +12371,14 @@ var global = typeof window !== 'undefined' ? window : this;
               }
             }
             kanjiQuizSyncPenUiFromStrokeParams();
-            if (!hadUserInk) {
-              // 未記入のときだけキャンバスを整える（記入済みなら消さない）
+            // 描画中・記入済みならキャンバスを触らない（再初期化でスタイラスが無効化される）
+            if (!hadUserInk && !kanjiQuizIsDrawing) {
               try { kanjiQuizSetupWriteCanvas(); } catch (_eSetup) {}
             }
             kanjiQuizRedrawParentCanvas();
             kanjiQuizScheduleWriteCanvasReflow();
-            if (isStrokeOrderQ) renderStrokeOrderReadings_(qNow);
+            // よみ帯は問題表示時に描画済み。iframe 完了時は TTS を二重起動しない
+            if (isStrokeOrderQ) renderStrokeOrderReadings_(qNow, { skipTts: true });
             if (summary) {
               if (isStrokeOrderQ && !kanjiQuizTraceGuideStrokes.length && summary.innerHTML.indexOf("なぞり線") >= 0) {
                 /* 失敗メッセージを残す */

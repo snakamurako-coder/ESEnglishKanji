@@ -474,34 +474,105 @@
     });
   }
 
+  function normalizeUsersPointsList_(list) {
+    if (!Array.isArray(list)) return [];
+    return list.map(function (u) {
+      if (!u) return null;
+      var id = u.id != null ? u.id : "";
+      if (id === "" || id == null) return null;
+      return {
+        id: id,
+        name: u.name || id,
+        points: typeof u.points === "number" ? u.points : (Number(u.points) || 0)
+      };
+    }).filter(Boolean).sort(function (a, b) {
+      return String(a.id).localeCompare(String(b.id));
+    });
+  }
+
+  function readCachedUsersPoints_() {
+    try {
+      var cached = JSON.parse(localStorage.getItem("app_child_users_cache") || "null");
+      return normalizeUsersPointsList_(cached);
+    } catch (_e) {
+      return [];
+    }
+  }
+
   /**
    * ユーザー一覧とポイントの取得（Firestore 完結）
+   * Firestore がハングしてもタイムアウト＋ローカルキャッシュで UI が止まらないようにする
    */
   function getUsersPoints(pin) {
     return new Promise(function (resolve, reject) {
+      var settled = false;
+      var timer = null;
+
+      function finishOk(users) {
+        if (settled) return;
+        settled = true;
+        if (timer != null) clearTimeout(timer);
+        resolve(normalizeUsersPointsList_(users));
+      }
+
+      function finishErr(err) {
+        if (settled) return;
+        var cached = readCachedUsersPoints_();
+        if (cached.length) {
+          finishOk(cached);
+          return;
+        }
+        settled = true;
+        if (timer != null) clearTimeout(timer);
+        reject(err || new Error("ユーザーポイントの取得に失敗しました"));
+      }
+
+      timer = setTimeout(function () {
+        finishErr(new Error("読み込みがタイムアウトしました。通信を確認して、もう一度開いてください。"));
+      }, 8000);
+
       var db = getDb();
       if (db) {
-        db.collection('users').get().then(function (snapshot) {
-          if (snapshot && !snapshot.empty) {
-            var users = [];
-            snapshot.forEach(function (doc) {
-              var d = doc.data() || {};
-              if (!d.id) d.id = doc.id;
-              users.push({
-                id: d.id,
-                name: d.name || d.id,
-                points: typeof d.points === 'number' ? d.points : 0
+        try {
+          db.collection("users").get().then(function (snapshot) {
+            if (snapshot && !snapshot.empty) {
+              var users = [];
+              snapshot.forEach(function (doc) {
+                var d = doc.data() || {};
+                if (!d.id) d.id = doc.id;
+                users.push(d);
               });
-            });
-            users.sort(function (a, b) { return String(a.id).localeCompare(String(b.id)); });
-            resolve(users);
-            return;
-          }
-          resolve([]);
-        }).catch(reject);
-      } else {
-        resolve([]);
+              finishOk(users);
+              return;
+            }
+            // Firestore 空 → キャッシュ／userStore
+            if (global.userStore && typeof global.userStore.fetchUsersList === "function") {
+              global.userStore.fetchUsersList().then(finishOk).catch(function () {
+                finishOk(readCachedUsersPoints_());
+              });
+              return;
+            }
+            finishOk(readCachedUsersPoints_());
+          }).catch(function (err) {
+            if (global.userStore && typeof global.userStore.fetchUsersList === "function") {
+              global.userStore.fetchUsersList().then(finishOk).catch(function () {
+                finishErr(err);
+              });
+              return;
+            }
+            finishErr(err);
+          });
+        } catch (eSync) {
+          finishErr(eSync);
+        }
+        return;
       }
+
+      if (global.userStore && typeof global.userStore.fetchUsersList === "function") {
+        global.userStore.fetchUsersList().then(finishOk).catch(finishErr);
+        return;
+      }
+      finishOk(readCachedUsersPoints_());
     });
   }
 
