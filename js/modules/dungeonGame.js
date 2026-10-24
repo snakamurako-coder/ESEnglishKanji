@@ -555,16 +555,29 @@ function haptic(ms=15){
     window.speechSynthesis.speak(u);
   }
 
+  /**
+   * 英語学習の setupFillBlankQuiz と同じ方針：
+   * - 先頭文字は原則かくさない（i=1 から）
+   * - blankCount 字だけランダムに穴にする
+   */
   function dungeonMaskWord_(word, blankCountOpt) {
     const raw = String(word || "");
     const chars = raw.split("");
     const len = chars.length;
-    if (len <= 1) return { masked: raw, missing: "", raw: raw };
+    if (len <= 0) return { masked: "", missing: "", raw: "", blankIndices: [], chars: [] };
     const letterIndices = [];
-    for (let i = 0; i < len; i++) {
+    // 英語学習同様、先頭は穴にしない
+    for (let i = 1; i < len; i++) {
       if (/[A-Za-z]/.test(chars[i])) letterIndices.push(i);
     }
-    if (!letterIndices.length) return { masked: raw, missing: "", raw: raw };
+    if (!letterIndices.length) {
+      for (let i = 0; i < len; i++) {
+        if (/[A-Za-z]/.test(chars[i])) letterIndices.push(i);
+      }
+    }
+    if (!letterIndices.length) {
+      return { masked: raw, missing: "", raw: raw, blankIndices: [], chars: chars };
+    }
     let blankCount;
     if (blankCountOpt != null && !isNaN(Number(blankCountOpt)) && Number(blankCountOpt) > 0) {
       blankCount = Math.round(Number(blankCountOpt));
@@ -580,26 +593,8 @@ function haptic(ms=15){
     const masked = chars.map(function (ch, i) {
       return blankIndices.indexOf(i) >= 0 ? "_" : ch;
     }).join(len <= 12 ? " " : "");
-    const missingChars = blankIndices.map(function (i) { return chars[i].toLowerCase(); }).join("");
-    return { masked: masked, missing: missingChars, raw: raw.toLowerCase() };
-  }
-
-  /** 抜け文字四択のダミー生成（同じ文字数） */
-  function dungeonMissingCharChoices_(missing) {
-    const m = String(missing || "").toLowerCase();
-    const out = [m];
-    let guard = 0;
-    while (out.length < 4 && guard++ < 120) {
-      let fake = "";
-      for (let i = 0; i < m.length; i++) {
-        fake += String.fromCharCode(97 + ri(26));
-      }
-      if (fake && fake !== m && out.indexOf(fake) < 0) out.push(fake);
-    }
-    while (out.length < 4) {
-      out.push(m + String.fromCharCode(97 + (out.length % 26)));
-    }
-    return shuffle(out);
+    const missingChars = blankIndices.map(function (i) { return chars[i]; }).join("");
+    return { masked: masked, missing: missingChars, raw: raw, blankIndices: blankIndices, chars: chars };
   }
 
   function dungeonExprValidAnswers_(q) {
@@ -748,28 +743,35 @@ function haptic(ms=15){
 
       if (spec.ansType === "fill_typing" || spec.ansType === "fill_4choice") {
         const blankN = spec.blankCount > 0 ? spec.blankCount : null;
-        const mask = dungeonMaskWord_(en.toLowerCase(), blankN);
+        const mask = dungeonMaskWord_(en, blankN);
         const blankLabel = blankN ? (blankN + "字") : "穴埋め";
-        if (spec.ansType === "fill_4choice") {
-          // 抜けている文字列を四択で選ぶ（字数指定プリセット向け）
-          const letterChoices = dungeonMissingCharChoices_(mask.missing || en.slice(0, 1).toLowerCase());
+        const fillBlanks = (mask.blankIndices || []).map(function (origIdx, ui) {
+          return {
+            originalIndex: origIdx,
+            correctChar: en.charAt(origIdx),
+            userInput: "",
+            uiIndex: ui
+          };
+        });
+        if (!fillBlanks.length) {
+          // 穴が作れない短い語はタイピングへフォールバック
           return Object.assign({}, base, {
-            type: "choice",
-            prompt: "「" + ja + "」の抜けている文字（" + blankLabel + "）は？",
-            hint: mask.masked,
-            answer: mask.missing || letterChoices[0],
-            choices: letterChoices,
-            audioText: ""
+            type: "type",
+            prompt: "「" + ja + "」を英語で入力しよう",
+            hint: "",
+            answer: en.toLowerCase(),
+            rawWord: en
           });
         }
         return Object.assign({}, base, {
-          type: "spell",
-          prompt: "「" + ja + "」のスペルを補おう（" + blankLabel + "）",
-          hint: mask.masked,
-          answer: mask.raw || en.toLowerCase(),
-          missingChars: mask.missing,
-          rawWord: en,
-          audioText: ""
+          type: "fill",
+          fillMode: spec.ansType === "fill_4choice" ? "4choice" : "typing",
+          fillWord: en,
+          fillBlanks: fillBlanks,
+          prompt: "「" + ja + "」の穴埋め（" + blankLabel + "）をうめよう",
+          hint: "",
+          answer: en,
+          audioText: spec.format.indexOf("audio") >= 0 ? en : ""
         });
       }
 
@@ -1667,24 +1669,84 @@ function resume(){
 function enterFloor(msg){
   clampDiffToFloor_();
   genFloor(S.floor);S.screen="explore";S.b=null;log(msg);
+  lastBgmSyncedScreen_ = null; // 階入室時は BGM 再同期
   render();curtain("地下 "+S.floor+" 階");
   ensurePlayTimeTicker_();
+  ensureAutosaveHeartbeat_();
+  bindDungeonEmergencySaveOnce_();
   updatePlayTimeHud_();
   winExplore(S.floor%10===0?"つよい けはいが する…":"どちらへ すすむ？");
   // 同じ探索BGMは巻き戻さず継続（途切れ防止）
   ensureBgmPlaying_();
+  try { autosave(); } catch (_) {}
 }
-function autosave(){
-  if(S.practice)return;
+/** ランキング提出の重複抑制（心拍セーブで Firestore を叩かない） */
+let lastRankSubmittedCleared_ = -1;
+let lastRankSubmittedTower_ = "";
+let lastAutosaveTs_ = 0;
+let autosaveHeartbeatTimer_ = null;
+
+function autosave(opts){
+  if(!S || S.practice)return;
   if(S.screen!=="explore" && S.screen!=="battle")return;
-  if(S.floor>REC.best)REC.best=S.floor;
-  // 各塔につき進行中セーブは1件（上書き）
-  REC.save={floor:S.floor,cleared:S.cleared,diff:S.diff,p:clone(S.p),st:clone(S.st)};
-  saveRec();
-  // 進行中の最深踏破もランキングに反映
-  if (S.cleared > 0 && currentTower && currentTower.id) {
-    try { submitTowerRanking_(currentTower.id, S.cleared, S.p && S.p.lv); } catch (_) {}
+  try {
+    if(S.floor>REC.best)REC.best=S.floor;
+    // 各塔につき進行中セーブは1件（上書き）
+    REC.save={floor:S.floor,cleared:S.cleared,diff:S.diff,p:clone(S.p),st:clone(S.st)};
+    saveRec();
+    lastAutosaveTs_ = Date.now();
+  } catch (e) {
+    try { console.warn("[dungeon] autosave failed", e); } catch (_) {}
+    return;
   }
+  // 進行中の最深踏破もランキングに反映（自己ベスト更新時のみ／明示指定時）
+  const forceRank = !!(opts && opts.rank);
+  const tid = currentTower && currentTower.id ? currentTower.id : "";
+  if (S.cleared > 0 && tid) {
+    if (forceRank || tid !== lastRankSubmittedTower_ || S.cleared > lastRankSubmittedCleared_) {
+      lastRankSubmittedTower_ = tid;
+      lastRankSubmittedCleared_ = S.cleared;
+      try { submitTowerRanking_(tid, S.cleared, S.p && S.p.lv); } catch (_) {}
+    }
+  }
+}
+
+/** 操作不能時の保険：探索／戦闘中は定期的にローカルセーブ＋BGM復帰 */
+function ensureAutosaveHeartbeat_() {
+  if (autosaveHeartbeatTimer_) return;
+  autosaveHeartbeatTimer_ = setInterval(function () {
+    try {
+      if (!isDungeonActive()) return;
+      if (!S || S.practice) return;
+      if (S.screen !== "explore" && S.screen !== "battle") return;
+      // BGM が勝手に止まった場合の保険（毎 render の play はしない）
+      try { ensureBgmPlaying_(); } catch (_b) {}
+      // 直近でセーブ済みならスキップ（階段直後など）
+      if (Date.now() - lastAutosaveTs_ < 4000) return;
+      autosave();
+    } catch (_) {}
+  }, 8000);
+}
+
+/** タブ閉じ・非表示・フリーズ直前の保険セーブ */
+function bindDungeonEmergencySaveOnce_() {
+  if (typeof window === "undefined" || window.__dungeonEmergencySaveBound) return;
+  window.__dungeonEmergencySaveBound = true;
+  const flush = function () {
+    try {
+      if (!S || S.practice) return;
+      if (S.screen !== "explore" && S.screen !== "battle") return;
+      autosave();
+    } catch (_) {}
+  };
+  window.addEventListener("pagehide", flush);
+  window.addEventListener("beforeunload", flush);
+  document.addEventListener("visibilitychange", function () {
+    if (document.visibilityState === "hidden") flush();
+    else if (document.visibilityState === "visible") {
+      try { ensureBgmPlaying_(); } catch (_) {}
+    }
+  });
 }
 
 /* ==========================================================================
@@ -1850,6 +1912,23 @@ function setupBgmElement(aud, id){
         if(pr) pr.catch(()=>{});
       }
     });
+    // ブラウザが裏で pause した場合の復帰フック（探索中の無音化対策）
+    aud.addEventListener("pause", function () {
+      if (!bgmOn || bgmCur !== id) return;
+      if (!isDungeonActive()) return;
+      const want = bgmWant();
+      if (want !== id) return;
+      // 意図的な切替直後の pause を避けるため短遅延
+      setTimeout(function () {
+        if (!bgmOn || bgmCur !== id) return;
+        if (bgmWant() !== id) return;
+        if (!aud.paused) return;
+        try {
+          const pr = aud.play();
+          if (pr && typeof pr.catch === "function") pr.catch(function () {});
+        } catch (_e) {}
+      }, 120);
+    });
   }
 }
 
@@ -1898,23 +1977,80 @@ function bgmUpdate(){
   if(pr) pr.catch(()=>{});
 }
 
-function se(k,delay){
-  if(!seOn)return;
-  const a=SE[k];if(!a)return;
-  const go=()=>{
-    try{
-      if(a.paused || a.ended){
-        a.currentTime=0;
-        a.volume=seVol;
-        const pr=a.play();if(pr)pr.catch(()=>{});
-      }else{
-        const cl=new Audio(a.src);
-        cl.volume=seVol;
-        const pr=cl.play();if(pr)pr.catch(()=>{});
+/** SE プール（重ね再生用）。毎回 new Audio するとメディア資源が枯渇してフリーズする */
+const SE_POOL_ = Object.create(null);
+const SE_POOL_MAX_ = 3;
+const SE_LAST_TS_ = Object.create(null);
+/** 連打されやすい SE の最短間隔（ms） */
+const SE_MIN_GAP_MS_ = {
+  select: 45,
+  disabled: 90,
+  decide: 80,
+  cancel: 80,
+  menu_open: 120
+};
+
+function se(k, delay) {
+  if (!seOn) return;
+  const a = SE[k];
+  if (!a) return;
+  const go = function () {
+    try {
+      const now = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
+      const gap = SE_MIN_GAP_MS_[k] || 0;
+      if (gap && SE_LAST_TS_[k] && (now - SE_LAST_TS_[k]) < gap) return;
+      SE_LAST_TS_[k] = now;
+
+      // 再生中でなければ本体を再利用
+      if (a.paused || a.ended || a.currentTime < 0.02) {
+        try { a.pause(); } catch (_p) {}
+        try { a.currentTime = 0; } catch (_c) {}
+        a.volume = seVol;
+        const pr = a.play();
+        if (pr && typeof pr.catch === "function") pr.catch(function () {});
+        return;
       }
-    }catch(e){}
+
+      // 重ね再生は固定サイズのプールのみ（無制限 new Audio 禁止）
+      let pool = SE_POOL_[k];
+      if (!pool) {
+        pool = [];
+        SE_POOL_[k] = pool;
+      }
+      let cl = null;
+      for (let i = 0; i < pool.length; i++) {
+        if (pool[i].paused || pool[i].ended) {
+          cl = pool[i];
+          break;
+        }
+      }
+      if (!cl) {
+        if (pool.length >= SE_POOL_MAX_) {
+          cl = pool[0];
+          try { cl.pause(); } catch (_p2) {}
+        } else {
+          try {
+            cl = a.cloneNode ? a.cloneNode(true) : new Audio(a.currentSrc || a.src);
+          } catch (_n) {
+            // clone 失敗時は本体を先頭から鳴らし直す（落ちない方を優先）
+            try { a.pause(); a.currentTime = 0; } catch (_r) {}
+            a.volume = seVol;
+            const pr2 = a.play();
+            if (pr2 && typeof pr2.catch === "function") pr2.catch(function () {});
+            return;
+          }
+          cl.preload = "auto";
+          pool.push(cl);
+        }
+      }
+      try { cl.currentTime = 0; } catch (_c2) {}
+      cl.volume = seVol;
+      const pr3 = cl.play();
+      if (pr3 && typeof pr3.catch === "function") pr3.catch(function () {});
+    } catch (e) {}
   };
-  delay?setTimeout(go,delay):go();
+  if (delay) setTimeout(go, delay);
+  else go();
 }
 
 function seLoadFromFiles(files){
@@ -2104,12 +2240,19 @@ function curtain(text){
 }
 
 /* ---------- 描画 ---------- */
+/** 直前に BGM を合わせた画面（毎 render で play() しない） */
+let lastBgmSyncedScreen_ = null;
+
 function render(){
   renderStage();
   renderHUD();
   renderStatus();
   renderLog();
-  bgmUpdate();
+  // 画面種が変わったときだけ BGM 切替。毎移動で play() すると負荷・無音化の原因になる
+  if (S && S.screen !== lastBgmSyncedScreen_) {
+    lastBgmSyncedScreen_ = S.screen;
+    try { bgmUpdate(); } catch (_) {}
+  }
   const bEl=$("#best"); if(bEl) bEl.textContent=REC.best?"地下 "+REC.best+" 階":"—";
 }
 
@@ -2289,6 +2432,8 @@ function renderLog(){
 
 /* ---------- ウィンドウ & ゲームパッドナビゲーション ---------- */
 let quizKey=null, raf=0;
+/** 穴埋めクイズ中のカーソル操作（矢印キー等）。finish で null にする */
+let dungeonFillCtrl_ = null;
 const winEl=()=>$("#win");
 
 let padFocusRow = 0; // 0: 難易度行, 1: コマンド行
@@ -2721,6 +2866,39 @@ function ask(L, kind, done, name) {
     h += '<div class="choices' + (q.is5Choice ? ' choices-5' : '') + '">' +
       q.choices.map((c, i) => '<button data-c="' + i + '" type="button">' + c + '</button>').join("") +
       '</div>';
+  } else if (q.type === "fill") {
+    // 英語学習と同じ：単語中の blank-box を1マスずつ埋める
+    const word = String(q.fillWord || "");
+    const blanks = Array.isArray(q.fillBlanks) ? q.fillBlanks : [];
+    let blankHtml = '<div class="dungeon-fill-wrap word-blank-container" id="dungeonFillWord" style="font-size:clamp(28px,6vw,40px);font-weight:bold;letter-spacing:4px;margin:10px 0;text-align:center;word-break:break-all;">';
+    let bi = 0;
+    for (let i = 0; i < word.length; i++) {
+      const bd = blanks.find(function (b) { return b.originalIndex === i; });
+      if (bd) {
+        blankHtml +=
+          '<span class="blank-box' + (bi === 0 ? " active" : "") + '" data-fill-ui="' + bi + '" id="dungeon-fill-blank-' + bi + '" ' +
+          'style="display:inline-block;min-width:28px;min-height:40px;border-bottom:4px solid #90caf9;text-align:center;margin:0 3px;color:#ffb74d;cursor:pointer;vertical-align:bottom;">_</span>';
+        bi++;
+      } else {
+        blankHtml += "<span>" + String(word.charAt(i)).replace(/</g, "&lt;") + "</span>";
+      }
+    }
+    blankHtml += "</div>";
+    blankHtml += '<p style="font-size:11px;color:var(--muted);text-align:center;margin:0 0 6px;">← → で穴を移動 / タップでも選べる</p>';
+    if (q.fillMode === "4choice") {
+      blankHtml += '<div id="dungeonFillChoices" class="fill-choices" style="display:flex;justify-content:center;flex-wrap:wrap;gap:12px;margin:10px 0;"></div>';
+    } else {
+      blankHtml +=
+        '<form class="typed" id="qform" style="margin-top:8px;">' +
+        '<input type="text" id="qin" ' + DUNGEON_TEXT_INPUT_ATTRS_ + ' placeholder="（仮想キーボードで1文字ずつ）" aria-label="穴埋め入力" style="opacity:0;position:absolute;width:1px;height:1px;">' +
+        '<button type="submit" id="dungeonFillSubmit" disabled style="width:100%;background:#2ed573;color:#000;font-weight:bold;font-size:15px;padding:8px;border:none;border-radius:6px;cursor:pointer;opacity:0.45;">これで回答する ▶</button>' +
+        "</form>";
+    }
+    if (q.fillMode === "4choice") {
+      blankHtml +=
+        '<button type="button" id="dungeonFillSubmit" disabled style="display:none;width:100%;margin-top:10px;background:#2ed573;color:#000;font-weight:bold;font-size:15px;padding:8px;border:none;border-radius:6px;cursor:pointer;">これで回答する ▶</button>';
+    }
+    h += blankHtml;
   } else if (q.type === "spell") {
     h += '<div class="spell-display" style="font-size:22px;letter-spacing:4px;color:var(--gold);text-align:center;margin:6px 0;font-family:var(--game);font-weight:bold;">' + q.hint + '</div>' +
       '<form class="typed" id="qform"><input type="text" id="qin" ' + DUNGEON_TEXT_INPUT_ATTRS_ + ' placeholder="抜けた文字または単語を入力" aria-label="英語で入力"><button type="submit">こたえる</button></form>';
@@ -2776,6 +2954,7 @@ function ask(L, kind, done, name) {
     fin = true;
     cancelAnimationFrame(raf);
     quizKey = null;
+    dungeonFillCtrl_ = null;
 
     if (currentRecognition) {
       try { currentRecognition.abort(); } catch(e) {}
@@ -3019,6 +3198,169 @@ function ask(L, kind, done, name) {
         submitVoice(inp.value);
       };
     }
+  } else if (q.type === "fill") {
+    // 英語学習と同じ：blank-box を1マスずつ埋める（4択 / タイピング）
+    const blanks = (Array.isArray(q.fillBlanks) ? q.fillBlanks : []).map(function (b) {
+      return {
+        originalIndex: b.originalIndex,
+        correctChar: b.correctChar,
+        userInput: "",
+        uiIndex: b.uiIndex
+      };
+    });
+    let activeIdx = 0;
+    const submitBtn = targetBox.querySelector("#dungeonFillSubmit");
+    const is4 = q.fillMode === "4choice";
+    const word = String(q.fillWord || "");
+
+    function selectBlank(idx) {
+      if (idx < 0 || idx >= blanks.length) return;
+      activeIdx = idx;
+      targetBox.querySelectorAll(".blank-box").forEach(function (el) { el.classList.remove("active"); });
+      const el = targetBox.querySelector("#dungeon-fill-blank-" + idx);
+      if (el) {
+        el.classList.add("active");
+        el.style.borderBottomColor = "#ffb74d";
+      }
+      targetBox.querySelectorAll(".blank-box:not(.active)").forEach(function (el) {
+        el.style.borderBottomColor = "#90caf9";
+      });
+      if (is4) renderChoices();
+    }
+
+    function renderChoices() {
+      const container = targetBox.querySelector("#dungeonFillChoices");
+      if (!container || !blanks[activeIdx]) return;
+      container.innerHTML = "";
+      const correctChar = blanks[activeIdx].correctChar;
+      let letters = "abcdefghijklmnopqrstuvwxyz";
+      if (correctChar === String(correctChar).toUpperCase() && /[A-Z]/.test(correctChar)) {
+        letters = letters.toUpperCase();
+      }
+      const choices = [correctChar];
+      while (choices.length < 4) {
+        const r = letters.charAt(Math.floor(Math.random() * letters.length));
+        if (choices.indexOf(r) < 0) choices.push(r);
+      }
+      shuffle(choices);
+      choices.forEach(function (c) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.textContent = c;
+        btn.style.cssText = "min-width:52px;height:52px;font-size:22px;font-weight:bold;background:#1e88e5;color:#fff;border:2px solid #64b5f6;border-radius:8px;cursor:pointer;";
+        btn.onclick = function () { handleInput(c); };
+        container.appendChild(btn);
+      });
+    }
+
+    function updateSubmit() {
+      const allFilled = blanks.length > 0 && blanks.every(function (b) { return b.userInput !== ""; });
+      if (!submitBtn) return;
+      submitBtn.disabled = !allFilled;
+      if (is4) {
+        submitBtn.style.display = allFilled ? "block" : "none";
+        submitBtn.style.opacity = "1";
+      } else {
+        submitBtn.style.opacity = allFilled ? "1" : "0.45";
+      }
+    }
+
+    function handleInput(char) {
+      if (!blanks[activeIdx]) return;
+      const ch = String(char || "");
+      if (!/^[a-zA-Z]$/.test(ch)) return;
+      blanks[activeIdx].userInput = ch;
+      const el = targetBox.querySelector("#dungeon-fill-blank-" + activeIdx);
+      if (el) el.textContent = ch;
+      const next = blanks.findIndex(function (b) { return b.userInput === ""; });
+      if (next !== -1) selectBlank(next);
+      else updateSubmit();
+      try { se("select"); } catch (_e) {}
+    }
+
+    function handleBackspace() {
+      if (!blanks[activeIdx]) return;
+      if (blanks[activeIdx].userInput) {
+        blanks[activeIdx].userInput = "";
+        const el = targetBox.querySelector("#dungeon-fill-blank-" + activeIdx);
+        if (el) el.textContent = "_";
+      } else if (activeIdx > 0) {
+        selectBlank(activeIdx - 1);
+        blanks[activeIdx].userInput = "";
+        const el = targetBox.querySelector("#dungeon-fill-blank-" + activeIdx);
+        if (el) el.textContent = "_";
+      }
+      updateSubmit();
+    }
+
+    function submitFill() {
+      if (!blanks.length || !blanks.every(function (b) { return b.userInput !== ""; })) return;
+      let constructed = "";
+      for (let i = 0; i < word.length; i++) {
+        const bd = blanks.find(function (b) { return b.originalIndex === i; });
+        constructed += bd ? bd.userInput : word.charAt(i);
+      }
+      const ok = normalizeText(constructed) === normalizeText(q.answer);
+      finish(ok, false, submitBtn);
+    }
+
+    targetBox.querySelectorAll(".blank-box").forEach(function (el) {
+      el.onclick = function () { selectBlank(+el.getAttribute("data-fill-ui")); };
+    });
+    if (submitBtn) {
+      submitBtn.onclick = function (e) {
+        if (e) e.preventDefault();
+        submitFill();
+      };
+    }
+    const qform = targetBox.querySelector("#qform");
+    if (qform) {
+      qform.onsubmit = function (e) {
+        e.preventDefault();
+        submitFill();
+      };
+    }
+
+    if (!is4) {
+      const inp = targetBox.querySelector("#qin");
+      if (inp) {
+        hardenDungeonTextInput_(inp);
+        inp.addEventListener("input", function () {
+          const v = String(inp.value || "");
+          inp.value = "";
+          const prev = $("#vkPreviewInput");
+          if (prev) prev.value = "";
+          for (let i = 0; i < v.length; i++) {
+            if (/^[a-zA-Z]$/.test(v.charAt(i))) handleInput(v.charAt(i));
+          }
+        });
+        if (window.AppKeyboard) {
+          AppKeyboard.setMode("english");
+          AppKeyboard.setTarget(inp);
+          AppKeyboard.show();
+        }
+      }
+    } else {
+      if (window.AppKeyboard) {
+        AppKeyboard.hide();
+        AppKeyboard.resetTarget();
+      }
+      renderChoices();
+    }
+
+    selectBlank(0);
+    updateSubmit();
+
+    dungeonFillCtrl_ = {
+      move: function (dir) {
+        selectBlank(Math.max(0, Math.min(blanks.length - 1, activeIdx + dir)));
+      },
+      input: function (ch) { handleInput(ch); },
+      backspace: function () { handleBackspace(); },
+      submit: function () { submitFill(); },
+      is4choice: is4
+    };
+    quizKey = null;
   } else {
     // spell または type（ネイティブKBは起動させず、アプリ内仮想KBのみ）
     const inp = targetBox.querySelector("#qin");
@@ -3254,6 +3596,8 @@ function startBattle(i,e,ambush){
   S.b={i: (i != null ? i : null), m:makeMon(S.floor,e.a,e.t==="boss"), ambush:!!ambush}; S.screen="battle";
   log(S.b.m.name+(ambush?"が おそいかかってきた！":"が あらわれた！")); render();
   se(S.b.m.boss?"boss_encounter":"encounter"); pulse("fx-enc",650); gl("appear"); winFirst();
+  // 戦闘突入時点でも保険セーブ（フリーズ時に階進行を失いにくくする）
+  try { autosave(); } catch (_) {}
 }
 
 function moveMonsters(){
@@ -3277,8 +3621,16 @@ function moveMonsters(){
   return null;
 }
 
+/** キーリピート／連打で移動・SEが詰まらないよう最短間隔 */
+let lastMoveTs_ = 0;
+const MOVE_MIN_GAP_MS_ = 70;
+let lastHapticTs_ = 0;
+
 function move(dx,dy){
   if(S.screen!=="explore")return;
+  const now = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
+  if (now - lastMoveTs_ < MOVE_MIN_GAP_MS_) return;
+  lastMoveTs_ = now;
   if(isPlayTimeExhausted_()){
     se("disabled");
     try { winExploreMenuTimeUp_(); } catch (_) {}
@@ -3286,7 +3638,10 @@ function move(dx,dy){
   }
   const m=S.map, nx=m.px+dx, ny=m.py+dy, i=ny*W+nx;
   if(nx<0||ny<0||nx>=W||ny>=H||m.cells[i]!==0){ se("disabled"); return; }
-  haptic(15);
+  if (now - lastHapticTs_ > 90) {
+    lastHapticTs_ = now;
+    haptic(15);
+  }
   const e=m.ents[i];
   if(e&&(e.t==="mon"||e.t==="boss")) return startBattle(i,e,false);
   m.px=nx; m.py=ny; reveal();
@@ -3379,7 +3734,11 @@ function finishRun(kind){
    十字キー、A/B/X/Yボタン、START/SELECT/+/-ボタンの処理
    ========================================================================== */
 function padAction(action){
-  haptic(20);
+  const nowH = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
+  if (nowH - lastHapticTs_ > 90) {
+    lastHapticTs_ = nowH;
+    haptic(20);
+  }
   if(action==="up") handleDirection(0,-1);
   else if(action==="down") handleDirection(0,1);
   else if(action==="left") handleDirection(-1,0);
@@ -4112,6 +4471,41 @@ window.addEventListener("keydown", e => { if(!isDungeonActive()) return;
 
 // キーボード操作 (矢印キー, WASD, 数字キー, Enter, Space, Esc, Z, X)
 document.addEventListener("keydown",e=>{ if(!isDungeonActive()) return;
+  // 穴埋め中：INPUT フォーカス中でも ←→ / Backspace / Enter / 文字入力を優先
+  if (dungeonFillCtrl_) {
+    if (e.key === "ArrowLeft") {
+      e.preventDefault();
+      dungeonFillCtrl_.move(-1);
+      return;
+    }
+    if (e.key === "ArrowRight") {
+      e.preventDefault();
+      dungeonFillCtrl_.move(1);
+      return;
+    }
+    if (e.key === "Backspace") {
+      e.preventDefault();
+      dungeonFillCtrl_.backspace();
+      return;
+    }
+    if (e.key === "Enter") {
+      e.preventDefault();
+      dungeonFillCtrl_.submit();
+      return;
+    }
+    if (!dungeonFillCtrl_.is4choice && e.key.length === 1 && /^[a-zA-Z]$/.test(e.key)) {
+      e.preventDefault();
+      dungeonFillCtrl_.input(e.key);
+      return;
+    }
+    // 穴埋め中はマップ移動キーを無効化（WASD / 上下矢印）
+    if (e.key === "ArrowUp" || e.key === "ArrowDown" ||
+        e.key === "w" || e.key === "W" || e.key === "s" || e.key === "S" ||
+        e.key === "a" || e.key === "A" || e.key === "d" || e.key === "D") {
+      e.preventDefault();
+      return;
+    }
+  }
   if(e.target.tagName==="INPUT"||e.target.tagName==="TEXTAREA") return;
   if(e.key==="Escape"){
     const modal=$("#menuModal");
@@ -5400,7 +5794,9 @@ function openDungeonGame(startFloor, isPractice) {
     if (sec) sec.classList.add('active');
   }
   bindDungeonBgmUnlockOnce_();
+  bindDungeonEmergencySaveOnce_();
   ensurePlayTimeTicker_();
+  ensureAutosaveHeartbeat_();
   playTimeLastTs_ = Date.now();
   updatePlayTimeHud_();
   if (typeof startFloor === "number" && startFloor > 0) {
@@ -5445,6 +5841,8 @@ function startDungeonWithTower(towerId, startFloor, isPractice) {
   renderTune();
   autoLoadRelativeAudio();
   if (window.AppKeyboard) AppKeyboard.init();
+  bindDungeonEmergencySaveOnce_();
+  ensureAutosaveHeartbeat_();
 
   migrateLegacyRecIfNeeded_(tower.id);
   REC = loadTowerRec(tower.id);

@@ -16628,8 +16628,18 @@ var global = typeof window !== 'undefined' ? window : this;
         else if (e.key === ' ') { answerInput.value += ' '; } 
         else if (e.key.length === 1 && /^[\x20-\x7E¥]$/.test(e.key)) { answerInput.value += e.key; }
       }
-      else if (ansType === "fill_typing") {
-        if (inputMethodMode === 'pen') return;
+      else if (ansType === "fill_typing" || ansType === "fill_4choice") {
+        if (ansType === "fill_typing" && inputMethodMode === 'pen') return;
+        if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+          e.preventDefault();
+          if (!fillBlanksData || !fillBlanksData.length) return;
+          const next = e.key === 'ArrowLeft'
+            ? Math.max(0, activeFillBlankIndex - 1)
+            : Math.min(fillBlanksData.length - 1, activeFillBlankIndex + 1);
+          selectFillBlank(next);
+          return;
+        }
+        if (ansType !== "fill_typing") return;
         if (['Enter', 'Backspace', ' ', 'Shift'].includes(e.key) || (e.key.length === 1 && /^[a-zA-Z]$/.test(e.key))) { e.preventDefault(); }
         if (e.key === 'Enter') { const enterBtn = document.getElementById('fill-submit-btn'); if (enterBtn && !enterBtn.disabled) enterBtn.click(); }
         else if (e.key === 'Backspace') { handleFillBackspace(); }
