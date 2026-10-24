@@ -248,6 +248,10 @@ function haptic(ms=15){
                 exprMap[uName].push({
                   日本語: ja,
                   英文: en,
+                  疑問文: String(row["疑問文"] || "").trim(),
+                  イニシャル: String(row["イニシャル"] || "").trim(),
+                  穴埋め１: String(row["穴埋め１"] || row["穴埋め1"] || "").trim(),
+                  穴埋め２: String(row["穴埋め２"] || row["穴埋め2"] || "").trim(),
                   別解1: String(row["別解１"] || row["別解1"] || "").trim(),
                   別解2: String(row["別解２"] || row["別解2"] || "").trim(),
                   別解3: String(row["別解３"] || row["別解3"] || "").trim(),
@@ -401,19 +405,162 @@ function haptic(ms=15){
     ["t", "CD"],
     ["t", "E"]
   ];
+  /**
+   * 難易度帯ラベル（Lv1〜10）。各帯で英語学習の複数形式が出題される。
+   */
   const LV_INFO = [
     null,
-    { name: "単語 四択 (日→英)", mode: "単語", dir: "日→英", fmt: "四択" },
-    { name: "単語 四択＋なし (英→日)", mode: "単語", dir: "英→日", fmt: "四択＋「この中に正答はない」" },
-    { name: "単語 スペル補う (日→英)", mode: "単語", dir: "日→英", fmt: "スペル補う" },
-    { name: "単語 音声入力 (日→英)", mode: "単語", dir: "日→英", fmt: "音声入力" },
-    { name: "単語 タイピング (日→英)", mode: "単語", dir: "日→英", fmt: "タイピング" },
-    { name: "表現 並び替え過不足なし (日→英)", mode: "表現", dir: "日→英", fmt: "並び替え（過不足なし）" },
-    { name: "表現 並び替え－1不要語 (日→英)", mode: "表現", dir: "日→英", fmt: "並び替え（－１不要語排除）" },
-    { name: "表現 並び替え＋1補う (日→英)", mode: "表現", dir: "日→英", fmt: "並び替え（＋１補う）" },
-    { name: "表現 音声入力 (日→英)", mode: "表現", dir: "日→英", fmt: "音声入力" },
-    { name: "表現 タイピング (日→英)", mode: "表現", dir: "日→英", fmt: "タイピング" }
+    { name: "難易度1（かんたん）", mode: "混合", dir: "", fmt: "英語学習形式ミックス" },
+    { name: "難易度2", mode: "混合", dir: "", fmt: "英語学習形式ミックス" },
+    { name: "難易度3", mode: "混合", dir: "", fmt: "英語学習形式ミックス" },
+    { name: "難易度4", mode: "混合", dir: "", fmt: "英語学習形式ミックス" },
+    { name: "難易度5", mode: "混合", dir: "", fmt: "英語学習形式ミックス" },
+    { name: "難易度6", mode: "混合", dir: "", fmt: "英語学習形式ミックス" },
+    { name: "難易度7", mode: "混合", dir: "", fmt: "英語学習形式ミックス" },
+    { name: "難易度8", mode: "混合", dir: "", fmt: "英語学習形式ミックス" },
+    { name: "難易度9", mode: "混合", dir: "", fmt: "英語学習形式ミックス" },
+    { name: "難易度10（むずかしい）", mode: "混合", dir: "", fmt: "英語学習形式ミックス" }
   ];
+
+  /**
+   * 英語学習モードの全出題形式カタログ（単語＋表現）。
+   * diff = 初めて出現する難易度帯（Lv >= diff で出題されうる）。
+   */
+  const DUNGEON_EN_CATALOG = [
+    // --- 単語 ---
+    { modeKind: "vocab", format: "ja_to_en", ansType: "4choice", diff: 1, label: "単語 日→英 4択", qFormat: "日本語→英単語", aFormat: "4択" },
+    { modeKind: "vocab", format: "en_to_ja", ansType: "4choice", diff: 2, label: "単語 英→日 4択", qFormat: "英単語→日本語", aFormat: "4択" },
+    { modeKind: "vocab", format: "ja_to_en", ansType: "fill_4choice", diff: 3, label: "単語 日→英 穴埋め4択", qFormat: "日本語→英単語", aFormat: "穴埋め4択" },
+    { modeKind: "vocab", format: "ja_to_en", ansType: "fill_typing", diff: 3, label: "単語 日→英 穴埋めタイピング", qFormat: "日本語→英単語", aFormat: "穴埋めタイピング" },
+    { modeKind: "vocab", format: "en_audio_to_ja", ansType: "4choice", diff: 3, label: "単語 読み上げ→日 4択", qFormat: "音声→日本語", aFormat: "4択" },
+    { modeKind: "vocab", format: "ja_to_en", ansType: "voice", diff: 4, label: "単語 日→英 音声", qFormat: "日本語→英単語", aFormat: "音声" },
+    { modeKind: "vocab", format: "en_audio_to_en", ansType: "4choice", diff: 4, label: "単語 読み上げ→英 4択", qFormat: "英語読み上げ→英語", aFormat: "4択" },
+    { modeKind: "vocab", format: "ja_to_en", ansType: "typing", diff: 5, label: "単語 日→英 タイピング", qFormat: "日本語→英単語", aFormat: "タイピング" },
+    { modeKind: "vocab", format: "en_audio_to_en", ansType: "typing", diff: 5, label: "単語 読み上げ→英 タイピング", qFormat: "英語読み上げ→英語", aFormat: "タイピング" },
+    { modeKind: "vocab", format: "en_audio_to_en", ansType: "voice", diff: 5, label: "単語 読み上げ→英 音声", qFormat: "英語読み上げ→英語", aFormat: "音声" },
+    { modeKind: "vocab", format: "en_audio_to_en", ansType: "fill_4choice", diff: 5, label: "単語 読み上げ→英 穴埋め4択", qFormat: "英語読み上げ→英語", aFormat: "穴埋め4択" },
+    { modeKind: "vocab", format: "en_audio_to_en", ansType: "fill_typing", diff: 5, label: "単語 読み上げ→英 穴埋めタイピング", qFormat: "英語読み上げ→英語", aFormat: "穴埋めタイピング" },
+    { modeKind: "vocab", format: "en_to_en", ansType: "typing", diff: 5, label: "単語 英→英 タイピング", qFormat: "英語→英語", aFormat: "タイピング" },
+    { modeKind: "vocab", format: "en_to_en", ansType: "voice", diff: 5, label: "単語 英→英 音声", qFormat: "英語→英語", aFormat: "音声" },
+    { modeKind: "vocab", format: "en_to_en", ansType: "flash_typing", diff: 6, label: "単語 英→英 フラッシュタイピング", qFormat: "英語→英語", aFormat: "タイピング（フラッシュ）" },
+    { modeKind: "vocab", format: "en_to_en", ansType: "flash_voice", diff: 6, label: "単語 英→英 フラッシュ音声", qFormat: "英語→英語", aFormat: "音声入力（フラッシュ）" },
+    // --- 表現 ---
+    { modeKind: "expr", format: "ja_to_en", ansType: "4choice", diff: 4, label: "表現 日→英 4択", qFormat: "日本語→英単語", aFormat: "4択" },
+    { modeKind: "expr", format: "en_to_ja", ansType: "4choice", diff: 4, label: "表現 英→日 4択", qFormat: "英単語→日本語", aFormat: "4択" },
+    { modeKind: "expr", format: "ja_to_en_sort", ansType: "sort_all", diff: 6, label: "表現 並び替え（過不足なし）", qFormat: "日本語→英語（並び替え）", aFormat: "すべて用いる" },
+    { modeKind: "expr", format: "qtext_to_en", ansType: "4choice", diff: 6, label: "表現 疑問文→英 4択", qFormat: "疑問文→英語", aFormat: "4択" },
+    { modeKind: "expr", format: "ja_to_en_sort", ansType: "sort_dummy", diff: 7, label: "表現 並び替え（不要語）", qFormat: "日本語→英語（並び替え）", aFormat: "不要語混入" },
+    { modeKind: "expr", format: "en_audio_to_en", ansType: "4choice", diff: 7, label: "表現 読み上げ→英 4択", qFormat: "英語読み上げ→英語", aFormat: "4択" },
+    { modeKind: "expr", format: "en_audio_to_en", ansType: "typing", diff: 7, label: "表現 読み上げ→英 タイピング", qFormat: "英語読み上げ→英語", aFormat: "タイピング" },
+    { modeKind: "expr", format: "en_audio_to_en", ansType: "voice", diff: 7, label: "表現 読み上げ→英 音声", qFormat: "英語読み上げ→英語", aFormat: "音声" },
+    { modeKind: "expr", format: "ja_to_en_sort", ansType: "sort_missing", diff: 8, label: "表現 並び替え（不足語）", qFormat: "日本語→英語（並び替え）", aFormat: "不足語補足" },
+    { modeKind: "expr", format: "qtext_to_en", ansType: "typing", diff: 8, label: "表現 疑問文→英 タイピング", qFormat: "疑問文→英語", aFormat: "タイピング" },
+    { modeKind: "expr", format: "qtext_to_en", ansType: "voice", diff: 8, label: "表現 疑問文→英 音声", qFormat: "疑問文→英語", aFormat: "音声" },
+    { modeKind: "expr", format: "qaudio_to_en", ansType: "typing", diff: 8, label: "表現 疑問文読み上げ→英 タイピング", qFormat: "音声→英単語", aFormat: "タイピング" },
+    { modeKind: "expr", format: "qaudio_to_en", ansType: "voice", diff: 8, label: "表現 疑問文読み上げ→英 音声", qFormat: "音声→英単語", aFormat: "音声" },
+    { modeKind: "expr", format: "en_to_en", ansType: "typing", diff: 8, label: "表現 英→英 タイピング", qFormat: "英語→英語", aFormat: "タイピング" },
+    { modeKind: "expr", format: "en_to_en", ansType: "voice", diff: 8, label: "表現 英→英 音声", qFormat: "英語→英語", aFormat: "音声" },
+    { modeKind: "expr", format: "ja_to_en", ansType: "voice", diff: 9, label: "表現 日→英 音声", qFormat: "日本語→英単語", aFormat: "音声" },
+    { modeKind: "expr", format: "en_to_en", ansType: "flash_typing", diff: 9, label: "表現 英→英 フラッシュタイピング", qFormat: "英語→英語", aFormat: "タイピング（フラッシュ）" },
+    { modeKind: "expr", format: "en_to_en", ansType: "flash_voice", diff: 9, label: "表現 英→英 フラッシュ音声", qFormat: "英語→英語", aFormat: "音声入力（フラッシュ）" },
+    { modeKind: "expr", format: "en_to_en", ansType: "initial_typing", diff: 9, label: "表現 英→英 イニシャルタイピング", qFormat: "英語→英語", aFormat: "タイピング（イニシャル）" },
+    { modeKind: "expr", format: "en_to_en", ansType: "initial_voice", diff: 9, label: "表現 英→英 イニシャル音声", qFormat: "英語→英語", aFormat: "音声入力（イニシャル）" },
+    { modeKind: "expr", format: "ja_to_en", ansType: "typing", diff: 10, label: "表現 日→英 タイピング", qFormat: "日本語→英単語", aFormat: "タイピング" },
+    { modeKind: "expr", format: "en_to_en", ansType: "sheet_fill_typing", diff: 10, label: "表現 英→英 穴埋めタイピング", qFormat: "英語→英語", aFormat: "タイピング（穴埋め）" },
+    { modeKind: "expr", format: "en_to_en", ansType: "sheet_fill_voice", diff: 10, label: "表現 英→英 穴埋め音声", qFormat: "英語→英語", aFormat: "音声入力（穴埋め）" }
+  ];
+
+  function dungeonSpeakEnglish_(text) {
+    const t = String(text || "").trim();
+    if (!t) return;
+    try {
+      if (window.PiperTtsStore && typeof window.PiperTtsStore.speak === "function") {
+        window.PiperTtsStore.speak(t, { lang: "en", rate: 0.95 }).then(function (ok) {
+          if (ok) return;
+          dungeonSpeakEnglishFallback_(t);
+        }).catch(function () { dungeonSpeakEnglishFallback_(t); });
+        return;
+      }
+    } catch (_e) {}
+    dungeonSpeakEnglishFallback_(t);
+  }
+  function dungeonSpeakEnglishFallback_(t) {
+    if (!("speechSynthesis" in window)) return;
+    try { window.speechSynthesis.cancel(); } catch (_c) {}
+    const u = new SpeechSynthesisUtterance(t);
+    u.lang = "en-US";
+    u.rate = 0.95;
+    try {
+      const voices = window.speechSynthesis.getVoices() || [];
+      const en = voices.find(function (v) { return /^en/i.test(v.lang || ""); });
+      if (en) u.voice = en;
+    } catch (_v) {}
+    window.speechSynthesis.speak(u);
+  }
+
+  function dungeonMaskWord_(word) {
+    const raw = String(word || "");
+    const chars = raw.split("");
+    const len = chars.length;
+    if (len <= 1) return { masked: raw, missing: "" };
+    const blankCount = len <= 4 ? 1 : len <= 7 ? 2 : 3;
+    const blankIndices = [];
+    while (blankIndices.length < blankCount && blankIndices.length < len) {
+      const idx = ri(len);
+      if (chars[idx] === " ") continue;
+      if (!blankIndices.includes(idx)) blankIndices.push(idx);
+    }
+    if (!blankIndices.length) blankIndices.push(Math.min(1, len - 1));
+    const masked = chars.map(function (ch, i) { return blankIndices.includes(i) ? "_" : ch; }).join(len <= 12 ? " " : "");
+    const missingChars = blankIndices.sort(function (a, b) { return a - b; }).map(function (i) { return chars[i]; }).join("");
+    return { masked: masked, missing: missingChars, raw: raw };
+  }
+
+  function dungeonExprValidAnswers_(q) {
+    return [q.英文, q.別解1, q.別解2, q.別解3, q.別解4, q.別解5]
+      .map(function (s) { return normalizeText(s); })
+      .filter(function (s) { return s.length > 0; });
+  }
+
+  function dungeonCatalogAvailable_(spec) {
+    if (!spec) return false;
+    if (spec.modeKind === "vocab") {
+      return getActiveVocabPool().length > 0;
+    }
+    const ePool = getActiveExprPool();
+    if (!ePool.length) return false;
+    if (spec.format === "qtext_to_en" || spec.format === "qaudio_to_en") {
+      return ePool.some(function (x) { return String(x.疑問文 || "").trim(); });
+    }
+    if (spec.format === "ja_to_en_sort") {
+      return ePool.some(function (x) { return x.tokens && x.tokens.length >= 2; });
+    }
+    if (spec.format === "en_to_en") {
+      if (spec.ansType === "initial_typing" || spec.ansType === "initial_voice") {
+        return ePool.some(function (x) { return String(x.イニシャル || "").trim(); });
+      }
+      if (spec.ansType === "sheet_fill_typing" || spec.ansType === "sheet_fill_voice") {
+        return ePool.some(function (x) {
+          return String(x.穴埋め１ || "").trim() || String(x.穴埋め２ || "").trim();
+        });
+      }
+    }
+    return true;
+  }
+
+  function dungeonPickCatalog_(L) {
+    const lv = Math.max(1, Math.min(10, Math.round(Number(L) || 1)));
+    const unlocked = DUNGEON_EN_CATALOG.filter(function (e) {
+      return e.diff <= lv && dungeonCatalogAvailable_(e);
+    });
+    if (!unlocked.length) {
+      return DUNGEON_EN_CATALOG.find(function (e) { return e.diff === 1; }) || DUNGEON_EN_CATALOG[0];
+    }
+    // その難易度付近を優先（単調にかんたんばかりにならない）
+    const near = unlocked.filter(function (e) { return e.diff >= Math.max(1, lv - 2); });
+    const pool = near.length ? near : unlocked;
+    return pool[ri(pool.length)];
+  }
 
   const bonus = L => CFG.base + CFG.perLv * L;
   const spdOf = r => {
@@ -456,196 +603,328 @@ function haptic(ms=15){
     return baseTime * globalMul * towerMul;
   }
 
-  /* ---------- 問題生成 (makeQ: Lv1〜10) ---------- */
-  function makeQ(L) {
-    const isVocab = L <= 5;
-    const vPool = getActiveVocabPool();
-    const ePool = getActiveExprPool();
+  /* ---------- 問題生成 (英語学習の全形式に対応・Lv帯で解禁) ---------- */
+  function makeQFromSpec_(spec, L) {
+    const base = {
+      L: L,
+      fm: spec.label,
+      learnerFormat: spec.format,
+      learnerAnsType: spec.ansType,
+      modeKind: spec.modeKind,
+      qFormat: spec.qFormat,
+      aFormat: spec.aFormat
+    };
 
-    if (isVocab) {
+    if (spec.modeKind === "vocab") {
+      const vPool = getActiveVocabPool();
+      if (!vPool.length) return null;
       const w = vPool[ri(vPool.length)];
-      
-      // Lv 1: 単語 / 日本語→英語 / 四択
-      if (L === 1) {
-        const others = shuffle(vPool.filter(x => x.英単語 !== w.英単語));
-        const dummy1 = others[0] ? others[0].英単語 : "word";
-        const dummy2 = others[1] ? others[1].英単語 : "book";
-        const dummy3 = others[2] ? others[2].英単語 : "study";
-        const choices = shuffle([w.英単語, dummy1, dummy2, dummy3]);
-        return {
-          L, fm: "4択 (日→英)", type: "choice",
-          prompt: "「" + w.日本語 + "」にあたる英語は？",
-          hint: w.ヒント && w.ヒント !== "なし" ? w.ヒント : "",
-          answer: w.英単語,
-          choices: choices
-        };
-      }
+      const en = String(w.英単語 || "").trim();
+      const ja = String(w.日本語 || "").trim();
+      const others = shuffle(vPool.filter(function (x) { return x.英単語 !== en; }));
 
-      // Lv 2: 単語 / 英語→日本語 / 四択＋「この中に正答はない」
-      if (L === 2) {
-        const others = shuffle(vPool.filter(x => x.日本語 !== w.日本語));
+      if (spec.format === "en_to_ja" || spec.format === "en_audio_to_ja") {
         const noneText = "この中に正答はない";
-        const isNoneCorrect = Math.random() < 0.25;
-
-        let choices = [], answer = "";
-        if (isNoneCorrect) {
+        const useNone = spec.format === "en_to_ja" && Math.random() < 0.25;
+        let choices = [];
+        let answer = ja;
+        if (useNone) {
           answer = noneText;
-          const d1 = others[0] ? others[0].日本語 : "〜する";
-          const d2 = others[1] ? others[1].日本語 : "〜を見る";
-          const d3 = others[2] ? others[2].日本語 : "〜へ行く";
-          const d4 = others[3] ? others[3].日本語 : "大きい";
-          choices = shuffle([d1, d2, d3, d4]).concat(noneText);
+          choices = shuffle([
+            others[0] ? others[0].日本語 : "〜する",
+            others[1] ? others[1].日本語 : "〜を見る",
+            others[2] ? others[2].日本語 : "〜へ行く",
+            others[3] ? others[3].日本語 : "大きい"
+          ]).concat(noneText);
         } else {
-          answer = w.日本語;
-          const d1 = others[0] ? others[0].日本語 : "〜する";
-          const d2 = others[1] ? others[1].日本語 : "〜を見る";
-          const d3 = others[2] ? others[2].日本語 : "〜へ行く";
-          choices = shuffle([w.日本語, d1, d2, d3]).concat(noneText);
+          choices = shuffle([
+            ja,
+            others[0] ? others[0].日本語 : "〜する",
+            others[1] ? others[1].日本語 : "〜を見る",
+            others[2] ? others[2].日本語 : "〜へ行く"
+          ]);
+          if (spec.format === "en_to_ja") choices = choices.concat(noneText);
         }
-
-        return {
-          L, fm: "4択＋なし (英→日)", type: "choice",
-          prompt: '"' + w.英単語 + '" の意味は？',
+        return Object.assign({}, base, {
+          type: "choice",
+          prompt: spec.format === "en_audio_to_ja"
+            ? "聞こえた英語の意味は？"
+            : ('"' + en + '" の意味は？'),
           hint: w.ヒント && w.ヒント !== "なし" ? w.ヒント : "",
           answer: answer,
           choices: choices,
-          is5Choice: true
-        };
+          is5Choice: choices.length >= 5,
+          audioText: spec.format === "en_audio_to_ja" ? en : ""
+        });
       }
 
-      // Lv 3: 単語 / 日本語→英語 / スペル補う
-      if (L === 3) {
-        const raw = w.英単語.toLowerCase();
-        const chars = raw.split("");
-        const len = chars.length;
-        const blankCount = len <= 4 ? 1 : len <= 7 ? 2 : 3;
-        const blankIndices = [];
-        while (blankIndices.length < blankCount && blankIndices.length < len) {
-          const idx = ri(len);
-          if (!blankIndices.includes(idx)) blankIndices.push(idx);
+      if (spec.ansType === "fill_typing" || spec.ansType === "fill_4choice") {
+        const mask = dungeonMaskWord_(en.toLowerCase());
+        if (spec.ansType === "fill_4choice") {
+          const dummies = [
+            others[0] ? others[0].英単語 : "word",
+            others[1] ? others[1].英単語 : "book",
+            others[2] ? others[2].英単語 : "study"
+          ];
+          return Object.assign({}, base, {
+            type: "choice",
+            prompt: (spec.format.indexOf("audio") >= 0 ? "聞こえた英単語のスペルは？" : ("「" + ja + "」のスペルは？")),
+            hint: mask.masked,
+            answer: en,
+            choices: shuffle([en].concat(dummies)),
+            audioText: spec.format.indexOf("audio") >= 0 ? en : ""
+          });
         }
-        const masked = chars.map((ch, i) => blankIndices.includes(i) ? "_" : ch).join(" ");
-        const missingChars = blankIndices.sort((a,b)=>a-b).map(i => chars[i]).join("");
-        return {
-          L, fm: "スペル補う", type: "spell",
-          prompt: "「" + w.日本語 + "」のスペルを補おう",
-          hint: masked,
-          answer: raw,
-          missingChars: missingChars,
-          rawWord: raw
-        };
+        return Object.assign({}, base, {
+          type: "spell",
+          prompt: (spec.format.indexOf("audio") >= 0 ? "聞こえた英単語のスペルを補おう" : ("「" + ja + "」のスペルを補おう")),
+          hint: mask.masked,
+          answer: mask.raw || en.toLowerCase(),
+          missingChars: mask.missing,
+          rawWord: en,
+          audioText: spec.format.indexOf("audio") >= 0 ? en : ""
+        });
       }
 
-      // Lv 4: 単語 / 日本語→英語 / 音声入力
-      if (L === 4) {
-        return {
-          L, fm: "音声入力", type: "voice",
-          prompt: "「" + w.日本語 + "」を英語で発音しよう",
-          hint: w.イニシャルと文字数 || (w.英単語[0] + " " + "_ ".repeat(w.英単語.length - 1)),
-          answer: w.英単語.toLowerCase(),
-          rawWord: w.英単語
-        };
+      if (spec.format === "en_to_en") {
+        const isFlash = spec.ansType === "flash_typing" || spec.ansType === "flash_voice";
+        const isVoice = spec.ansType === "voice" || spec.ansType === "flash_voice";
+        return Object.assign({}, base, {
+          type: isVoice ? "voice" : "type",
+          prompt: isFlash ? "フラッシュで見た英語を答えよう" : "英語を確認して、同じ英語を答えよう",
+          hint: ja ? ("日本語: " + ja) : "",
+          answer: en.toLowerCase(),
+          rawWord: en,
+          flashText: isFlash ? en : "",
+          audioText: !isFlash ? en : "",
+          validAnswers: [normalizeText(en)]
+        });
       }
 
-      // Lv 5: 単語 / 日本語→英語 / タイピング
-      if (L === 5) {
-        return {
-          L, fm: "タイピング", type: "type",
-          prompt: "「" + w.日本語 + "」を英語で入力しよう",
-          hint: w.イニシャルと文字数 || (w.英単語[0] + " " + "_ ".repeat(w.英単語.length - 1) + "（" + w.英単語.length + "文字）"),
-          answer: w.英単語.toLowerCase(),
-          rawWord: w.英単語
-        };
+      // ja_to_en / en_audio_to_en — 4choice / typing / voice
+      if (spec.ansType === "4choice") {
+        const dummies = [
+          others[0] ? others[0].英単語 : "word",
+          others[1] ? others[1].英単語 : "book",
+          others[2] ? others[2].英単語 : "study"
+        ];
+        return Object.assign({}, base, {
+          type: "choice",
+          prompt: spec.format === "en_audio_to_en"
+            ? "聞こえた英語はどれ？"
+            : ("「" + ja + "」にあたる英語は？"),
+          hint: w.ヒント && w.ヒント !== "なし" ? w.ヒント : "",
+          answer: en,
+          choices: shuffle([en].concat(dummies)),
+          audioText: spec.format === "en_audio_to_en" ? en : ""
+        });
       }
+      if (spec.ansType === "voice") {
+        return Object.assign({}, base, {
+          type: "voice",
+          prompt: spec.format === "en_audio_to_en"
+            ? "聞こえた英語を発音しよう"
+            : ("「" + ja + "」を英語で発音しよう"),
+          hint: w.イニシャルと文字数 || (en[0] + " " + "_ ".repeat(Math.max(0, en.length - 1))),
+          answer: en.toLowerCase(),
+          rawWord: en,
+          audioText: spec.format === "en_audio_to_en" ? en : ""
+        });
+      }
+      return Object.assign({}, base, {
+        type: "type",
+        prompt: spec.format === "en_audio_to_en"
+          ? "聞こえた英語を入力しよう"
+          : ("「" + ja + "」を英語で入力しよう"),
+        hint: w.イニシャルと文字数 || (en[0] + " " + "_ ".repeat(Math.max(0, en.length - 1)) + "（" + en.length + "文字）"),
+        answer: en.toLowerCase(),
+        rawWord: en,
+        audioText: spec.format === "en_audio_to_en" ? en : ""
+      });
     }
 
-    // 表現問題 (Lv 6〜10)
-    const q = ePool[ri(ePool.length)];
-    const validAnswers = [q.英文, q.別解1, q.別解2, q.別解3, q.別解4, q.別解5]
-      .map(s => normalizeText(s))
-      .filter(s => s.length > 0);
+    // ---- 表現 ----
+    const ePool = getActiveExprPool();
+    if (!ePool.length) return null;
+    let q = ePool[ri(ePool.length)];
+    if (spec.format === "qtext_to_en" || spec.format === "qaudio_to_en") {
+      const withQ = ePool.filter(function (x) { return String(x.疑問文 || "").trim(); });
+      if (!withQ.length) return null;
+      q = withQ[ri(withQ.length)];
+    }
+    if (spec.ansType === "initial_typing" || spec.ansType === "initial_voice") {
+      const withI = ePool.filter(function (x) { return String(x.イニシャル || "").trim(); });
+      if (!withI.length) return null;
+      q = withI[ri(withI.length)];
+    }
+    if (spec.ansType === "sheet_fill_typing" || spec.ansType === "sheet_fill_voice") {
+      const withF = ePool.filter(function (x) {
+        return String(x.穴埋め１ || "").trim() || String(x.穴埋め２ || "").trim();
+      });
+      if (!withF.length) return null;
+      q = withF[ri(withF.length)];
+    }
 
+    const validAnswers = dungeonExprValidAnswers_(q);
     const qTokens = (q.tokens && q.tokens.length >= 2) ? q.tokens.slice() : tokenizeSentence(q.英文);
     const qRefEn = String(q.並び替え用英文 || "( ).").trim();
+    const en = String(q.英文 || "").trim();
+    const ja = String(q.日本語 || "").trim();
+    const questionText = String(q.疑問文 || "").trim();
 
-    // Lv 6: 表現 / 日本語→英語 / 並び替え（過不足なし）
-    if (L === 6) {
-      return {
-        L, fm: "並び替え (過不足なし)", type: "sort",
-        variant: "all",
-        prompt: "「" + q.日本語 + "」になるように単語を並べよう",
-        refEn: qRefEn,
-        hint: q.ヒント || "",
-        answer: q.英文,
-        validAnswers: validAnswers,
-        cards: shuffle(qTokens.slice()),
-        expectedCount: qTokens.length
-      };
-    }
-
-    // Lv 7: 表現 / 日本語→英語 / 並び替え（－１不要語排除）
-    if (L === 7) {
-      let dummy = q.並び替え語句ダミー;
-      if (!dummy) {
-        const others = shuffle(ePool.filter(x => x.英文 !== q.英文));
-        dummy = (others[0] && others[0].tokens && others[0].tokens[0]) ? others[0].tokens[0] : "very";
+    if (spec.format === "ja_to_en_sort") {
+      if (spec.ansType === "sort_dummy") {
+        let dummy = q.並び替え語句ダミー;
+        if (!dummy) {
+          const others = shuffle(ePool.filter(function (x) { return x.英文 !== en; }));
+          dummy = (others[0] && others[0].tokens && others[0].tokens[0]) ? others[0].tokens[0] : "very";
+        }
+        return Object.assign({}, base, {
+          type: "sort", variant: "dummy",
+          prompt: "「" + ja + "」になるよう並べよう（使わない単語が1つあるよ！）",
+          refEn: qRefEn, hint: "不要な単語を1つ除外して回答枠に並べてね",
+          answer: en, validAnswers: validAnswers,
+          cards: shuffle(qTokens.concat(dummy)), expectedCount: qTokens.length, dummyWord: dummy
+        });
       }
-      return {
-        L, fm: "並び替え (不要語排除)", type: "sort",
-        variant: "dummy",
-        prompt: "「" + q.日本語 + "」になるよう並べよう（使わない単語が1つあるよ！）",
-        refEn: qRefEn,
-        hint: "不要な単語を1つ除外して回答枠に並べてね",
-        answer: q.英文,
+      if (spec.ansType === "sort_missing") {
+        const missingIdx = ri(qTokens.length);
+        const missingWord = qTokens[missingIdx];
+        const remaining = qTokens.filter(function (_, i) { return i !== missingIdx; });
+        return Object.assign({}, base, {
+          type: "sort", variant: "missing",
+          prompt: "「" + ja + "」になるよう並べよう（1語足りない単語を補ってね！）",
+          refEn: qRefEn, hint: "足りない単語を入力して「＋追加」し、並べてね",
+          answer: en, validAnswers: validAnswers,
+          cards: shuffle(remaining), missingWord: missingWord, expectedCount: qTokens.length
+        });
+      }
+      return Object.assign({}, base, {
+        type: "sort", variant: "all",
+        prompt: "「" + ja + "」になるように単語を並べよう",
+        refEn: qRefEn, hint: q.ヒント || "",
+        answer: en, validAnswers: validAnswers,
+        cards: shuffle(qTokens.slice()), expectedCount: qTokens.length
+      });
+    }
+
+    if (spec.format === "en_to_ja") {
+      const others = shuffle(ePool.filter(function (x) { return x.日本語 !== ja; }));
+      return Object.assign({}, base, {
+        type: "choice",
+        prompt: '"' + en + '" の意味は？',
+        hint: q.ヒント || "",
+        answer: ja,
+        choices: shuffle([
+          ja,
+          others[0] ? others[0].日本語 : "〜する",
+          others[1] ? others[1].日本語 : "〜を見る",
+          others[2] ? others[2].日本語 : "〜へ行く"
+        ])
+      });
+    }
+
+    if (spec.format === "qtext_to_en" || spec.format === "qaudio_to_en") {
+      const isVoice = spec.ansType === "voice";
+      if (spec.ansType === "4choice") {
+        const others = shuffle(ePool.filter(function (x) { return x.英文 !== en; }));
+        return Object.assign({}, base, {
+          type: "choice",
+          prompt: "この疑問文への答えは？",
+          hint: questionText,
+          answer: en,
+          choices: shuffle([
+            en,
+            others[0] ? others[0].英文 : "Yes, I do.",
+            others[1] ? others[1].英文 : "No, I don't.",
+            others[2] ? others[2].英文 : "I am fine."
+          ]),
+          audioText: spec.format === "qaudio_to_en" ? questionText : ""
+        });
+      }
+      return Object.assign({}, base, {
+        type: isVoice ? "voice" : "type",
+        prompt: spec.format === "qaudio_to_en" ? "聞こえた疑問文に英語で答えよう" : "疑問文に英語で答えよう",
+        hint: spec.format === "qaudio_to_en" ? "" : questionText,
+        answer: en,
         validAnswers: validAnswers,
-        cards: shuffle(qTokens.concat(dummy)),
-        expectedCount: qTokens.length,
-        dummyWord: dummy
-      };
+        audioText: spec.format === "qaudio_to_en" ? questionText : ""
+      });
     }
 
-    // Lv 8: 表現 / 日本語→英語 / 並び替え（＋１補う）
-    if (L === 8) {
-      const missingIdx = ri(qTokens.length);
-      const missingWord = qTokens[missingIdx];
-      const remaining = qTokens.filter((_, i) => i !== missingIdx);
-      return {
-        L, fm: "並び替え (＋1補う)", type: "sort",
-        variant: "missing",
-        prompt: "「" + q.日本語 + "」になるよう並べよう（1語足りない単語を補ってね！）",
-        refEn: qRefEn,
-        hint: "足りない単語を入力して「＋追加」し、並べてね",
-        answer: q.英文,
+    if (spec.format === "en_to_en") {
+      const isFlash = spec.ansType === "flash_typing" || spec.ansType === "flash_voice";
+      const isVoice = /voice$/.test(spec.ansType);
+      let clue = "";
+      if (spec.ansType === "initial_typing" || spec.ansType === "initial_voice") {
+        clue = String(q.イニシャル || "").trim();
+      } else if (spec.ansType === "sheet_fill_typing" || spec.ansType === "sheet_fill_voice") {
+        const a = String(q.穴埋め１ || "").trim();
+        const b = String(q.穴埋め２ || "").trim();
+        clue = a && b ? (Math.random() < 0.5 ? a : b) : (a || b);
+      }
+      return Object.assign({}, base, {
+        type: isVoice ? "voice" : "type",
+        prompt: isFlash
+          ? "フラッシュで見た英文を答えよう"
+          : (clue ? "手がかりを見て英文を答えよう" : "英文を確認して、同じ英文を答えよう"),
+        hint: (ja ? ("日本語: " + ja + (clue ? " ／ " : "")) : "") + (clue ? ("手がかり: " + clue) : ""),
+        answer: en,
         validAnswers: validAnswers,
-        cards: shuffle(remaining),
-        missingWord: missingWord,
-        expectedCount: qTokens.length
-      };
+        flashText: isFlash ? en : "",
+        audioText: !isFlash && !clue ? en : ""
+      });
     }
 
-    // Lv 9: 表現 / 日本語→英語 / 音声入力
-    if (L === 9) {
-      return {
-        L, fm: "音声入力", type: "voice",
-        prompt: "「" + q.日本語 + "」を英語で発音しよう",
-        hint: "（" + q.tokens.length + "語の文）",
-        answer: q.英文,
-        validAnswers: validAnswers
-      };
+    // ja_to_en / en_audio_to_en
+    if (spec.ansType === "4choice") {
+      const others = shuffle(ePool.filter(function (x) { return x.英文 !== en; }));
+      return Object.assign({}, base, {
+        type: "choice",
+        prompt: spec.format === "en_audio_to_en" ? "聞こえた英語はどれ？" : ("「" + ja + "」にあたる英語は？"),
+        hint: q.ヒント || "",
+        answer: en,
+        choices: shuffle([
+          en,
+          others[0] ? others[0].英文 : "I like apples.",
+          others[1] ? others[1].英文 : "She is happy.",
+          others[2] ? others[2].英文 : "We play soccer."
+        ]),
+        audioText: spec.format === "en_audio_to_en" ? en : ""
+      });
     }
-
-    // Lv 10: 表現 / 日本語→英語 / タイピング
-    if (L === 10) {
-      return {
-        L, fm: "タイピング", type: "type",
-        prompt: "「" + q.日本語 + "」を英語で入力しよう",
-        hint: "（" + q.tokens.length + "語の文）",
-        answer: q.英文,
-        validAnswers: validAnswers
-      };
+    if (spec.ansType === "voice") {
+      return Object.assign({}, base, {
+        type: "voice",
+        prompt: spec.format === "en_audio_to_en" ? "聞こえた英語を発音しよう" : ("「" + ja + "」を英語で発音しよう"),
+        hint: "（" + qTokens.length + "語の文）",
+        answer: en,
+        validAnswers: validAnswers,
+        audioText: spec.format === "en_audio_to_en" ? en : ""
+      });
     }
+    return Object.assign({}, base, {
+      type: "type",
+      prompt: spec.format === "en_audio_to_en" ? "聞こえた英語を入力しよう" : ("「" + ja + "」を英語で入力しよう"),
+      hint: "（" + qTokens.length + "語の文）",
+      answer: en,
+      validAnswers: validAnswers,
+      audioText: spec.format === "en_audio_to_en" ? en : ""
+    });
+  }
 
-    return null;
+  function makeQ(L) {
+    const lv = Math.max(1, Math.min(10, Math.round(Number(L) || 1)));
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const spec = dungeonPickCatalog_(lv);
+      const q = makeQFromSpec_(spec, lv);
+      if (q) return q;
+    }
+    // 最終フォールバック：単語 日→英 4択
+    const fallback = DUNGEON_EN_CATALOG.find(function (e) {
+      return e.format === "ja_to_en" && e.ansType === "4choice" && e.modeKind === "vocab";
+    }) || DUNGEON_EN_CATALOG[0];
+    return makeQFromSpec_(fallback, lv);
   }
 
 /* ---------- 数値設計 ---------- */
@@ -2313,10 +2592,28 @@ function ask(L, kind, done, name) {
   if (root) root.classList.add("is-quiz");
   if (qp) qp.style.display = "flex";
 
+  if (!q) {
+    if (root) root.classList.remove("is-quiz");
+    if (qp) qp.style.display = "none";
+    done({ ok: false, r: 1, L: L, sp: 0 });
+    return;
+  }
+
   let h = '<div class="qkind"><span class="qic" aria-hidden="true">' + K[0] + '</span><div><b>' + (name || K[1]) + 'クイズ</b><small>正解で ' + K[2](L) + '</small></div><span class="sec" id="qsec"></span></div>' +
-    '<div class="qhead"><span>難易度 ' + L + '・' + (LV_INFO[L] ? LV_INFO[L].name : q.fm) + '</span></div>' +
+    '<div class="qhead"><span>難易度 ' + L + '・' + (q.fm || (LV_INFO[L] ? LV_INFO[L].name : "")) + '</span></div>' +
     '<div class="tbar"><i id="tfill"></i></div>' +
     '<p class="qprompt">' + q.prompt + (q.hint ? '<small>' + q.hint + '</small>' : '') + '</p>';
+
+  if (q.audioText) {
+    h += '<div class="dungeon-audio-row" style="text-align:center;margin:4px 0 8px;">' +
+      '<button type="button" id="dungeonListenBtn" style="background:#1e88e5;color:#fff;font-size:14px;padding:8px 18px;border-radius:20px;font-family:var(--game);border:none;cursor:pointer;">🔊 英語をきく</button>' +
+      '</div>';
+  }
+  if (q.flashText) {
+    h += '<div id="dungeonFlashBox" style="text-align:center;margin:6px 0;min-height:2.2em;font-size:22px;font-weight:bold;color:var(--gold);letter-spacing:0.04em;">' +
+      '<span id="dungeonFlashText">' + String(q.flashText).replace(/</g, "&lt;") + '</span>' +
+      '</div>';
+  }
 
   if (q.refEn) {
     h += '<div class="sort-ref-en" style="background:rgba(0,0,0,0.55);border:2px solid #00d2d3;border-radius:8px;padding:8px 12px;margin:6px 0 10px 0;font-size:18px;font-weight:bold;color:#00d2d3;text-align:center;letter-spacing:0.04em;box-shadow:0 0 10px rgba(0,210,211,0.25);">' +
@@ -2362,6 +2659,23 @@ function ask(L, kind, done, name) {
 
   const fill = $("#tfill"), sec = $("#qsec");
 
+  // 音声出題：自動再生＋聞き直し
+  if (q.audioText) {
+    const listenBtn = targetBox.querySelector("#dungeonListenBtn");
+    const playAudio = function () { dungeonSpeakEnglish_(q.audioText); };
+    if (listenBtn) listenBtn.onclick = playAudio;
+    setTimeout(playAudio, 280);
+  }
+  // フラッシュ：数秒表示して消す
+  if (q.flashText) {
+    const flashEl = targetBox.querySelector("#dungeonFlashText");
+    setTimeout(function () {
+      if (flashEl) flashEl.textContent = "（かくれたよ。思い出して答えよう）";
+      if (flashEl) flashEl.style.color = "var(--muted)";
+      if (flashEl) flashEl.style.fontSize = "14px";
+    }, 2200);
+  }
+
   function finish(ok, timeout, btn) {
     if (fin) return;
     fin = true;
@@ -2372,6 +2686,12 @@ function ask(L, kind, done, name) {
       try { currentRecognition.abort(); } catch(e) {}
       currentRecognition = null;
     }
+    try {
+      if (window.PiperTtsStore && typeof window.PiperTtsStore.stop === "function") window.PiperTtsStore.stop();
+    } catch (_ps) {}
+    try {
+      if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+    } catch (_ss) {}
 
     // 回答終了時にソフトウェアキーボードを直ちに格納
     if (window.AppKeyboard) {
@@ -5052,24 +5372,35 @@ function startDungeonWithTower(towerId, startFloor, isPractice) {
 }
 
 /** 迷宮難易度 → 通常学習モードの出題設定 */
-function getDungeonDiffPracticeConfig_(lv) {
+function getDungeonFormatsAtDiff_(lv) {
+  const L = Math.max(1, Math.min(10, Math.round(Number(lv) || 1)));
+  return DUNGEON_EN_CATALOG.filter(function (e) { return e.diff === L; });
+}
+
+function getDungeonDiffPracticeConfig_(lv, formatIdOpt) {
   const L = Math.max(1, Math.min(10, Math.round(Number(lv) || 1)));
   const info = (typeof LV_INFO !== "undefined" && LV_INFO[L]) ? LV_INFO[L] : null;
-  const label = info ? info.name : ("難易度 " + L);
-  const map = {
-    1:  { modeKind: "vocab", format: "ja_to_en",      ansType: "4choice",     qFormat: "日本語→英単語", aFormat: "4択" },
-    2:  { modeKind: "vocab", format: "en_to_ja",      ansType: "4choice",     qFormat: "英単語→日本語", aFormat: "4択" },
-    3:  { modeKind: "vocab", format: "ja_to_en",      ansType: "fill_typing", qFormat: "日本語→英単語", aFormat: "穴埋めタイピング" },
-    4:  { modeKind: "vocab", format: "ja_to_en",      ansType: "voice",       qFormat: "日本語→英単語", aFormat: "音声" },
-    5:  { modeKind: "vocab", format: "ja_to_en",      ansType: "typing",      qFormat: "日本語→英単語", aFormat: "タイピング" },
-    6:  { modeKind: "expr",  format: "ja_to_en_sort", ansType: "sort_all",    qFormat: "日本語→英語（並び替え）", aFormat: "すべて用いる" },
-    7:  { modeKind: "expr",  format: "ja_to_en_sort", ansType: "sort_dummy",  qFormat: "日本語→英語（並び替え）", aFormat: "不要語混入" },
-    8:  { modeKind: "expr",  format: "ja_to_en_sort", ansType: "sort_missing",qFormat: "日本語→英語（並び替え）", aFormat: "不足語補足" },
-    9:  { modeKind: "expr",  format: "ja_to_en",      ansType: "voice",       qFormat: "日本語→英単語", aFormat: "音声" },
-    10: { modeKind: "expr",  format: "ja_to_en",      ansType: "typing",      qFormat: "日本語→英単語", aFormat: "タイピング" }
+  const bandLabel = info ? info.name : ("難易度 " + L);
+  const atDiff = getDungeonFormatsAtDiff_(L);
+  const unlocked = DUNGEON_EN_CATALOG.filter(function (e) { return e.diff <= L; });
+  let spec = null;
+  if (formatIdOpt != null && formatIdOpt !== "") {
+    const idx = Number(formatIdOpt);
+    if (!isNaN(idx) && DUNGEON_EN_CATALOG[idx]) spec = DUNGEON_EN_CATALOG[idx];
+  }
+  if (!spec) {
+    const pool = atDiff.length ? atDiff : unlocked;
+    spec = pool[ri(pool.length)] || DUNGEON_EN_CATALOG[0];
+  }
+  return {
+    difficulty: L,
+    label: (spec && spec.label) ? (bandLabel + " / " + spec.label) : bandLabel,
+    modeKind: spec.modeKind,
+    format: spec.format,
+    ansType: spec.ansType,
+    qFormat: spec.qFormat,
+    aFormat: spec.aFormat
   };
-  const base = map[L] || map[1];
-  return Object.assign({ difficulty: L, label: label }, base);
 }
 
 function getTowerPracticeUnits_(tower, modeKind) {
@@ -5085,24 +5416,67 @@ function getTowerPracticeUnits_(tower, modeKind) {
 function renderTowerPracticeDiffButtons_(towerId) {
   let h = '<div class="dungeon-practice-diffs">';
   for (let n = 1; n <= 10; n++) {
-    const cfg = getDungeonDiffPracticeConfig_(n);
-    const short = cfg.modeKind === "vocab" ? "単語" : "表現";
-    h += '<button type="button" class="dungeon-practice-diff-btn" title="' + escapeHtmlDungeon_(cfg.label) +
-      '" onclick="startDungeonDiffPractice(\'' + towerId + '\',' + n + ')">' +
-      '<span class="dp-lv">Lv' + n + '</span><span class="dp-kind">' + short + '</span></button>';
+    const formats = getDungeonFormatsAtDiff_(n);
+    const nFmt = formats.length || DUNGEON_EN_CATALOG.filter(function (e) { return e.diff <= n; }).length;
+    h += '<button type="button" class="dungeon-practice-diff-btn" title="難易度' + n + 'で解禁される形式（' + nFmt + '種）" ' +
+      'onclick="startDungeonDiffPractice(\'' + towerId + '\',' + n + ')">' +
+      '<span class="dp-lv">Lv' + n + '</span><span class="dp-kind">' + nFmt + '形式</span></button>';
   }
   h += '</div>';
   return h;
 }
 
-function startDungeonDiffPractice(towerId, difficulty) {
+function startDungeonDiffPractice(towerId, difficulty, formatCatalogIndex) {
   loadTowers();
   const tower = TOWERS.find(function (t) { return t.id === towerId; }) || TOWERS[0];
   if (!tower) {
     alert("塔が見つかりません。");
     return;
   }
-  const cfg = getDungeonDiffPracticeConfig_(difficulty);
+  const card = document.querySelector('.dungeon-tower-card[data-tower-id="' + towerId + '"]');
+  const host = card && card.querySelector(".dungeon-practice-unit-host");
+
+  // 形式未指定 → その難易度帯の全形式から選ばせる
+  if (formatCatalogIndex == null || formatCatalogIndex === "") {
+    const L = Math.max(1, Math.min(10, Math.round(Number(difficulty) || 1)));
+    let formats = getDungeonFormatsAtDiff_(L);
+    if (!formats.length) {
+      formats = DUNGEON_EN_CATALOG.filter(function (e) { return e.diff <= L; });
+    }
+    if (!host) {
+      const cfg = getDungeonDiffPracticeConfig_(L);
+      const units = getTowerPracticeUnits_(tower, cfg.modeKind);
+      if (units.length) launchDungeonDiffPractice_(tower, units[0], cfg);
+      return;
+    }
+    host.style.display = "block";
+    host.innerHTML =
+      '<p class="dungeon-practice-unit-title">難易度 ' + L + ' の出題形式をえらんでね（英語学習と同じ形式）</p>' +
+      '<div class="dungeon-practice-unit-list">' +
+      formats.map(function (f) {
+        const idx = DUNGEON_EN_CATALOG.indexOf(f);
+        return '<button type="button" class="dungeon-btn dungeon-practice-unit-btn" data-fmt-idx="' + idx + '">' +
+          escapeHtmlDungeon_(f.label) + "</button>";
+      }).join("") +
+      '</div>' +
+      '<button type="button" class="dungeon-btn" style="margin-top:8px;font-size:12px;" data-cancel="1">やめる</button>';
+    host.querySelectorAll("[data-fmt-idx]").forEach(function (btn) {
+      btn.onclick = function () {
+        startDungeonDiffPractice(towerId, L, btn.getAttribute("data-fmt-idx"));
+      };
+    });
+    const cancel0 = host.querySelector("[data-cancel]");
+    if (cancel0) {
+      cancel0.onclick = function () {
+        host.style.display = "none";
+        host.innerHTML = "";
+      };
+    }
+    try { host.scrollIntoView({ block: "nearest", behavior: "smooth" }); } catch (_) {}
+    return;
+  }
+
+  const cfg = getDungeonDiffPracticeConfig_(difficulty, formatCatalogIndex);
   const units = getTowerPracticeUnits_(tower, cfg.modeKind);
   if (!units.length) {
     alert((cfg.modeKind === "expr" ? "表現" : "単語") + "の単元がありません。塔の教材設定を確認してください。");
@@ -5112,16 +5486,13 @@ function startDungeonDiffPractice(towerId, difficulty) {
     launchDungeonDiffPractice_(tower, units[0], cfg);
     return;
   }
-  // 複数単元 → カード内で単元選択
-  const card = document.querySelector('.dungeon-tower-card[data-tower-id="' + towerId + '"]');
-  const host = card && card.querySelector(".dungeon-practice-unit-host");
   if (!host) {
     launchDungeonDiffPractice_(tower, units[0], cfg);
     return;
   }
   host.style.display = "block";
   host.innerHTML =
-    '<p class="dungeon-practice-unit-title">難易度 ' + cfg.difficulty + '（' + escapeHtmlDungeon_(cfg.label) + '）の単元をえらんでね</p>' +
+    '<p class="dungeon-practice-unit-title">' + escapeHtmlDungeon_(cfg.label) + ' の単元をえらんでね</p>' +
     '<div class="dungeon-practice-unit-list">' +
     units.map(function (u) {
       return '<button type="button" class="dungeon-btn dungeon-practice-unit-btn" data-unit="' +

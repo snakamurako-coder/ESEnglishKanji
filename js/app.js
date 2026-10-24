@@ -5346,8 +5346,10 @@ var global = typeof window !== 'undefined' ? window : this;
             onReady();
             return;
           }
+          // ロード失敗・タイムアウトでも onReady を呼び、呼び出し側が宙づりにならないようにする
           if (frame.dataset.kpLoading !== "1" || waitN >= 100) {
             clearInterval(waitId);
+            try { onReady(); } catch (_eReady) {}
           }
         }, 100);
         return;
