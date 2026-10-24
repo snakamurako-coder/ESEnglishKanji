@@ -298,24 +298,27 @@ function haptic(ms=15){
       desc: "数字・色・自己紹介で基礎をかためる入門の塔",
       maxFloor: 30,
       timeMultiplier: 1.0,
+      quizPreset: "english_all",
       vocabUnits: ["数字1_50", "色_50"],
       exprUnits: ["あかり自己紹介"]
     },
     {
       id: "tower_self_intro",
       name: "自己紹介の塔",
-      desc: "自己紹介の単語と様々な表現フレーズをマスターする塔",
+      desc: "自己紹介の単語を、四択→穴埋め→タイピングの段階で鍛える塔",
       maxFloor: 50,
       timeMultiplier: 1.0,
+      quizPreset: "jiko_vocab",
       vocabUnits: ["自己紹介用１", "自己紹介用２"],
       exprUnits: ["あかり自己紹介", "ひかり自己紹介", "ひかりを紹介"]
     },
     {
       id: "tower_hundred",
       name: "覇王迷宮 百階",
-      desc: "すべての単語と表現からランダムに出題される究極の百階ダンジョン",
+      desc: "すべての単語と表現・全出題形式からランダムに出題される究極の百階ダンジョン",
       maxFloor: 100,
       timeMultiplier: 1.0,
+      quizPreset: "english_all",
       vocabUnits: [], // 空 = 全単元
       exprUnits: []   // 空 = 全単元
     }
@@ -326,10 +329,15 @@ function haptic(ms=15){
     try {
       const v = JSON.parse(localStorage.getItem(TOWERS_KEY));
       if (Array.isArray(v) && v.length > 0) {
-        TOWERS = v.map(t => ({
-          ...t,
-          timeMultiplier: (typeof t.timeMultiplier === "number" && t.timeMultiplier > 0) ? t.timeMultiplier : 1.0
-        }));
+        TOWERS = v.map(function (t) {
+          const def = DEFAULT_TOWERS.find(function (d) { return d.id === t.id; });
+          return Object.assign({}, t, {
+            timeMultiplier: (typeof t.timeMultiplier === "number" && t.timeMultiplier > 0) ? t.timeMultiplier : 1.0,
+            // 既定塔はプリセット定義を常に同期（自己紹介の穴埋め段階など）
+            quizPreset: (def && def.quizPreset) || t.quizPreset || "english_all",
+            desc: (def && def.desc) ? def.desc : t.desc
+          });
+        });
         return;
       }
     } catch(e) {}
@@ -470,6 +478,55 @@ function haptic(ms=15){
     { modeKind: "expr", format: "en_to_en", ansType: "sheet_fill_voice", diff: 10, label: "表現 英→英 穴埋め音声", qFormat: "英語→英語", aFormat: "音声入力（穴埋め）" }
   ];
 
+  /**
+   * 難易度×形式プリセット（塔ごとに切替）。
+   * - english_all: 英語学習の全形式を Lv 帯で解禁（既存）
+   * - jiko_vocab: 自己紹介単語向け固定表（四択→穴埋め字数→タイピング）
+   */
+  const DUNGEON_QUIZ_PRESETS = {
+    english_all: {
+      id: "english_all",
+      name: "英語全形式ミックス",
+      mode: "catalog"
+    },
+    jiko_vocab: {
+      id: "jiko_vocab",
+      name: "自己紹介単語（穴埋め段階）",
+      mode: "fixed",
+      levels: {
+        1:  { modeKind: "vocab", format: "ja_to_en", ansType: "4choice",      blankCount: 0, noneChoice: false, timeSec: 20, label: "単語 日→英 四択", qFormat: "日本語→英単語", aFormat: "4択" },
+        2:  { modeKind: "vocab", format: "en_to_ja", ansType: "4choice",      blankCount: 0, noneChoice: true,  timeSec: 20, label: "単語 英→日 四択＋なし", qFormat: "英単語→日本語", aFormat: "4択" },
+        3:  { modeKind: "vocab", format: "ja_to_en", ansType: "fill_4choice", blankCount: 1, noneChoice: false, timeSec: 30, label: "単語 日→英 穴埋め（1字：四択）", qFormat: "日本語→英単語", aFormat: "穴埋め4択" },
+        4:  { modeKind: "vocab", format: "ja_to_en", ansType: "fill_4choice", blankCount: 2, noneChoice: false, timeSec: 30, label: "単語 日→英 穴埋め（2字：四択）", qFormat: "日本語→英単語", aFormat: "穴埋め4択" },
+        5:  { modeKind: "vocab", format: "ja_to_en", ansType: "fill_4choice", blankCount: 3, noneChoice: false, timeSec: 40, label: "単語 日→英 穴埋め（3字：四択）", qFormat: "日本語→英単語", aFormat: "穴埋め4択" },
+        6:  { modeKind: "vocab", format: "ja_to_en", ansType: "fill_4choice", blankCount: 4, noneChoice: false, timeSec: 40, label: "単語 日→英 穴埋め（4字：四択）", qFormat: "日本語→英単語", aFormat: "穴埋め4択" },
+        7:  { modeKind: "vocab", format: "ja_to_en", ansType: "fill_typing",  blankCount: 1, noneChoice: false, timeSec: 40, label: "単語 日→英 穴埋め（1字：タイピング）", qFormat: "日本語→英単語", aFormat: "穴埋めタイピング" },
+        8:  { modeKind: "vocab", format: "ja_to_en", ansType: "fill_typing",  blankCount: 2, noneChoice: false, timeSec: 50, label: "単語 日→英 穴埋め（2字：タイピング）", qFormat: "日本語→英単語", aFormat: "穴埋めタイピング" },
+        9:  { modeKind: "vocab", format: "ja_to_en", ansType: "fill_typing",  blankCount: 3, noneChoice: false, timeSec: 50, label: "単語 日→英 穴埋め（3字：タイピング）", qFormat: "日本語→英単語", aFormat: "穴埋めタイピング" },
+        10: { modeKind: "vocab", format: "ja_to_en", ansType: "typing",       blankCount: 0, noneChoice: false, timeSec: 60, label: "単語 日→英 タイピング", qFormat: "日本語→英単語", aFormat: "タイピング" }
+      }
+    }
+  };
+
+  function getActiveQuizPreset_() {
+    const id = (currentTower && currentTower.quizPreset) || "english_all";
+    return DUNGEON_QUIZ_PRESETS[id] || DUNGEON_QUIZ_PRESETS.english_all;
+  }
+
+  function getPresetLevelSpec_(L) {
+    const preset = getActiveQuizPreset_();
+    if (!preset || preset.mode !== "fixed" || !preset.levels) return null;
+    const lv = Math.max(1, Math.min(10, Math.round(Number(L) || 1)));
+    return preset.levels[lv] || null;
+  }
+
+  function dungeonLvDisplayName_(L) {
+    const spec = getPresetLevelSpec_(L);
+    if (spec && spec.label) return spec.label;
+    if (LV_INFO[L] && LV_INFO[L].name) return LV_INFO[L].name;
+    return "難易度 " + L;
+  }
+
   function dungeonSpeakEnglish_(text) {
     const t = String(text || "").trim();
     if (!t) return;
@@ -498,22 +555,51 @@ function haptic(ms=15){
     window.speechSynthesis.speak(u);
   }
 
-  function dungeonMaskWord_(word) {
+  function dungeonMaskWord_(word, blankCountOpt) {
     const raw = String(word || "");
     const chars = raw.split("");
     const len = chars.length;
-    if (len <= 1) return { masked: raw, missing: "" };
-    const blankCount = len <= 4 ? 1 : len <= 7 ? 2 : 3;
-    const blankIndices = [];
-    while (blankIndices.length < blankCount && blankIndices.length < len) {
-      const idx = ri(len);
-      if (chars[idx] === " ") continue;
-      if (!blankIndices.includes(idx)) blankIndices.push(idx);
+    if (len <= 1) return { masked: raw, missing: "", raw: raw };
+    const letterIndices = [];
+    for (let i = 0; i < len; i++) {
+      if (/[A-Za-z]/.test(chars[i])) letterIndices.push(i);
     }
-    if (!blankIndices.length) blankIndices.push(Math.min(1, len - 1));
-    const masked = chars.map(function (ch, i) { return blankIndices.includes(i) ? "_" : ch; }).join(len <= 12 ? " " : "");
-    const missingChars = blankIndices.sort(function (a, b) { return a - b; }).map(function (i) { return chars[i]; }).join("");
-    return { masked: masked, missing: missingChars, raw: raw };
+    if (!letterIndices.length) return { masked: raw, missing: "", raw: raw };
+    let blankCount;
+    if (blankCountOpt != null && !isNaN(Number(blankCountOpt)) && Number(blankCountOpt) > 0) {
+      blankCount = Math.round(Number(blankCountOpt));
+    } else {
+      blankCount = letterIndices.length <= 4 ? 1 : letterIndices.length <= 7 ? 2 : 3;
+    }
+    blankCount = Math.max(1, Math.min(blankCount, letterIndices.length));
+    const blankIndices = [];
+    const pool = letterIndices.slice();
+    shuffle(pool);
+    for (let i = 0; i < blankCount; i++) blankIndices.push(pool[i]);
+    blankIndices.sort(function (a, b) { return a - b; });
+    const masked = chars.map(function (ch, i) {
+      return blankIndices.indexOf(i) >= 0 ? "_" : ch;
+    }).join(len <= 12 ? " " : "");
+    const missingChars = blankIndices.map(function (i) { return chars[i].toLowerCase(); }).join("");
+    return { masked: masked, missing: missingChars, raw: raw.toLowerCase() };
+  }
+
+  /** 抜け文字四択のダミー生成（同じ文字数） */
+  function dungeonMissingCharChoices_(missing) {
+    const m = String(missing || "").toLowerCase();
+    const out = [m];
+    let guard = 0;
+    while (out.length < 4 && guard++ < 120) {
+      let fake = "";
+      for (let i = 0; i < m.length; i++) {
+        fake += String.fromCharCode(97 + ri(26));
+      }
+      if (fake && fake !== m && out.indexOf(fake) < 0) out.push(fake);
+    }
+    while (out.length < 4) {
+      out.push(m + String.fromCharCode(97 + (out.length % 26)));
+    }
+    return shuffle(out);
   }
 
   function dungeonExprValidAnswers_(q) {
@@ -579,22 +665,21 @@ function haptic(ms=15){
     return false;
   }
 
-  /* 制限時間計算 (各Lvベース秒数 × 全体倍率 × 塔の倍率) */
+  /* 制限時間計算 (プリセット秒数優先 → CFG → 既定) × 全体倍率 × 塔の倍率 */
   function tlim(L) {
-    const key = "t_lv" + L;
-    let baseTime = (typeof CFG !== "undefined" && CFG[key]);
-    if (typeof baseTime !== "number" || !isFinite(baseTime)) {
-      if (L === 1) baseTime = 10;
-      else if (L === 2) baseTime = 12;
-      else if (L === 3) baseTime = 15;
-      else if (L === 4) baseTime = 16;
-      else if (L === 5) baseTime = 22;
-      else if (L === 6) baseTime = 25;
-      else if (L === 7) baseTime = 28;
-      else if (L === 8) baseTime = 30;
-      else if (L === 9) baseTime = 18;
-      else if (L === 10) baseTime = 25;
-      else baseTime = 15;
+    const lv = Math.max(1, Math.min(10, Math.round(Number(L) || 1)));
+    let baseTime = null;
+    const pSpec = getPresetLevelSpec_(lv);
+    if (pSpec && typeof pSpec.timeSec === "number" && isFinite(pSpec.timeSec) && pSpec.timeSec > 0) {
+      baseTime = pSpec.timeSec;
+    } else {
+      const key = "t_lv" + lv;
+      baseTime = (typeof CFG !== "undefined" && CFG[key]);
+      if (typeof baseTime !== "number" || !isFinite(baseTime)) {
+        // 自己紹介プリセット相当の既定（カタログ塔でも近い秒数）
+        const defaults = { 1: 20, 2: 20, 3: 30, 4: 30, 5: 40, 6: 40, 7: 40, 8: 50, 9: 50, 10: 60 };
+        baseTime = defaults[lv] != null ? defaults[lv] : 30;
+      }
     }
     const towerMul = (currentTower && typeof currentTower.timeMultiplier === "number" && currentTower.timeMultiplier > 0)
       ? currentTower.timeMultiplier
@@ -625,10 +710,13 @@ function haptic(ms=15){
 
       if (spec.format === "en_to_ja" || spec.format === "en_audio_to_ja") {
         const noneText = "この中に正答はない";
-        const useNone = spec.format === "en_to_ja" && Math.random() < 0.25;
+        const forceNoneOption = spec.noneChoice === true || spec.format === "en_to_ja";
+        const useNoneAsAnswer = forceNoneOption && (spec.noneChoice === true
+          ? Math.random() < 0.25
+          : Math.random() < 0.25);
         let choices = [];
         let answer = ja;
-        if (useNone) {
+        if (useNoneAsAnswer) {
           answer = noneText;
           choices = shuffle([
             others[0] ? others[0].日本語 : "〜する",
@@ -643,7 +731,7 @@ function haptic(ms=15){
             others[1] ? others[1].日本語 : "〜を見る",
             others[2] ? others[2].日本語 : "〜へ行く"
           ]);
-          if (spec.format === "en_to_ja") choices = choices.concat(noneText);
+          if (forceNoneOption) choices = choices.concat(noneText);
         }
         return Object.assign({}, base, {
           type: "choice",
@@ -659,30 +747,29 @@ function haptic(ms=15){
       }
 
       if (spec.ansType === "fill_typing" || spec.ansType === "fill_4choice") {
-        const mask = dungeonMaskWord_(en.toLowerCase());
+        const blankN = spec.blankCount > 0 ? spec.blankCount : null;
+        const mask = dungeonMaskWord_(en.toLowerCase(), blankN);
+        const blankLabel = blankN ? (blankN + "字") : "穴埋め";
         if (spec.ansType === "fill_4choice") {
-          const dummies = [
-            others[0] ? others[0].英単語 : "word",
-            others[1] ? others[1].英単語 : "book",
-            others[2] ? others[2].英単語 : "study"
-          ];
+          // 抜けている文字列を四択で選ぶ（字数指定プリセット向け）
+          const letterChoices = dungeonMissingCharChoices_(mask.missing || en.slice(0, 1).toLowerCase());
           return Object.assign({}, base, {
             type: "choice",
-            prompt: (spec.format.indexOf("audio") >= 0 ? "聞こえた英単語のスペルは？" : ("「" + ja + "」のスペルは？")),
+            prompt: "「" + ja + "」の抜けている文字（" + blankLabel + "）は？",
             hint: mask.masked,
-            answer: en,
-            choices: shuffle([en].concat(dummies)),
-            audioText: spec.format.indexOf("audio") >= 0 ? en : ""
+            answer: mask.missing || letterChoices[0],
+            choices: letterChoices,
+            audioText: ""
           });
         }
         return Object.assign({}, base, {
           type: "spell",
-          prompt: (spec.format.indexOf("audio") >= 0 ? "聞こえた英単語のスペルを補おう" : ("「" + ja + "」のスペルを補おう")),
+          prompt: "「" + ja + "」のスペルを補おう（" + blankLabel + "）",
           hint: mask.masked,
           answer: mask.raw || en.toLowerCase(),
           missingChars: mask.missing,
           rawWord: en,
-          audioText: spec.format.indexOf("audio") >= 0 ? en : ""
+          audioText: ""
         });
       }
 
@@ -915,10 +1002,18 @@ function haptic(ms=15){
 
   function makeQ(L) {
     const lv = Math.max(1, Math.min(10, Math.round(Number(L) || 1)));
-    for (let attempt = 0; attempt < 8; attempt++) {
-      const spec = dungeonPickCatalog_(lv);
-      const q = makeQFromSpec_(spec, lv);
-      if (q) return q;
+    const fixed = getPresetLevelSpec_(lv);
+    if (fixed) {
+      for (let attempt = 0; attempt < 6; attempt++) {
+        const qFixed = makeQFromSpec_(fixed, lv);
+        if (qFixed) return qFixed;
+      }
+    } else {
+      for (let attempt = 0; attempt < 8; attempt++) {
+        const spec = dungeonPickCatalog_(lv);
+        const q = makeQFromSpec_(spec, lv);
+        if (q) return q;
+      }
     }
     // 最終フォールバック：単語 日→英 4択
     const fallback = DUNGEON_EN_CATALOG.find(function (e) {
@@ -934,7 +1029,7 @@ const SCHEMA=[
  ["敵の強さ",[["K","倒すのに必要な標準攻撃の回数（1階）",3,0.5,30,0.5],["N","無防備で耐えられる被弾数（1階）",10,1,50,1],["depth","深い階ほど厳しくなる度合い",1,0,5,0.1],["expDiv","1レベル上がるのに必要な撃破数",3,0.5,30,0.5],["eCrit","敵の痛恨の確率（%）",5,0,100,1],["eCritMul","敵の痛恨の倍率",1.5,1,10,0.1],["monMin","1階あたりの敵の数（最小）",3,0,15,1],["monMax","1階あたりの敵の数（最大）",5,0,15,1],["chase","勇者を追いかけ始める距離（マス）",2,0,20,1]]],
  ["敵のタイプ",[["a0hp","標準型：HP倍率",1,0.1,10,0.05],["a0atk","標準型：攻撃倍率",1,0.1,10,0.05],["a0eva","標準型：回避率（%）",5,0,100,1],["a1hp","速攻型：HP倍率",0.7,0.1,10,0.05],["a1atk","速攻型：攻撃倍率",1.3,0.1,10,0.05],["a1eva","速攻型：回避率（%）",12,0,100,1],["a2hp","重装型：HP倍率",1.5,0.1,10,0.05],["a2atk","重装型：攻撃倍率",0.8,0.1,10,0.05],["a2eva","重装型：回避率（%）",2,0,100,1],["a3hp","呪い型：HP倍率",0.9,0.1,10,0.05],["a3atk","呪い型：攻撃倍率",1.15,0.1,10,0.05],["a3eva","呪い型：回避率（%）",8,0,100,1]]],
  ["守護竜",[["bh","HP（通常の敵の何倍か）",6.25,0.5,50,0.25],["ba","攻撃力（通常の敵の何倍か）",1.68,0.5,20,0.02],["bEva","回避率（%）",5,0,100,1],["bossExp","経験値（通常の敵の何倍か）",5,0,100,0.5],["regenAt","自己再生を使うHP（最大HPの%以下）",50,0,100,5],["regenHeal","自己再生の回復量（最大HPの%）",50,0,100,5]]],
- ["クイズの効果",[["base","基本値・不正解時の効果（%）",5,0,100,1],["perLv","難易度1つごとの上昇（%）",5,0,50,0.5],["sp1","速さ補正：残り80%以上",15,-100,100,1],["sp2","速さ補正：残り60%以上",10,-100,100,1],["sp3","速さ補正：残り40%以上",5,-100,100,1],["sp4","速さ補正：残り20%以上",0,-100,100,1],["sp5","速さ補正：残り20%未満",-5,-100,100,1],["t_lv1","制限時間：Lv1 単語四択（秒）",10,1,300,1],["t_lv2","制限時間：Lv2 単語四択＋なし（秒）",12,1,300,1],["t_lv3","制限時間：Lv3 単語スペル補う（秒）",15,1,300,1],["t_lv4","制限時間：Lv4 単語音声入力（秒）",16,1,300,1],["t_lv5","制限時間：Lv5 単語タイピング（秒）",22,1,300,1],["t_lv6","制限時間：Lv6 表現並び替え過不足なし（秒）",25,1,300,1],["t_lv7","制限時間：Lv7 表現並び替え不要語排除（秒）",28,1,300,1],["t_lv8","制限時間：Lv8 表現並び替え＋1補う（秒）",30,1,300,1],["t_lv9","制限時間：Lv9 表現音声入力（秒）",18,1,300,1],["t_lv10","制限時間：Lv10 表現タイピング（秒）",25,1,300,1],["time","制限時間の全体倍率",1,0.2,10,0.1]]],
+ ["クイズの効果",[["base","基本値・不正解時の効果（%）",5,0,100,1],["perLv","難易度1つごとの上昇（%）",5,0,50,0.5],["sp1","速さ補正：残り80%以上",15,-100,100,1],["sp2","速さ補正：残り60%以上",10,-100,100,1],["sp3","速さ補正：残り40%以上",5,-100,100,1],["sp4","速さ補正：残り20%以上",0,-100,100,1],["sp5","速さ補正：残り20%未満",-5,-100,100,1],["t_lv1","制限時間：Lv1（秒）",20,1,300,1],["t_lv2","制限時間：Lv2（秒）",20,1,300,1],["t_lv3","制限時間：Lv3（秒）",30,1,300,1],["t_lv4","制限時間：Lv4（秒）",30,1,300,1],["t_lv5","制限時間：Lv5（秒）",40,1,300,1],["t_lv6","制限時間：Lv6（秒）",40,1,300,1],["t_lv7","制限時間：Lv7（秒）",40,1,300,1],["t_lv8","制限時間：Lv8（秒）",50,1,300,1],["t_lv9","制限時間：Lv9（秒）",50,1,300,1],["t_lv10","制限時間：Lv10（秒）",60,1,300,1],["time","制限時間の全体倍率",1,0.2,10,0.1]]],
  ["必殺技・とくぎ",[["spPow","必殺技の威力（通常の何倍か）",3,0.5,50,0.1],["spSureLv","必殺技が必中になるLv",10,1,999,1],["spDrainLv","必殺技が吸収を得るLv",20,1,999,1],["spDrain","必殺技の吸収量（与ダメージの%）",20,0,100,1],["spAllLv","必殺技が全体攻撃になるLv",30,1,999,1],["s1lv","二連切：習得Lv",5,1,999,1],["s1mp","二連切：消費MP",4,0,999,1],["s1pow","二連切：1発の威力（%）",60,1,1000,5],["s2lv","回転切り：習得Lv",10,1,999,1],["s2mp","回転切り：消費MP",6,0,999,1],["s2pow","回転切り：威力（%）",60,1,1000,5],["s3lv","三連斬：習得Lv",15,1,999,1],["s3mp","三連斬：消費MP",8,0,999,1],["s3pow","三連斬：1発の威力（%）",50,1,1000,5],["s4lv","竜巻切り：習得Lv",20,1,999,1],["s4mp","竜巻切り：消費MP",10,0,999,1],["s4pow","竜巻切り：威力（%）",70,1,1000,5]]],
  ["回復",[["stairHeal","階段を降りたときのHP・MP回復（%）",20,0,100,1],["revive","復活の首飾りで戻るHP（%）",50,1,100,1]]],
  ["どうぐ",[["iPot","初期所持：ポーション",3,0,99,1],["iEth","初期所持：まりょくの水",2,0,99,1],["iWing","初期所持：導きのコンパス",1,0,99,1],["iGate","初期所持：さいしんの渦",1,0,99,1],["iNeck","初期所持：復活の首飾り",1,0,99,1],["chestMin","1階あたりの宝箱の数",1,0,10,1],["chest2","宝箱がもう1つ出る確率（%）",40,0,100,1],["dNeck","宝箱：復活の首飾りの確率（%）",1.5,0,100,0.1],["dPot","宝箱：ポーションの比率",50,0,1000,1],["dEth","宝箱：まりょくの水の比率",28,0,1000,1],["dWing","宝箱：コンパスの比率",12,0,1000,1],["dGate","宝箱：さいしんの渦の比率",10,0,1000,1]]],
@@ -2315,7 +2410,7 @@ function diffRow(){
       ' aria-label="難易度' + n + (allowed ? "" : "（この階では選べません）") + '">' + n + '</button>';
   }
   h+='<span class="dnav-hint">◀▶選択 / ▼コマンド</span></div>';
-  const lvName = (typeof LV_INFO !== "undefined" && LV_INFO[S.diff]) ? LV_INFO[S.diff].name : ("Lv " + S.diff);
+  const lvName = (typeof dungeonLvDisplayName_ === "function") ? dungeonLvDisplayName_(S.diff) : ("Lv " + S.diff);
   const lockNote = range.min > 1
     ? '（この階は難易度 ' + range.min + '〜' + range.max + '）'
     : '';
@@ -2600,7 +2695,7 @@ function ask(L, kind, done, name) {
   }
 
   let h = '<div class="qkind"><span class="qic" aria-hidden="true">' + K[0] + '</span><div><b>' + (name || K[1]) + 'クイズ</b><small>正解で ' + K[2](L) + '</small></div><span class="sec" id="qsec"></span></div>' +
-    '<div class="qhead"><span>難易度 ' + L + '・' + (q.fm || (LV_INFO[L] ? LV_INFO[L].name : "")) + '</span></div>' +
+    '<div class="qhead"><span>難易度 ' + L + '・' + (q.fm || dungeonLvDisplayName_(L)) + '</span></div>' +
     '<div class="tbar"><i id="tfill"></i></div>' +
     '<p class="qprompt">' + q.prompt + (q.hint ? '<small>' + q.hint + '</small>' : '') + '</p>';
 
@@ -5374,14 +5469,29 @@ function startDungeonWithTower(towerId, startFloor, isPractice) {
 /** 迷宮難易度 → 通常学習モードの出題設定 */
 function getDungeonFormatsAtDiff_(lv) {
   const L = Math.max(1, Math.min(10, Math.round(Number(lv) || 1)));
+  const fixed = getPresetLevelSpec_(L);
+  if (fixed) return [fixed];
   return DUNGEON_EN_CATALOG.filter(function (e) { return e.diff === L; });
 }
 
 function getDungeonDiffPracticeConfig_(lv, formatIdOpt) {
   const L = Math.max(1, Math.min(10, Math.round(Number(lv) || 1)));
-  const info = (typeof LV_INFO !== "undefined" && LV_INFO[L]) ? LV_INFO[L] : null;
-  const bandLabel = info ? info.name : ("難易度 " + L);
-  const atDiff = getDungeonFormatsAtDiff_(L);
+  const bandLabel = dungeonLvDisplayName_(L);
+  const fixed = getPresetLevelSpec_(L);
+  if (fixed) {
+    return {
+      difficulty: L,
+      label: fixed.label || bandLabel,
+      modeKind: fixed.modeKind,
+      format: fixed.format,
+      ansType: fixed.ansType,
+      qFormat: fixed.qFormat,
+      aFormat: fixed.aFormat,
+      blankCount: fixed.blankCount || 0,
+      timeSec: fixed.timeSec || null
+    };
+  }
+  const atDiff = DUNGEON_EN_CATALOG.filter(function (e) { return e.diff === L; });
   const unlocked = DUNGEON_EN_CATALOG.filter(function (e) { return e.diff <= L; });
   let spec = null;
   if (formatIdOpt != null && formatIdOpt !== "") {
@@ -5414,15 +5524,30 @@ function getTowerPracticeUnits_(tower, modeKind) {
 }
 
 function renderTowerPracticeDiffButtons_(towerId) {
+  const tower = TOWERS.find(function (t) { return t.id === towerId; });
+  const prevTower = currentTower;
+  if (tower) currentTower = tower;
+  const preset = getActiveQuizPreset_();
   let h = '<div class="dungeon-practice-diffs">';
-  for (let n = 1; n <= 10; n++) {
-    const formats = getDungeonFormatsAtDiff_(n);
-    const nFmt = formats.length || DUNGEON_EN_CATALOG.filter(function (e) { return e.diff <= n; }).length;
-    h += '<button type="button" class="dungeon-practice-diff-btn" title="難易度' + n + 'で解禁される形式（' + nFmt + '種）" ' +
-      'onclick="startDungeonDiffPractice(\'' + towerId + '\',' + n + ')">' +
-      '<span class="dp-lv">Lv' + n + '</span><span class="dp-kind">' + nFmt + '形式</span></button>';
+  if (preset && preset.mode === "fixed" && preset.levels) {
+    for (let n = 1; n <= 10; n++) {
+      const lv = preset.levels[n];
+      const short = lv ? String(lv.label || "").replace(/^単語\s*/, "").slice(0, 10) : ("Lv" + n);
+      h += '<button type="button" class="dungeon-practice-diff-btn" title="' + escapeHtmlDungeon_(lv ? lv.label : ("難易度" + n)) + '" ' +
+        'onclick="startDungeonDiffPractice(\'' + towerId + '\',' + n + ')">' +
+        '<span class="dp-lv">Lv' + n + '</span><span class="dp-kind">' + escapeHtmlDungeon_(short) + '</span></button>';
+    }
+  } else {
+    for (let n = 1; n <= 10; n++) {
+      const formats = DUNGEON_EN_CATALOG.filter(function (e) { return e.diff === n; });
+      const nFmt = formats.length || DUNGEON_EN_CATALOG.filter(function (e) { return e.diff <= n; }).length;
+      h += '<button type="button" class="dungeon-practice-diff-btn" title="難易度' + n + 'で解禁される形式（' + nFmt + '種）" ' +
+        'onclick="startDungeonDiffPractice(\'' + towerId + '\',' + n + ')">' +
+        '<span class="dp-lv">Lv' + n + '</span><span class="dp-kind">' + nFmt + '形式</span></button>';
+    }
   }
   h += '</div>';
+  if (tower) currentTower = prevTower;
   return h;
 }
 
@@ -5433,16 +5558,64 @@ function startDungeonDiffPractice(towerId, difficulty, formatCatalogIndex) {
     alert("塔が見つかりません。");
     return;
   }
+  const prevTower = currentTower;
+  currentTower = tower;
   const card = document.querySelector('.dungeon-tower-card[data-tower-id="' + towerId + '"]');
   const host = card && card.querySelector(".dungeon-practice-unit-host");
+  const preset = getActiveQuizPreset_();
 
-  // 形式未指定 → その難易度帯の全形式から選ばせる
+  // 固定プリセット塔：形式選択を飛ばして単元選択へ
+  if (preset && preset.mode === "fixed") {
+    const cfg = getDungeonDiffPracticeConfig_(difficulty);
+    currentTower = prevTower;
+    const units = getTowerPracticeUnits_(tower, cfg.modeKind);
+    if (!units.length) {
+      alert("単語の単元がありません。塔の教材設定を確認してください。");
+      return;
+    }
+    if (units.length === 1) {
+      launchDungeonDiffPractice_(tower, units[0], cfg);
+      return;
+    }
+    if (!host) {
+      launchDungeonDiffPractice_(tower, units[0], cfg);
+      return;
+    }
+    host.style.display = "block";
+    host.innerHTML =
+      '<p class="dungeon-practice-unit-title">Lv' + cfg.difficulty + '（' + escapeHtmlDungeon_(cfg.label) + '）の単元をえらんでね</p>' +
+      '<div class="dungeon-practice-unit-list">' +
+      units.map(function (u) {
+        return '<button type="button" class="dungeon-btn dungeon-practice-unit-btn" data-unit="' +
+          escapeHtmlDungeon_(u).replace(/"/g, "&quot;") + '">' + escapeHtmlDungeon_(u) + "</button>";
+      }).join("") +
+      '</div>' +
+      '<button type="button" class="dungeon-btn" style="margin-top:8px;font-size:12px;" data-cancel="1">やめる</button>';
+    host.querySelectorAll(".dungeon-practice-unit-btn").forEach(function (btn) {
+      btn.onclick = function () {
+        const unit = btn.getAttribute("data-unit") || btn.textContent;
+        launchDungeonDiffPractice_(tower, unit, cfg);
+      };
+    });
+    const cancelF = host.querySelector("[data-cancel]");
+    if (cancelF) {
+      cancelF.onclick = function () {
+        host.style.display = "none";
+        host.innerHTML = "";
+      };
+    }
+    try { host.scrollIntoView({ block: "nearest", behavior: "smooth" }); } catch (_) {}
+    return;
+  }
+
+  // 形式未指定 → その難易度帯の全形式から選ばせる（english_all）
   if (formatCatalogIndex == null || formatCatalogIndex === "") {
     const L = Math.max(1, Math.min(10, Math.round(Number(difficulty) || 1)));
-    let formats = getDungeonFormatsAtDiff_(L);
+    let formats = DUNGEON_EN_CATALOG.filter(function (e) { return e.diff === L; });
     if (!formats.length) {
       formats = DUNGEON_EN_CATALOG.filter(function (e) { return e.diff <= L; });
     }
+    currentTower = prevTower;
     if (!host) {
       const cfg = getDungeonDiffPracticeConfig_(L);
       const units = getTowerPracticeUnits_(tower, cfg.modeKind);
@@ -5476,6 +5649,7 @@ function startDungeonDiffPractice(towerId, difficulty, formatCatalogIndex) {
     return;
   }
 
+  currentTower = prevTower;
   const cfg = getDungeonDiffPracticeConfig_(difficulty, formatCatalogIndex);
   const units = getTowerPracticeUnits_(tower, cfg.modeKind);
   if (!units.length) {
@@ -5557,12 +5731,15 @@ function renderTowerCards() {
     const hasSave = !!(rec.save && rec.save.floor);
     const isCleared = rec.best >= (tower.maxFloor || 100);
     const localRank = localAll[tower.id] || [];
+    const presetMeta = DUNGEON_QUIZ_PRESETS[tower.quizPreset] || DUNGEON_QUIZ_PRESETS.english_all;
+    const presetLabel = presetMeta && presetMeta.name ? presetMeta.name : "英語全形式ミックス";
 
     return `
       <div class="dungeon-tower-card ${isCleared ? 'best-cleared' : ''}" data-tower-id="${tower.id}">
         <div>
           <h2 class="dungeon-tower-title">🏰 ${tower.name}</h2>
           <p class="dungeon-tower-desc">${tower.desc || '問題に挑戦して最深階を目指そう！'}</p>
+          <p style="margin:4px 0 0;font-size:12px;color:var(--muted);">出題プリセット: ${escapeHtmlDungeon_(presetLabel)}</p>
         </div>
         <div class="dungeon-tower-meta">
           <span>最高到達: <b>${rec.best ? '地下 ' + rec.best + ' 階' : '未挑戦'}</b></span>

@@ -267,24 +267,27 @@ const newDataSection = `/* =====================================================
       desc: "数字・色・自己紹介で基礎をかためる入門の塔",
       maxFloor: 30,
       timeMultiplier: 1.0,
+      quizPreset: "english_all",
       vocabUnits: ["数字1_50", "色_50"],
       exprUnits: ["あかり自己紹介"]
     },
     {
       id: "tower_self_intro",
       name: "自己紹介の塔",
-      desc: "自己紹介の単語と様々な表現フレーズをマスターする塔",
+      desc: "自己紹介の単語を、四択→穴埋め→タイピングの段階で鍛える塔",
       maxFloor: 50,
       timeMultiplier: 1.0,
+      quizPreset: "jiko_vocab",
       vocabUnits: ["自己紹介用１", "自己紹介用２"],
       exprUnits: ["あかり自己紹介", "ひかり自己紹介", "ひかりを紹介"]
     },
     {
       id: "tower_hundred",
       name: "覇王迷宮 百階",
-      desc: "すべての単語と表現からランダムに出題される究極の百階ダンジョン",
+      desc: "すべての単語と表現・全出題形式からランダムに出題される究極の百階ダンジョン",
       maxFloor: 100,
       timeMultiplier: 1.0,
+      quizPreset: "english_all",
       vocabUnits: [], // 空 = 全単元
       exprUnits: []   // 空 = 全単元
     }
