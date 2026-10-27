@@ -8,7 +8,16 @@
             const safeId = String(r.id || "").replace(/\\/g, "\\\\").replace(/'/g, "\\'");
             const safeName = String(r.name || "").replace(/\\/g, "\\\\").replace(/'/g, "\\'");
             const icon = r.icon ? String(r.icon).trim() + " " : "🎁 ";
-            div.innerHTML = `<div class="item-title">${icon}${r.name}</div><div style="color: gold; font-weight: bold; margin-bottom: 10px;">必要ポイント: ${r.points} Pt</div>${limitLine}<div style="font-size: 14px; color: #aaa; margin-bottom: 15px;">${r.desc || ""}</div><button class="submit-btn btn-orange" style="width: 100%; padding: 10px; font-size: 18px;" onclick="exchangeReward('${safeId}', '${safeName}', ${Number(r.points) || 0}, this)">交換する</button>`;
+            const pts = Number(r.points) || 0;
+            div.innerHTML =
+              `<div class="item-title">${icon}${r.name}</div>` +
+              `<div style="color: gold; font-weight: bold; margin-bottom: 10px;">必要ポイント: ${pts} Pt</div>` +
+              limitLine +
+              `<div style="font-size: 14px; color: #aaa; margin-bottom: 15px;">${r.desc || ""}</div>` +
+              `<div class="reward-action-row" style="display:flex;gap:8px;align-items:stretch;">` +
+              `<button class="submit-btn btn-orange" style="flex:1;width:50%;min-width:0;padding:10px 6px;font-size:clamp(14px,3.6vw,17px);" onclick="exchangeReward('${safeId}', '${safeName}', ${pts}, this)">交換する</button>` +
+              `<button class="submit-btn btn-green" style="flex:1;width:50%;min-width:0;padding:10px 6px;font-size:clamp(14px,3.6vw,17px);" onclick="exchangeAndUseReward('${safeId}', '${safeName}', ${pts}, this)">今すぐ使う</button>` +
+              `</div>`;
             c.appendChild(div);
         });
         if (!(rewards || []).length) c.innerHTML = "<p>いま交換できる景品がありません。</p>";

@@ -4256,7 +4256,16 @@ var global = typeof window !== 'undefined' ? window : this;
             const safeId = String(r.id || "").replace(/\\/g, "\\\\").replace(/'/g, "\\'");
             const safeName = String(r.name || "").replace(/\\/g, "\\\\").replace(/'/g, "\\'");
             const icon = r.icon ? String(r.icon).trim() + " " : "🎁 ";
-            div.innerHTML = `<div class="item-title">${icon}${r.name}</div><div style="color: gold; font-weight: bold; margin-bottom: 10px;">必要ポイント: ${r.points} Pt</div>${limitLine}<div style="font-size: 14px; color: #aaa; margin-bottom: 15px;">${r.desc || ""}</div><button class="submit-btn btn-orange" style="width: 100%; padding: 10px; font-size: 18px;" onclick="exchangeReward('${safeId}', '${safeName}', ${Number(r.points) || 0}, this)">交換する</button>`;
+            const pts = Number(r.points) || 0;
+            div.innerHTML =
+              `<div class="item-title">${icon}${r.name}</div>` +
+              `<div style="color: gold; font-weight: bold; margin-bottom: 10px;">必要ポイント: ${pts} Pt</div>` +
+              limitLine +
+              `<div style="font-size: 14px; color: #aaa; margin-bottom: 15px;">${r.desc || ""}</div>` +
+              `<div class="reward-action-row" style="display:flex;gap:8px;align-items:stretch;">` +
+              `<button class="submit-btn btn-orange" style="flex:1;width:50%;min-width:0;padding:10px 6px;font-size:clamp(14px,3.6vw,17px);" onclick="exchangeReward('${safeId}', '${safeName}', ${pts}, this)">交換する</button>` +
+              `<button class="submit-btn btn-green" style="flex:1;width:50%;min-width:0;padding:10px 6px;font-size:clamp(14px,3.6vw,17px);" onclick="exchangeAndUseReward('${safeId}', '${safeName}', ${pts}, this)">今すぐ使う</button>` +
+              `</div>`;
             c.appendChild(div);
         });
         if (!(rewards || []).length) c.innerHTML = "<p>いま交換できる景品がありません。</p>";
@@ -4305,29 +4314,148 @@ var global = typeof window !== 'undefined' ? window : this;
         });
     }
 
-    function exchangeReward(rewardId, rewardName, points, btn) { 
-        const user = JSON.parse(localStorage.getItem('app_kid_user')); 
-        if(user.points < points) { alert("ポイントが足りないよ！もっと勉強してポイントをためよう！"); return; } 
-        if(!confirm(`「${rewardName}」と交換しますか？\n（${points} Ptへります）`)) return; 
-        const origText = toggleBtnLoading(btn, true); 
+    /** 景品カード内の両ボタンをまとめてロック／解除 */
+    function setRewardCardButtonsBusy_(btn, busy, restoreText) {
+      const card = btn && btn.closest ? btn.closest(".item-card") : null;
+      const btns = card
+        ? Array.prototype.slice.call(card.querySelectorAll("button.submit-btn"))
+        : (btn ? [btn] : []);
+      btns.forEach(function (b) {
+        if (!b) return;
+        if (busy) {
+          if (!b.dataset.idleLabel) b.dataset.idleLabel = b.innerText || b.textContent || "";
+          b.disabled = true;
+        } else {
+          b.disabled = false;
+          const label = b.dataset.idleLabel;
+          if (label) b.innerText = label;
+        }
+      });
+      if (btn && busy) return toggleBtnLoading(btn, true);
+      if (btn && !busy) return toggleBtnLoading(btn, false, restoreText);
+      return restoreText;
+    }
+
+    function applyExchangeSuccessToUser_(user, d) {
+      let fresh = null;
+      try { fresh = JSON.parse(localStorage.getItem("app_kid_user") || "null"); } catch (_e) {}
+      if (!fresh || String(fresh.id) !== String(user.id)) fresh = user;
+      if (d && d.newPoints != null) fresh.points = d.newPoints;
+      if (d && Array.isArray(d.inventory)) fresh.inventory = d.inventory;
+      else if (!Array.isArray(fresh.inventory)) fresh.inventory = [];
+      saveAppKidUserToLocal(fresh);
+      invalidateInventoryListCache_();
+      return fresh;
+    }
+
+    /** 交換直後の inventory から、いま得た未使用アイテムの rowIdx を特定 */
+    function findNewestUnusedInventoryRowIdx_(inventory, rewardId, rewardName) {
+      const rid = String(rewardId || "");
+      const rname = String(rewardName || "");
+      const list = Array.isArray(inventory) ? inventory.slice() : [];
+      const unused = list.filter(function (i) {
+        if (!i) return false;
+        const st = String(i.status || "");
+        if (st === "使用済み" || st === "used") return false;
+        if (rid && String(i.rewardId || "") === rid) return true;
+        if (rname && String(i.rewardName || "") === rname) return true;
+        return false;
+      });
+      if (!unused.length) return null;
+      unused.sort(function (a, b) {
+        const da = Date.parse(a.date || 0) || 0;
+        const db = Date.parse(b.date || 0) || 0;
+        if (db !== da) return db - da;
+        return Number(b.rowIdx || 0) - Number(a.rowIdx || 0);
+      });
+      const idx = Number(unused[0].rowIdx);
+      return isNaN(idx) ? null : idx;
+    }
+
+    function exchangeReward(rewardId, rewardName, points, btn) {
+        const user = JSON.parse(localStorage.getItem('app_kid_user'));
+        if (user.points < points) { alert("ポイントが足りないよ！もっと勉強してポイントをためよう！"); return; }
+        if (!confirm(`「${rewardName}」と交換しますか？\n（${points} Ptへります）\n※もちものに入ります`)) return;
+        const origText = setRewardCardButtonsBusy_(btn, true);
         gasApiFetchJson({ action: "exchange_reward", userId: user.id, rewardId: rewardId })
-        .then(d=>{ 
-            toggleBtnLoading(btn, false, origText); 
-            if(d.status==="success") { 
-                alert(d.message); 
-                // インターセプトが inventory 付きで保存した最新ユーザーを読み直す
-                // （交換前の user オブジェクトで上書きするともちものが消える）
-                let fresh = null;
-                try { fresh = JSON.parse(localStorage.getItem('app_kid_user') || 'null'); } catch (_e) {}
-                if (!fresh || String(fresh.id) !== String(user.id)) fresh = user;
-                if (d.newPoints != null) fresh.points = d.newPoints;
-                if (Array.isArray(d.inventory)) fresh.inventory = d.inventory;
-                else if (!Array.isArray(fresh.inventory)) fresh.inventory = [];
-                saveAppKidUserToLocal(fresh);
-                invalidateInventoryListCache_();
-                showHome(fresh); 
-            } else { alert(d.message); } 
-        }).catch(e => { alert("交換処理に失敗しました。"); toggleBtnLoading(btn, false, origText); }); 
+        .then(d => {
+            setRewardCardButtonsBusy_(btn, false, origText);
+            if (d.status === "success") {
+                alert(d.message);
+                const fresh = applyExchangeSuccessToUser_(user, d);
+                showHome(fresh);
+            } else { alert(d.message); }
+        }).catch(e => {
+            alert("交換処理に失敗しました。");
+            setRewardCardButtonsBusy_(btn, false, origText);
+        });
+    }
+
+    /**
+     * 交換→すぐ使用のショートカット（もちもの画面を経由しない）
+     */
+    function exchangeAndUseReward(rewardId, rewardName, points, btn) {
+        const user = JSON.parse(localStorage.getItem('app_kid_user'));
+        if (user.points < points) { alert("ポイントが足りないよ！もっと勉強してポイントをためよう！"); return; }
+        if (!confirm(
+          `「${rewardName}」を交換して、今すぐ使いますか？\n` +
+          `（${points} Ptへります）\n` +
+          `※おうちの人に確認してから押してね！`
+        )) return;
+        const origText = setRewardCardButtonsBusy_(btn, true);
+        gasApiFetchJson({ action: "exchange_reward", userId: user.id, rewardId: rewardId })
+        .then(function (ex) {
+            if (!ex || ex.status !== "success") {
+              setRewardCardButtonsBusy_(btn, false, origText);
+              alert((ex && ex.message) || "交換できませんでした");
+              return null;
+            }
+            const fresh = applyExchangeSuccessToUser_(user, ex);
+            const rowIdx = findNewestUnusedInventoryRowIdx_(
+              (ex && ex.inventory) || fresh.inventory,
+              rewardId,
+              rewardName
+            );
+            if (rowIdx == null) {
+              setRewardCardButtonsBusy_(btn, false, origText);
+              alert("交換はできました。もちものから「使う！」を押してください。");
+              showHome(fresh);
+              return null;
+            }
+            return gasApiFetchJson({ action: "consume_reward", rowIdx: rowIdx, userId: fresh.id })
+              .then(function (cu) {
+                return { fresh: fresh, cu: cu, rowIdx: rowIdx };
+              });
+        })
+        .then(function (pack) {
+            if (!pack) return;
+            setRewardCardButtonsBusy_(btn, false, origText);
+            const cu = pack.cu;
+            if (!cu || cu.status !== "success") {
+              alert((cu && cu.message) || "交換はできましたが、使用に失敗しました。もちものから使ってね。");
+              showHome(pack.fresh);
+              return;
+            }
+            try {
+              let kid = JSON.parse(localStorage.getItem("app_kid_user") || "null") || pack.fresh;
+              if (Array.isArray(cu.inventory)) kid.inventory = cu.inventory;
+              saveAppKidUserToLocal(kid);
+              userInventoryData = Array.isArray(cu.inventory) ? cu.inventory : (kid.inventory || []);
+              __inventoryListCache = userInventoryData;
+              __inventoryListCacheUserId = String(kid.id);
+              __inventoryListCacheAt = Date.now();
+              if (cu.activeTicket) setActiveRewardTicket_(cu.activeTicket);
+              alert(cu.message || ("「" + rewardName + "」を使いました！"));
+              showHome(kid);
+            } catch (_eDone) {
+              alert(cu.message || "使いました！");
+              showHome(pack.fresh);
+            }
+        })
+        .catch(function () {
+            setRewardCardButtonsBusy_(btn, false, origText);
+            alert("交換・使用処理に失敗しました。もういちどためしてね。");
+        });
     }
 
     function fetchInventoryList_(userId) {
