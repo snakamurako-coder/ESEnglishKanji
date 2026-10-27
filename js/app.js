@@ -7495,6 +7495,16 @@ var global = typeof window !== 'undefined' ? window : this;
         if (exWithKanji && usedReading) {
           const maskIdx = exWithKanji.indexOf(kanji);
           const masked = exWithKanji.slice(0, maskIdx) + "＿" + exWithKanji.slice(maskIdx + kanji.length);
+          // サーバー buildRubyToKanjiQuizQuestion_ と同じ：音=カタカナ表示
+          const readingDisp = (function (reading, kind) {
+            const r = String(reading || "");
+            if (kind !== "on") return r;
+            return Array.from(r).map(function (ch) {
+              const c = ch.charCodeAt(0);
+              if (c >= 0x3041 && c <= 0x3096) return String.fromCharCode(c + 0x60);
+              return ch;
+            }).join("");
+          })(usedReading.reading, usedReading.kind);
           builtQuestions.push({
             type: "ruby_to_kanji",
             kanji: kanji,
@@ -7502,10 +7512,13 @@ var global = typeof window !== 'undefined' ? window : this;
             readingLabel: usedReading.label,
             reading: usedReading.reading,
             readingKind: usedReading.kind,
+            // 出題UIは maskedSentence / readingDisplay を参照（sentence のみだと空欄・読みが出ない）
+            readingDisplay: readingDisp,
+            maskedSentence: masked,
             sentence: masked,
             prompt: "読みと例文の空欄の漢字を書いて、60点以上をめざそう。",
             correctAnswer: kanji,
-            searchText: [kanji, usedReading.reading, masked, exWithKanji].join(" "),
+            searchText: [kanji, readingDisp, masked, exWithKanji].join(" "),
             questionIndex: builtQuestions.length,
             questionId: "KANJI_Q_" + setId + "_" + rowIndex + "_ruby_to_kanji_" + idx
           });
@@ -7516,11 +7529,13 @@ var global = typeof window !== 'undefined' ? window : this;
             rowIndex: rowIndex,
             readingKind: usedReading.kind,
             readingLabel: usedReading.label,
+            readingDisplay: readingDisp,
             fullExample: exWithKanji,
+            maskedSentence: masked,
             sentence: masked,
             prompt: "赤字のかんじの よみを 入力しましょう。" + (usedReading.kind === "on" ? "（音読みはカタカナ）" : "（訓読みはひらがな）"),
-            correctAnswer: usedReading.reading,
-            searchText: [kanji, usedReading.reading, masked, exWithKanji].join(" "),
+            correctAnswer: readingDisp,
+            searchText: [kanji, readingDisp, masked, exWithKanji].join(" "),
             questionIndex: builtQuestions.length,
             questionId: "KANJI_Q_" + setId + "_" + rowIndex + "_sentence_to_ruby_" + idx
           });
@@ -7761,9 +7776,14 @@ var global = typeof window !== 'undefined' ? window : this;
         suffix = "_v2_c" + getKanjiQuizJukugoChoiceCount() + "_n" + (getKanjiQuizJukugoIncludeNone() ? "1" : "0");
       } else if (fmt === "stroke_order") {
         suffix = "_stroke";
+      } else if (fmt === "write_kanji") {
+        // maskedSentence / readingDisplay 付与後のキャッシュ更新
+        suffix = "_ruby_fields2";
       } else if (fmt === "select_kana") {
         // 例文付き送り仮名選択のキャッシュ更新用
         suffix = "_okuri_ex2";
+      } else if (fmt === "type_yomi") {
+        suffix = "_yomi_fields2";
       }
       return (
         "app_cached_kanji_quiz_questions_" +
@@ -12279,11 +12299,16 @@ var global = typeof window !== 'undefined' ? window : this;
             charHand.style.fontSize = "";
           }
         } else {
-          const ctxDrill = parseMaskedForDrill(q.maskedSentence);
+          // 旧クライアント生成分は sentence のみ・reading のみのことがある
+          const maskedForDrill =
+            q.maskedSentence || q.sentence || q.exampleSentence || q.exampleSentenceRaw || "";
+          const readingForDrill =
+            q.readingDisplay || q.reading || q.readingHint || "";
+          const ctxDrill = parseMaskedForDrill(maskedForDrill);
           if (prefixEl) prefixEl.textContent = ctxDrill.before || "";
           if (suffixEl) suffixEl.textContent = ctxDrill.after || "";
           if (charHand) {
-            charHand.textContent = q.readingDisplay || "";
+            charHand.textContent = readingForDrill;
             charHand.style.opacity = "";
             charHand.style.fontSize = "";
           }
@@ -12368,7 +12393,8 @@ var global = typeof window !== 'undefined' ? window : this;
                 }, delayMs);
               });
               if (charHand) {
-                charHand.textContent = qNow.readingDisplay || "";
+                charHand.textContent =
+                  qNow.readingDisplay || qNow.reading || qNow.readingHint || "";
                 charHand.style.opacity = "";
               }
             }

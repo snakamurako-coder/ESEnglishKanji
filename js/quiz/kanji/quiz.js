@@ -3504,11 +3504,16 @@
             charHand.style.fontSize = "";
           }
         } else {
-          const ctxDrill = parseMaskedForDrill(q.maskedSentence);
+          // 旧クライアント生成分は sentence のみ・reading のみのことがある
+          const maskedForDrill =
+            q.maskedSentence || q.sentence || q.exampleSentence || q.exampleSentenceRaw || "";
+          const readingForDrill =
+            q.readingDisplay || q.reading || q.readingHint || "";
+          const ctxDrill = parseMaskedForDrill(maskedForDrill);
           if (prefixEl) prefixEl.textContent = ctxDrill.before || "";
           if (suffixEl) suffixEl.textContent = ctxDrill.after || "";
           if (charHand) {
-            charHand.textContent = q.readingDisplay || "";
+            charHand.textContent = readingForDrill;
             charHand.style.opacity = "";
             charHand.style.fontSize = "";
           }
@@ -3581,7 +3586,8 @@
                 }, delayMs);
               });
               if (charHand) {
-                charHand.textContent = qNow.readingDisplay || "";
+                charHand.textContent =
+                  qNow.readingDisplay || qNow.reading || qNow.readingHint || "";
                 charHand.style.opacity = "";
               }
             }
