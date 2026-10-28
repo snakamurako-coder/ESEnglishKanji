@@ -23,6 +23,36 @@
     });
   }
 
+  /** ポイント表示：小数点以下1桁で切り捨て */
+  function formatAdminPoints_(v) {
+    if (typeof global.formatPointDisplayNum === "function") {
+      return global.formatPointDisplayNum(v);
+    }
+    var n = Number(v);
+    if (isNaN(n) || !isFinite(n)) return "0";
+    var t = Math.floor((Math.max(0, n) + 1e-12) * 10) / 10;
+    if (Math.abs(t - Math.round(t)) < 1e-9) return String(Math.round(t));
+    return t.toFixed(1);
+  }
+
+  function formatAdminDateTime_(iso) {
+    if (!iso) return "—";
+    try {
+      var d = new Date(iso);
+      if (isNaN(d.getTime())) return String(iso);
+      return d.toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" });
+    } catch (_e) {
+      return String(iso);
+    }
+  }
+
+  function rewardStatusLabel_(st) {
+    var s = String(st || "");
+    if (s === "使用済み" || s === "used") return "使用済み";
+    if (s === "未使用" || !s) return "未使用";
+    return s;
+  }
+
   function callToggleBtnLoading(btn, isLoading, origText) {
     if (typeof global.toggleBtnLoading === 'function') {
       return global.toggleBtnLoading(btn, isLoading, origText);
@@ -205,7 +235,7 @@
       users.forEach(u => {
         const uid = escapeHtml(String(u.id));
         const uname = escapeHtml(String(u.name || ''));
-        const curPts = Number(u.points) || 0;
+        const curPts = formatAdminPoints_(u.points);
         html += `
           <div class="user-point-card" style="background:#222;border:1px solid #444;border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:10px;text-align:left;">
             <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;">
@@ -213,7 +243,7 @@
               <span style="font-size:16px;color:gold;font-weight:bold;">現在: <span id="current-pts-disp-${uid}">${curPts}</span> Pt</span>
             </div>
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-              <input type="number" id="input-pts-${uid}" value="${curPts}" step="any" min="0" style="flex:1;min-width:120px;padding:10px;font-size:18px;border-radius:8px;border:2px solid #555;background:#1a1a1a;color:#fff;box-sizing:border-box;">
+              <input type="number" id="input-pts-${uid}" value="${curPts}" step="0.1" min="0" style="flex:1;min-width:120px;padding:10px;font-size:18px;border-radius:8px;border:2px solid #555;background:#1a1a1a;color:#fff;box-sizing:border-box;">
               <button type="button" class="submit-btn btn-orange" style="margin:0;padding:10px 16px;font-size:16px;white-space:nowrap;" onclick="submitUpdateUserPoint('${uid}', this)">変更を保存</button>
             </div>
             <div style="display:flex;gap:6px;flex-wrap:wrap;">
@@ -264,8 +294,8 @@
     const inp = document.getElementById('input-pts-' + userId);
     if (!inp) return;
     let v = Number(inp.value) || 0;
-    v = Math.max(0, Math.round((v + delta) * 100) / 100);
-    inp.value = v;
+    v = Math.floor((Math.max(0, v + delta) + 1e-12) * 10) / 10;
+    inp.value = formatAdminPoints_(v);
   }
 
   function submitUpdateUserPoint(userId, btn) {
@@ -286,20 +316,21 @@
       const finalPts =
         res && res.points != null ? res.points
           : (res && res.newPoints != null ? res.newPoints : newPts);
-      if (disp) disp.innerText = String(finalPts);
-      if (inp) inp.value = String(finalPts);
+      const dispPts = formatAdminPoints_(finalPts);
+      if (disp) disp.innerText = dispPts;
+      if (inp) inp.value = dispPts;
       if (msg) { msg.innerText = (res && res.message) || "保存しました！"; msg.style.color = "#4CAF50"; }
       try {
         const kid = JSON.parse(localStorage.getItem('app_kid_user') || 'null');
         if (kid && String(kid.id) === String(userId)) {
-          kid.points = finalPts;
+          kid.points = Number(dispPts);
           if (typeof global.saveAppKidUserToLocal === 'function') {
             global.saveAppKidUserToLocal(kid);
           } else {
             localStorage.setItem('app_kid_user', JSON.stringify(kid));
           }
           const pEl = document.getElementById('user-points');
-          if (pEl) pEl.innerText = String(kid.points);
+          if (pEl) pEl.innerText = formatAdminPoints_(kid.points);
         }
       } catch (_) {}
     };
@@ -1275,7 +1306,7 @@
           <span style="font-size:24px;">${avatar}</span>
           <div>
             <div style="font-weight:bold;color:#fff;font-size:15px;">${escapeHtml(u.name || "名称未設定")} <span style="font-size:12px;color:#888;">(${escapeHtml(u.id)})</span></div>
-            <div style="font-size:12px;color:#bbb;">PIN: <b style="color:#ffd54f;">${escapeHtml(u.pin || "----")}</b> ｜ 現在Pt: <b style="color:#4caf50;">${Number(u.points || 0).toLocaleString()} Pt</b></div>
+            <div style="font-size:12px;color:#bbb;">PIN: <b style="color:#ffd54f;">${escapeHtml(u.pin || "----")}</b> ｜ 現在Pt: <b style="color:#4caf50;">${formatAdminPoints_(u.points)} Pt</b></div>
           </div>
         </div>
         <div style="display:flex;gap:6px;">
@@ -1368,10 +1399,12 @@
   // 2. 🎁 ご褒美マスター管理 (Rewards CRUD)
   // ========================================================================
   let cachedRewards = [];
+  let cachedRewardHistoryRows_ = [];
 
   function enterParentAdminRewards() {
     if (!switchParentAdminSection('section-parent-admin-rewards')) return;
     loadParentAdminRewards();
+    loadParentAdminRewardHistory();
   }
 
   function loadParentAdminRewards() {
@@ -1385,6 +1418,102 @@
     }).catch(function (err) {
       if (container) container.innerHTML = `<p style="color:#ff8a80;text-align:center;">読み込み失敗: ${escapeHtml(err.message)}</p>`;
     });
+  }
+
+  function loadParentAdminRewardHistory() {
+    const pin = getTrainingAdminPin();
+    const box = document.getElementById("parent-admin-reward-history");
+    const filterSel = document.getElementById("reward-history-user-filter");
+    if (box) box.innerHTML = `<p style="color:#aaa;text-align:center;font-size:13px;">履歴をよみこみ中...</p>`;
+    if (!global.parentAdminStore || typeof global.parentAdminStore.getUsersList !== "function") {
+      if (box) box.innerHTML = `<p style="color:#ff8a80;text-align:center;">ストア未対応</p>`;
+      return;
+    }
+    const prevFilter = filterSel ? String(filterSel.value || "") : "";
+    global.parentAdminStore.getUsersList(pin).then(function (users) {
+      const list = Array.isArray(users) ? users : [];
+      if (filterSel) {
+        const opts = ['<option value="">すべてのユーザー</option>'].concat(
+          list.map(function (u) {
+            return '<option value="' + escapeHtml(String(u.id)) + '">' +
+              escapeHtml(String(u.name || u.id)) + " (" + escapeHtml(String(u.id)) + ")</option>";
+          })
+        );
+        filterSel.innerHTML = opts.join("");
+        if (prevFilter && Array.from(filterSel.options).some(function (o) { return o.value === prevFilter; })) {
+          filterSel.value = prevFilter;
+        }
+        filterSel.onchange = function () { renderParentAdminRewardHistory_(); };
+      }
+      const rows = [];
+      list.forEach(function (u) {
+        const inv = Array.isArray(u.inventory) ? u.inventory : [];
+        inv.forEach(function (item) {
+          if (!item) return;
+          rows.push({
+            userId: String(u.id || ""),
+            userName: String(u.name || u.id || ""),
+            rewardId: String(item.rewardId || ""),
+            rewardName: String(item.rewardName || "景品"),
+            points: Number(item.points) || 0,
+            limitMinutes: Number(item.limitMinutes) || 0,
+            status: rewardStatusLabel_(item.status),
+            exchangedAt: item.date || item.exchangedAt || "",
+            usedAt: item.usedAt || "",
+            rowIdx: item.rowIdx
+          });
+        });
+      });
+      rows.sort(function (a, b) {
+        const da = Date.parse(a.exchangedAt || 0) || 0;
+        const db = Date.parse(b.exchangedAt || 0) || 0;
+        if (db !== da) return db - da;
+        const ua = Date.parse(a.usedAt || 0) || 0;
+        const ub = Date.parse(b.usedAt || 0) || 0;
+        return ub - ua;
+      });
+      cachedRewardHistoryRows_ = rows;
+      renderParentAdminRewardHistory_();
+    }).catch(function (err) {
+      if (box) {
+        box.innerHTML = `<p style="color:#ff8a80;text-align:center;">履歴の読み込み失敗: ${escapeHtml(err && err.message)}</p>`;
+      }
+    });
+  }
+
+  function renderParentAdminRewardHistory_() {
+    const box = document.getElementById("parent-admin-reward-history");
+    const filterSel = document.getElementById("reward-history-user-filter");
+    if (!box) return;
+    const uidFilter = filterSel ? String(filterSel.value || "") : "";
+    let rows = cachedRewardHistoryRows_ || [];
+    if (uidFilter) {
+      rows = rows.filter(function (r) { return String(r.userId) === uidFilter; });
+    }
+    if (!rows.length) {
+      box.innerHTML = `<p style="color:#888;text-align:center;font-size:13px;">表示できる履歴がありません</p>`;
+      return;
+    }
+    box.innerHTML = rows.map(function (r) {
+      const used = r.status === "使用済み";
+      const statusColor = used ? "#ef9a9a" : "#81c784";
+      const timeLine = r.limitMinutes > 0
+        ? `<div style="font-size:11px;color:#90caf9;">制限 ${r.limitMinutes} 分</div>`
+        : "";
+      return `<div style="background:#1e1e2f;border:1px solid #3d3d5c;border-radius:8px;padding:10px 12px;text-align:left;">
+        <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:baseline;">
+          <div style="font-weight:bold;color:#fff;font-size:14px;">🎁 ${escapeHtml(r.rewardName)}</div>
+          <span style="font-size:12px;font-weight:bold;color:${statusColor};">${escapeHtml(r.status)}</span>
+        </div>
+        <div style="font-size:12px;color:#bbb;margin-top:4px;">👤 ${escapeHtml(r.userName)} <span style="color:#777;">(${escapeHtml(r.userId)})</span></div>
+        <div style="font-size:12px;color:#aaa;margin-top:4px;line-height:1.45;">
+          交換: ${escapeHtml(formatAdminDateTime_(r.exchangedAt))}<br>
+          使用: ${used ? escapeHtml(formatAdminDateTime_(r.usedAt)) : "—"}
+          ${r.points ? `<br>消費Pt: ${formatAdminPoints_(r.points)}` : ""}
+        </div>
+        ${timeLine}
+      </div>`;
+    }).join("");
   }
 
   function renderAdminRewardsList() {
@@ -1403,7 +1532,7 @@
           <div>
             <div style="font-weight:bold;color:#fff;font-size:15px;">
               ${escapeHtml(r.name)}
-              <span style="margin-left:8px;font-size:12px;background:#388e3c;color:#fff;padding:2px 8px;border-radius:10px;">${Number(r.points).toLocaleString()} Pt</span>
+              <span style="margin-left:8px;font-size:12px;background:#388e3c;color:#fff;padding:2px 8px;border-radius:10px;">${formatAdminPoints_(r.points)} Pt</span>
             </div>
             <div style="font-size:12px;color:#aaa;margin-top:2px;">${escapeHtml(r.desc || "")} ｜ ${timeStr}</div>
           </div>
@@ -2023,6 +2152,7 @@
 
   global.enterParentAdminRewards = enterParentAdminRewards;
   global.loadParentAdminRewards = loadParentAdminRewards;
+  global.loadParentAdminRewardHistory = loadParentAdminRewardHistory;
   global.openRewardModal = openRewardModal;
   global.closeRewardModal = closeRewardModal;
   global.submitSaveReward = submitSaveReward;

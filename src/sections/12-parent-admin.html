@@ -227,10 +227,23 @@
   <div id="section-parent-admin-rewards" class="section">
     <h1>🎁 ご褒美（景品）マスター管理</h1>
     <p style="max-width:440px;margin:0 auto 12px;line-height:1.5;color:#ccc;font-size:14px;">子どもがポイントで交換できるご褒美チケット（ゲーム時間やおやつ等）を登録・編集します。</p>
-    <div style="max-width:440px;margin:0 auto 16px;">
+    <div style="max-width:480px;margin:0 auto 16px;">
       <button type="button" class="submit-btn btn-green" style="width:100%;margin:0 0 12px;" onclick="openRewardModal()">➕ 新しいご褒美を追加</button>
       <div id="parent-admin-rewards-list" style="display:flex;flex-direction:column;gap:10px;">
         <p style="color:#aaa;text-align:center;">読み込み中...</p>
+      </div>
+      <div style="margin-top:28px;padding-top:18px;border-top:1px solid #3d3d5c;">
+        <h3 style="margin:0 0 8px;color:#ffd54f;font-size:16px;">📋 交換・使用の履歴</h3>
+        <p style="margin:0 0 10px;font-size:13px;color:#aaa;line-height:1.45;">各ユーザーのもちもの（交換日・使用日・状態）を確認できます。</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">
+          <select id="reward-history-user-filter" aria-label="ユーザー絞り込み" style="flex:1;min-width:160px;padding:8px;background:#1e1e2f;border:1px solid #555;color:#fff;border-radius:6px;font-size:13px;">
+            <option value="">すべてのユーザー</option>
+          </select>
+          <button type="button" class="submit-btn btn-blue" style="margin:0;padding:8px 12px;font-size:13px;" onclick="loadParentAdminRewardHistory()">更新</button>
+        </div>
+        <div id="parent-admin-reward-history" style="display:flex;flex-direction:column;gap:8px;">
+          <p style="color:#888;text-align:center;font-size:13px;">履歴をよみこむとここに表示されます</p>
+        </div>
       </div>
     </div>
     <button type="button" class="cancel-btn" style="margin-top:24px;" onclick="backToParentAdminHub()">管理メニューにもどる</button>

@@ -483,7 +483,9 @@
       return {
         id: id,
         name: u.name || id,
-        points: typeof u.points === "number" ? u.points : (Number(u.points) || 0)
+        points: truncatePoints1Admin_(
+          typeof u.points === "number" ? u.points : (Number(u.points) || 0)
+        )
       };
     }).filter(Boolean).sort(function (a, b) {
       return String(a.id).localeCompare(String(b.id));
@@ -579,9 +581,16 @@
   /**
    * ユーザーポイントの更新（Firestore 即時完結・GAS通信なし）
    */
+  function truncatePoints1Admin_(v) {
+    var n = Number(v);
+    if (isNaN(n) || !isFinite(n)) return 0;
+    var x = Math.max(0, n);
+    return Math.floor((x + 1e-12) * 10) / 10;
+  }
+
   function updateUserPoints(pin, userId, newPoints) {
     return new Promise(function (resolve, reject) {
-      var pts = Math.round(Number(newPoints) * 100) / 100;
+      var pts = truncatePoints1Admin_(newPoints);
       var db = getDb();
       if (db) {
         db.collection('users').doc(String(userId)).set({

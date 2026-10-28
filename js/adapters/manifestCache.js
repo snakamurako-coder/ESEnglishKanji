@@ -367,6 +367,27 @@
     });
   }
 
+  /** 生行（漢字／ターゲット漢字）にも kanji を付与し、練習タイル・検索が空にならないようにする */
+  function normalizeKanjiQuestionItem_(it) {
+    if (!it || typeof it !== 'object') return it;
+    const existing = String(it.kanji || '').trim();
+    if (existing) return it;
+    const k = String(
+      (it['ターゲット漢字'] != null ? it['ターゲット漢字'] : '') ||
+      (it['漢字'] != null ? it['漢字'] : '') ||
+      (it.targetKanji != null ? it.targetKanji : '') ||
+      ''
+    ).trim();
+    if (!k) return it;
+    const copy = Object.assign({}, it);
+    copy.kanji = k;
+    return copy;
+  }
+  function normalizeKanjiQuestionList_(arr) {
+    if (!Array.isArray(arr)) return [];
+    return arr.map(normalizeKanjiQuestionItem_);
+  }
+
   /**
    * 漢字の問題一覧を取得（GAS通信ゼロ）
    */
@@ -380,7 +401,13 @@
         const sid = String(setId || '');
         const hit = resolveSetQuestions_(u.setQuestions, sid);
         if (hit && hit.length) {
-          return { status: 'success', questions: hit, setId: sid, sheetKind: u.sheetKind || 'standard', fromCache: true };
+          return {
+            status: 'success',
+            questions: normalizeKanjiQuestionList_(hit),
+            setId: sid,
+            sheetKind: u.sheetKind || 'standard',
+            fromCache: true
+          };
         }
         // setId が未指定または空文字、"ALL" の場合は全セットの質問を平坦化して返却
         if ((!sid || sid === 'ALL') && u.setQuestions && typeof u.setQuestions === 'object') {
@@ -391,7 +418,13 @@
             }
           });
           if (allQuestions.length > 0) {
-            return { status: 'success', questions: allQuestions, setId: sid || 'ALL', sheetKind: u.sheetKind || 'standard', fromCache: true };
+            return {
+              status: 'success',
+              questions: normalizeKanjiQuestionList_(allQuestions),
+              setId: sid || 'ALL',
+              sheetKind: u.sheetKind || 'standard',
+              fromCache: true
+            };
           }
         }
       }

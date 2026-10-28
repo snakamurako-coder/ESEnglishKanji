@@ -177,7 +177,7 @@ var global = typeof window !== 'undefined' ? window : this;
         const user = JSON.parse(localStorage.getItem("app_kid_user") || "null");
         if (!user || !user.id) return;
         if (expectedUserId && String(user.id) !== String(expectedUserId)) return;
-        if (d.newTotal != null) user.points = d.newTotal;
+        if (d.newTotal != null) user.points = truncatePoints1_(d.newTotal);
         if (!user.historyJson) user.historyJson = {};
         if (d.historyUnitId && d.historyUnitPatch) {
           mergeHistoryUnitPatchClient(user, d.historyUnitId, d.historyUnitPatch);
@@ -192,7 +192,7 @@ var global = typeof window !== 'undefined' ? window : this;
         if (d.trainingProgressJson) user.trainingProgressJson = d.trainingProgressJson;
         saveAppKidUserToLocal(user);
         const ptsEl = document.getElementById("user-points");
-        if (ptsEl && d.newTotal != null) ptsEl.innerText = String(d.newTotal);
+        if (ptsEl && d.newTotal != null) ptsEl.innerText = formatPointDisplayNum(d.newTotal);
       } catch (_) {}
     }
     function flushPendingFinishQuizSave(user) {
@@ -547,21 +547,31 @@ var global = typeof window !== 'undefined' ? window : this;
             } catch (_e) {}
             return [];
           };
+          const finishInv_ = function (inv) {
+            // 取得結果をローカルへマージ保存（クラウド古データで消さない）
+            try {
+              const kid = JSON.parse(localStorage.getItem("app_kid_user") || "null");
+              if (kid && String(kid.id) === uid) {
+                kid.inventory = mergeRewardInventoryLists_(kid.inventory, inv);
+                saveAppKidUserToLocal(kid);
+                inv = kid.inventory.slice();
+              }
+            } catch (_eSave) {}
+            resolve({ status: "success", inventory: Array.isArray(inv) ? inv : [] });
+          };
           if (typeof firebase !== "undefined" && firebase.firestore) {
             firebase.firestore().collection("users").doc(uid).get().then(function (doc) {
               const remote = (doc.exists && doc.data() && Array.isArray(doc.data().inventory))
                 ? doc.data().inventory
                 : null;
-              // Firestore に配列が無い／空でも、ローカルに所持があればそちらを優先（交換直後の反映漏れ対策）
               const local = readLocalInv_();
-              let inv = Array.isArray(remote) ? remote : [];
-              if ((!inv.length) && local.length) inv = local;
-              resolve({ status: "success", inventory: inv });
+              // ローカルとクラウドを統合（古いクラウドだけで上書きしない）
+              finishInv_(mergeRewardInventoryLists_(remote, local));
             }).catch(function () {
-              resolve({ status: "success", inventory: readLocalInv_() });
+              finishInv_(readLocalInv_());
             });
           } else {
-            resolve({ status: "success", inventory: readLocalInv_() });
+            finishInv_(readLocalInv_());
           }
         });
       }
@@ -574,7 +584,6 @@ var global = typeof window !== 'undefined' ? window : this;
             reject(new Error("ユーザー情報が見つかりません"));
             return;
           }
-          // ご褒美マスターから該当アイテムの情報を取得
           const getMaster = (typeof firebase !== "undefined" && firebase.firestore)
             ? firebase.firestore().collection("system").doc("rewards_master").get()
             : Promise.resolve({ exists: false });
@@ -583,16 +592,13 @@ var global = typeof window !== 'undefined' ? window : this;
             const d = (doc && doc.exists) ? (doc.data() || {}) : {};
             const list = Array.isArray(d.list) ? d.list : (Array.isArray(d.rewards) ? d.rewards : []);
             const rItem = list.find(function (r) { return String(r.id) === String(bodyObj.rewardId); });
-            const pts = rItem ? Number(rItem.points || 0) : 0;
-            const rName = rItem ? rItem.name : "ご褒美";
-            const limitMin = rItem ? Number(rItem.limitMinutes != null ? rItem.limitMinutes : rItem.timeMinutes) || 0 : 0;
-
-            if (user.points < pts) {
-              resolve({ status: "error", message: "ポイントが足りません" });
+            if (!rItem) {
+              resolve({ status: "error", message: "景品マスタに見つかりません。管理者に連絡してください。" });
               return;
             }
-            user.points = Math.max(0, user.points - pts);
-            if (!Array.isArray(user.inventory)) user.inventory = [];
+            const pts = Math.max(0, Number(rItem.points || 0) || 0);
+            const rName = rItem.name || "ご褒美";
+            const limitMin = Number(rItem.limitMinutes != null ? rItem.limitMinutes : rItem.timeMinutes) || 0;
             const newInvItem = {
               rowIdx: Date.now(),
               rewardId: String(bodyObj.rewardId),
@@ -602,30 +608,74 @@ var global = typeof window !== 'undefined' ? window : this;
               date: new Date().toISOString(),
               status: "未使用"
             };
-            user.inventory.unshift(newInvItem);
-            saveAppKidUserToLocal(user);
 
-            const successPayload = {
-              status: "success",
-              message: "「" + rName + "」と交換しました！",
-              newPoints: user.points,
-              inventory: user.inventory.slice()
+            const applyLocalExchange_ = function (basePoints, baseInv) {
+              const curPts = Number(basePoints);
+              const pointsNow = isNaN(curPts) ? (Number(user.points) || 0) : curPts;
+              if (pointsNow < pts) {
+                return { error: "ポイントが足りません" };
+              }
+              const nextPts = Math.max(0, pointsNow - pts);
+              const mergedInv = mergeRewardInventoryLists_(baseInv, user.inventory);
+              mergedInv.unshift(newInvItem);
+              user.points = typeof truncatePoints1_ === "function" ? truncatePoints1_(nextPts) : nextPts;
+              user.inventory = mergedInv;
+              saveAppKidUserToLocal(user);
+              return {
+                status: "success",
+                message: "「" + rName + "」と交換しました！もちものに追加しました。",
+                newPoints: user.points,
+                inventory: user.inventory.slice(),
+                addedRowIdx: newInvItem.rowIdx
+              };
             };
 
+            const persistExchange_ = function (payload) {
+              if (!payload || payload.status !== "success") {
+                resolve(payload && payload.error
+                  ? { status: "error", message: payload.error }
+                  : payload);
+                return;
+              }
+              writeUserRewardStateToFirestore_(uid, {
+                points: payload.newPoints,
+                inventory: payload.inventory
+              }).then(function (ok) {
+                if (!ok) {
+                  queuePendingRewardInventorySync_(uid, {
+                    points: payload.newPoints,
+                    inventory: payload.inventory
+                  });
+                  payload.message = (payload.message || "") +
+                    "（通信が不安定なため、あとで自動同期します）";
+                  payload.pendingSync = true;
+                } else {
+                  clearPendingRewardInventorySync_(uid);
+                }
+                resolve(payload);
+              });
+            };
+
+            // Firestore 上の最新ポイント／持ち物とマージしてから減算（他端末とのズレ防止）
             if (typeof firebase !== "undefined" && firebase.firestore) {
-              firebase.firestore().collection("users").doc(uid).set({
-                points: user.points,
-                inventory: user.inventory
-              }, { merge: true }).then(function () {
-                resolve(successPayload);
+              firebase.firestore().collection("users").doc(uid).get().then(function (uDoc) {
+                const remote = (uDoc && uDoc.exists) ? (uDoc.data() || {}) : {};
+                const remotePts = remote.points;
+                const remoteInv = Array.isArray(remote.inventory) ? remote.inventory : [];
+                // クラウドのポイントが取れるならそれを優先、なければローカル
+                const basePts = (typeof remotePts === "number" && !isNaN(remotePts))
+                  ? remotePts
+                  : user.points;
+                const payload = applyLocalExchange_(basePts, remoteInv);
+                persistExchange_(payload);
               }).catch(function () {
-                // ローカルには保存済みなので成功扱い
-                resolve(successPayload);
+                const payload = applyLocalExchange_(user.points, user.inventory);
+                persistExchange_(payload);
               });
               return;
             }
 
-            resolve(successPayload);
+            persistExchange_(applyLocalExchange_(user.points, user.inventory));
           }).catch(function (err) {
             resolve({ status: "error", message: err.message || "交換に失敗しました" });
           });
@@ -707,15 +757,22 @@ var global = typeof window !== 'undefined' ? window : this;
                 inventory: user.inventory.slice()
               });
             };
-            if (typeof firebase !== "undefined" && firebase.firestore) {
-              const patch = { inventory: user.inventory };
-              if (activeTicket) patch.activeRewardTicket = activeTicket;
-              firebase.firestore().collection("users").doc(uid).set(patch, { merge: true })
-                .then(done)
-                .catch(done);
-              return;
-            }
-            done();
+            const patchState = {
+              inventory: user.inventory,
+              points: user.points
+            };
+            if (activeTicket) patchState.activeRewardTicket = activeTicket;
+            writeUserRewardStateToFirestore_(uid, patchState).then(function (ok) {
+              if (!ok) {
+                queuePendingRewardInventorySync_(uid, {
+                  points: user.points,
+                  inventory: user.inventory
+                });
+              } else {
+                clearPendingRewardInventorySync_(uid);
+              }
+              done();
+            });
           };
 
           let user = null;
@@ -2004,11 +2061,149 @@ var global = typeof window !== 'undefined' ? window : this;
       return sum;
     }
 
-    function formatPointDisplayNum(v) {
+    /** ポイント表示・保存用：小数点以下1桁で切り捨て（浮動小数のゴミ桁を除去） */
+    function truncatePoints1_(v) {
       const n = Number(v);
-      if (isNaN(n)) return '0';
-      if (Math.abs(n - Math.round(n)) < 1e-9) return String(Math.round(n));
-      return String(Math.round(n * 100) / 100);
+      if (isNaN(n) || !isFinite(n)) return 0;
+      const x = Math.max(0, n);
+      return Math.floor((x + 1e-12) * 10) / 10;
+    }
+    function formatPointDisplayNum(v) {
+      const t = truncatePoints1_(v);
+      if (Math.abs(t - Math.round(t)) < 1e-9) return String(Math.round(t));
+      return t.toFixed(1);
+    }
+    global.formatPointDisplayNum = formatPointDisplayNum;
+    global.truncatePoints1_ = truncatePoints1_;
+
+    const LS_PENDING_REWARD_INV_SYNC_ = "app_pending_reward_inventory_sync_v1";
+
+    /** もちもの配列を rowIdx で統合（使用済み優先・欠落分を落とさない） */
+    function mergeRewardInventoryLists_(a, b) {
+      const map = Object.create(null);
+      const order = [];
+      const isUsed_ = function (st) {
+        const s = String(st || "");
+        return s === "使用済み" || s === "used";
+      };
+      const ingest_ = function (list) {
+        (Array.isArray(list) ? list : []).forEach(function (item) {
+          if (!item || typeof item !== "object") return;
+          const key = item.rowIdx != null && item.rowIdx !== ""
+            ? "r:" + String(item.rowIdx)
+            : "f:" + String(item.rewardId || "") + "|" + String(item.date || "") + "|" + String(item.rewardName || "");
+          const prev = map[key];
+          if (!prev) {
+            map[key] = Object.assign({}, item);
+            order.push(key);
+            return;
+          }
+          const prevUsed = isUsed_(prev.status);
+          const curUsed = isUsed_(item.status);
+          if (curUsed && !prevUsed) {
+            map[key] = Object.assign({}, prev, item);
+            return;
+          }
+          if (prevUsed && !curUsed) return;
+          const pd = Date.parse(prev.usedAt || prev.date || 0) || 0;
+          const cd = Date.parse(item.usedAt || item.date || 0) || 0;
+          if (cd >= pd) map[key] = Object.assign({}, prev, item);
+        });
+      };
+      ingest_(a);
+      ingest_(b);
+      return order.map(function (k) { return map[k]; }).sort(function (x, y) {
+        return (Date.parse(y.date || 0) || 0) - (Date.parse(x.date || 0) || 0);
+      });
+    }
+    global.mergeRewardInventoryLists_ = mergeRewardInventoryLists_;
+
+    function queuePendingRewardInventorySync_(userId, state) {
+      try {
+        localStorage.setItem(LS_PENDING_REWARD_INV_SYNC_, JSON.stringify({
+          userId: String(userId || ""),
+          points: state && state.points,
+          inventory: Array.isArray(state && state.inventory) ? state.inventory : [],
+          at: Date.now()
+        }));
+      } catch (_e) {}
+    }
+    function clearPendingRewardInventorySync_(userId) {
+      try {
+        const raw = localStorage.getItem(LS_PENDING_REWARD_INV_SYNC_);
+        if (!raw) return;
+        const rec = JSON.parse(raw);
+        if (!userId || String(rec && rec.userId) === String(userId)) {
+          localStorage.removeItem(LS_PENDING_REWARD_INV_SYNC_);
+        }
+      } catch (_e) {
+        try { localStorage.removeItem(LS_PENDING_REWARD_INV_SYNC_); } catch (_e2) {}
+      }
+    }
+    /** Firestore へ points+inventory を書き込み。成功で true */
+    function writeUserRewardStateToFirestore_(userId, state) {
+      return new Promise(function (resolve) {
+        if (typeof firebase === "undefined" || !firebase.firestore || !userId) {
+          resolve(false);
+          return;
+        }
+        const patch = {};
+        if (state && state.points != null && !isNaN(Number(state.points))) {
+          patch.points = typeof truncatePoints1_ === "function"
+            ? truncatePoints1_(state.points)
+            : Number(state.points);
+        }
+        if (state && Array.isArray(state.inventory)) {
+          patch.inventory = state.inventory;
+        }
+        if (state && state.activeRewardTicket) {
+          patch.activeRewardTicket = state.activeRewardTicket;
+        }
+        if (!Object.keys(patch).length) {
+          resolve(true);
+          return;
+        }
+        firebase.firestore().collection("users").doc(String(userId)).set(patch, { merge: true })
+          .then(function () { resolve(true); })
+          .catch(function () { resolve(false); });
+      });
+    }
+    /** 未同期の交換結果を再送（ポイントだけ先に載って持ち物が消える事故の保険） */
+    function flushPendingRewardInventorySync_(optUserId) {
+      let rec = null;
+      try { rec = JSON.parse(localStorage.getItem(LS_PENDING_REWARD_INV_SYNC_) || "null"); } catch (_e) {}
+      if (!rec || !rec.userId) return Promise.resolve(false);
+      if (optUserId && String(rec.userId) !== String(optUserId)) return Promise.resolve(false);
+      // 最新ローカルともマージしてから送る
+      let inv = Array.isArray(rec.inventory) ? rec.inventory : [];
+      let pts = rec.points;
+      try {
+        const kid = JSON.parse(localStorage.getItem("app_kid_user") || "null");
+        if (kid && String(kid.id) === String(rec.userId)) {
+          inv = mergeRewardInventoryLists_(inv, kid.inventory);
+          if (pts == null || isNaN(Number(pts))) pts = kid.points;
+          kid.inventory = inv;
+          if (pts != null) kid.points = pts;
+          saveAppKidUserToLocal(kid);
+        }
+      } catch (_e2) {}
+      return writeUserRewardStateToFirestore_(rec.userId, { points: pts, inventory: inv })
+        .then(function (ok) {
+          if (ok) clearPendingRewardInventorySync_(rec.userId);
+          return ok;
+        });
+    }
+    global.flushPendingRewardInventorySync_ = flushPendingRewardInventorySync_;
+
+    if (typeof document !== "undefined" && !document.__rewardInvSyncVisBound) {
+      document.__rewardInvSyncVisBound = true;
+      document.addEventListener("visibilitychange", function () {
+        if (document.visibilityState !== "visible") return;
+        try {
+          const kid = JSON.parse(localStorage.getItem("app_kid_user") || "null");
+          if (kid && kid.id) flushPendingRewardInventorySync_(kid.id);
+        } catch (_e) {}
+      });
     }
 
     function updateSessionScoreDisplay() {
@@ -2540,6 +2735,9 @@ var global = typeof window !== 'undefined' ? window : this;
     }
 
     function saveAppKidUserToLocal(user) {
+      try {
+        if (user && user.points != null) user.points = truncatePoints1_(user.points);
+      } catch (_ePts) {}
       if (!user) return false;
       if (typeof __crNormalizeUserOnVerify === 'function') {
         user = __crNormalizeUserOnVerify(user);
@@ -3669,18 +3867,21 @@ var global = typeof window !== 'undefined' ? window : this;
         if (headerInfo) headerInfo.innerText = "ID: " + user.id + " / " + user.name;
         if (globalHeader) globalHeader.style.display = 'block';
         if (welcome) welcome.innerText = user.name + " さん";
-        if (pts) pts.innerText = user.points != null ? String(user.points) : "0";
+        if (pts) pts.innerText = formatPointDisplayNum(user.points != null ? user.points : 0);
+        try { flushPendingRewardInventorySync_(user.id); } catch (_ePendInv) {}
         if (window.userStore && typeof window.userStore.subscribeUserPoints === 'function') {
           window.userStore.subscribeUserPoints(user.id, function (newPoints) {
-            if (pts) pts.innerText = String(newPoints);
+            const truncated = truncatePoints1_(newPoints);
+            if (pts) pts.innerText = formatPointDisplayNum(truncated);
+            try { flushPendingRewardInventorySync_(user.id); } catch (_ePend2) {}
             // ポイント監視だけで inventory 等を消さないよう、最新ローカルとマージ
             let merged = user;
             try {
               const cur = JSON.parse(localStorage.getItem('app_kid_user') || 'null');
               if (cur && String(cur.id) === String(user.id)) merged = cur;
             } catch (_eM) {}
-            merged.points = newPoints;
-            user.points = newPoints;
+            merged.points = truncated;
+            user.points = truncated;
             if (Array.isArray(merged.inventory)) user.inventory = merged.inventory;
             try { saveAppKidUserToLocal(merged); } catch (_eUpd) {}
           });
@@ -4341,10 +4542,14 @@ var global = typeof window !== 'undefined' ? window : this;
       try { fresh = JSON.parse(localStorage.getItem("app_kid_user") || "null"); } catch (_e) {}
       if (!fresh || String(fresh.id) !== String(user.id)) fresh = user;
       if (d && d.newPoints != null) fresh.points = d.newPoints;
-      if (d && Array.isArray(d.inventory)) fresh.inventory = d.inventory;
-      else if (!Array.isArray(fresh.inventory)) fresh.inventory = [];
+      if (d && Array.isArray(d.inventory)) {
+        fresh.inventory = mergeRewardInventoryLists_(fresh.inventory, d.inventory);
+      } else if (!Array.isArray(fresh.inventory)) {
+        fresh.inventory = [];
+      }
       saveAppKidUserToLocal(fresh);
       invalidateInventoryListCache_();
+      try { flushPendingRewardInventorySync_(fresh.id); } catch (_eFlush) {}
       return fresh;
     }
 
@@ -4445,7 +4650,10 @@ var global = typeof window !== 'undefined' ? window : this;
               __inventoryListCacheUserId = String(kid.id);
               __inventoryListCacheAt = Date.now();
               if (cu.activeTicket) setActiveRewardTicket_(cu.activeTicket);
-              alert(cu.message || ("「" + rewardName + "」を使いました！"));
+              alert(
+                (cu.message || ("「" + rewardName + "」を使いました！")) +
+                "\n※使用済みのため、もちものの「未使用のみ」一覧には出ません。「すべて表示」で確認できます。"
+              );
               showHome(kid);
             } catch (_eDone) {
               alert(cu.message || "使いました！");
@@ -4464,12 +4672,14 @@ var global = typeof window !== 'undefined' ? window : this;
             __inventoryListCache = d.inventory || [];
             __inventoryListCacheUserId = String(userId);
             __inventoryListCacheAt = Date.now();
-            // 表示できた持ち物をローカルにも同期（「使う」がローカル欠落で失敗するのを防ぐ）
+            // 表示できた持ち物をローカルへマージ同期（クラウド古データで新規交換分を消さない）
             try {
               const kid = JSON.parse(localStorage.getItem("app_kid_user") || "null");
               if (kid && String(kid.id) === String(userId) && Array.isArray(d.inventory)) {
-                kid.inventory = d.inventory;
+                kid.inventory = mergeRewardInventoryLists_(kid.inventory, d.inventory);
                 saveAppKidUserToLocal(kid);
+                __inventoryListCache = kid.inventory.slice();
+                d.inventory = __inventoryListCache;
               }
             } catch (_eSyncInv) {}
           }
@@ -6196,10 +6406,21 @@ var global = typeof window !== 'undefined' ? window : this;
         syncKnSelectorsFromKp();
       });
     }
+    /** 練習用：問題レコードから漢字1字を取り出す（マニフェスト生行は「漢字」「ターゲット漢字」） */
+    function kpExtractKanjiFromItem_(item) {
+      if (!item || typeof item !== "object") return "";
+      const raw =
+        item.kanji ||
+        item["漢字"] ||
+        item["ターゲット漢字"] ||
+        item.targetKanji ||
+        "";
+      return String(raw == null ? "" : raw).trim();
+    }
     function kpApplyFilterAndRender() {
       /* セット内タイルは教材セット選択のみ（検索は独立パネル） */
       const list = (kpCatalogState.setQuestions || [])
-        .map(function (item) { return String(item.kanji || ""); })
+        .map(kpExtractKanjiFromItem_)
         .filter(Boolean);
       kpCatalogState.filteredChars = list;
       kpRenderTiles(list);
@@ -6320,7 +6541,7 @@ var global = typeof window !== 'undefined' ? window : this;
     /** 検索用テキスト：漢字本体＋音読み・訓読みのみ（例文・searchText は含めない） */
     function kpItemSearchHay_(item) {
       const parts = [];
-      const k = String(item.kanji || "").trim();
+      const k = kpExtractKanjiFromItem_(item);
       if (k) parts.push(k);
       const pushReading = function (raw) {
         const r = String(raw || "").trim();
@@ -6355,7 +6576,7 @@ var global = typeof window !== 'undefined' ? window : this;
             const qCached = kpGetCachedJson(kpCacheKeyQuestions(modeId, unit, setId));
             if (!qCached || !Array.isArray(qCached.questions)) return;
             qCached.questions.forEach(function (item) {
-              const kanji = String(item.kanji || "");
+              const kanji = kpExtractKanjiFromItem_(item);
               if (!kanji) return;
               const key = modeId + "\t" + unit + "\t" + kanji;
               if (!map[key]) {
@@ -10606,7 +10827,7 @@ var global = typeof window !== 'undefined' ? window : this;
       user.points = (Number(user.points) || 0) + earned;
       saveAppKidUserToLocal(user);
       const ptsEl = document.getElementById("user-points");
-      if (ptsEl) ptsEl.innerText = String(user.points);
+      if (ptsEl) ptsEl.innerText = formatPointDisplayNum(user.points);
     }
     function clearKanjiHwScoreStatus_() {
       const el = document.getElementById("kanji-hw-score-status");
@@ -11082,7 +11303,7 @@ var global = typeof window !== 'undefined' ? window : this;
                 }
                 try { saveAppKidUserToLocal(kidUser); } catch (_eSave) {}
                 var pts = document.getElementById("user-points");
-                if (pts) pts.innerText = String(kidUser.points);
+                if (pts) pts.innerText = formatPointDisplayNum(kidUser.points);
               }
               try { showKanjiHandScoreToast(score, kanjiChar, earned); } catch (_eToast1) {}
             })
