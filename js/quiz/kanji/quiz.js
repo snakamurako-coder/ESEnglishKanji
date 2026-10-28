@@ -2451,6 +2451,19 @@
       });
     }
 
+    /** 例文中の対象漢字を指定読み仮名に置換して TTS へ渡す */
+    function strokeOrderExampleForTts_(example, kanji, reading) {
+      const ex = String(example || "").replace(/[●•◦‧・]/g, "").trim();
+      const k = String(kanji || "");
+      const rdRaw = String(reading || "").replace(/[●•◦‧・]/g, "").trim();
+      if (!ex || !k || !rdRaw) return ex;
+      if (ex.indexOf(k) < 0) return ex;
+      const sep = rdRaw.search(/[.\.．･]/);
+      const rd = sep >= 0 ? rdRaw.slice(0, sep).trim() : rdRaw;
+      if (!rd) return ex;
+      return ex.split(k).join(rd);
+    }
+
     function renderStrokeOrderReadings_(q) {
       const el = document.getElementById("kanji-stroke-order-readings");
       if (!el) return;
@@ -2467,6 +2480,7 @@
       }
       let html = "";
       const ttsPhrases = [];
+      const targetKanji = String((q && q.kanji) || "").trim();
 
       // 先頭（右端）にTTSオンオフのチェックボックスを追加
       const ttsEnabled = getUserPref("kanji_quiz_stroke_tts_enabled", "1") === "1";
@@ -2502,7 +2516,7 @@
           "</span>";
         if (examples.length) {
           examples.forEach(function (ex) {
-            ttsPhrases.push(ex);
+            ttsPhrases.push(strokeOrderExampleForTts_(ex, targetKanji, r.reading));
             html +=
               '<span class="kanji-so-reading-example">' + escapeHtml(String(ex)) + "</span>";
           });

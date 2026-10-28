@@ -10476,6 +10476,22 @@ var global = typeof window !== 'undefined' ? window : this;
         .replace(/[。．\.・•●◦‧]+[\s　]*$/, "")
         .trim();
     }
+    /**
+     * 書き順よみ上げ用：例文中の対象漢字を、その読み枠の指定読み仮名に置換する。
+     * TTS が文脈から別読み（間→かん／あいだ 等）を推測しないようにする。
+     * 読みが「おぼ.える」形式なら幹だけを漢字位置へ入れ、例文側の送り仮名は残す。
+     */
+    function strokeOrderExampleForTts_(example, kanji, reading) {
+      const ex = cleanStrokeOrderTtsText_(example);
+      const k = String(kanji || "");
+      const rdRaw = cleanStrokeOrderTtsText_(reading);
+      if (!ex || !k || !rdRaw) return ex;
+      if (ex.indexOf(k) < 0) return ex;
+      const sep = rdRaw.search(/[.\.．･]/);
+      const rd = sep >= 0 ? rdRaw.slice(0, sep).trim() : rdRaw;
+      if (!rd) return ex;
+      return ex.split(k).join(rd);
+    }
     var __strokeOrderTtsTimer_ = null;
     var __strokeOrderTtsSpokenKey_ = "";
     function clearStrokeOrderReadings_() {
@@ -10575,6 +10591,7 @@ var global = typeof window !== 'undefined' ? window : this;
       html += '<input type="checkbox" class="kanji-stroke-tts-check" style="pointer-events:auto;transform:scale(1.3);margin:0;" ' + (ttsEnabled ? "checked" : "") + ">";
       html += '<span style="writing-mode:vertical-rl;text-orientation:upright;font-size:13px;color:#555;font-weight:bold;letter-spacing:1px;pointer-events:auto;">読み上げ機能をオン</span>';
       html += "</label>";
+      const targetKanji = String((q && q.kanji) || "").trim();
       readings.forEach(function (r) {
         if (!r || !r.reading) return;
         const kind = r.kind === "on" ? "on" : "kun";
@@ -10604,7 +10621,8 @@ var global = typeof window !== 'undefined' ? window : this;
           examples.forEach(function (ex) {
             const exText = normalizeStrokeOrderExampleText_(ex);
             if (!exText) return;
-            const voiceText = cleanStrokeOrderTtsText_(ex);
+            // 表示は漢字のまま。読み上げのみ指定読み仮名へ置換（きゃく間→きゃくま）
+            const voiceText = strokeOrderExampleForTts_(ex, targetKanji, r.reading);
             if (voiceText) {
               ttsPhrases.push(voiceText);
             }
