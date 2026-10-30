@@ -1272,10 +1272,27 @@
               </div>
             </div>
 
+            <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end;">
+              <div>
+                <label style="display:block;font-size:13px;color:var(--muted);margin-bottom:4px;">出題プリセット</label>
+                <select id="tower-edit-quiz-preset" style="font-size:14px;padding:6px 8px;background:#000;color:#fff;border:1px solid var(--line);border-radius:4px;">
+                  <option value="english_all">英語全形式ミックス</option>
+                  <option value="jiko_vocab">自己紹介単語（穴埋め段階・単語のみ）</option>
+                </select>
+              </div>
+              <label style="font-size:13px;display:flex;align-items:center;gap:6px;cursor:pointer;padding-bottom:6px;">
+                <input type="checkbox" id="tower-edit-vocab-only">
+                <span>単語セットのみで出題（表現を使わない）</span>
+              </label>
+            </div>
+            <p style="margin:0;font-size:12px;color:var(--muted);line-height:1.45;">
+              「自己紹介単語」プリセットは難易度1〜10が四択→穴埋め字数→タイピングの固定表になります。表現のチェックをすべて外すか「単語セットのみ」にチェックすると、単語だけの塔になります。
+            </p>
+
             <!-- 単元チェックボックス群 -->
             <div style="background:#1b1a2a;padding:12px;border-radius:6px;border:1px solid #333048;">
               <h3 style="font-family:'DotGothic16',monospace;font-size:15px;margin:0 0 8px;color:#90caf9;">
-                📚 単語練習モードの出題単元（Lv 1〜5）
+                📚 単語の出題単元
               </h3>
               <div style="display:flex;gap:8px;margin-bottom:8px;">
                 <button type="button" class="dungeon-btn" style="min-height:30px;padding:2px 8px;font-size:12px;" onclick="toggleAllUnits('vocab', true)">全選択</button>
@@ -1288,7 +1305,7 @@
 
             <div style="background:#1b1a2a;padding:12px;border-radius:6px;border:1px solid #333048;">
               <h3 style="font-family:'DotGothic16',monospace;font-size:15px;margin:0 0 8px;color:#ce93d8;">
-                💬 表現練習モードの出題単元（Lv 6〜10）
+                💬 表現の出題単元（単語のみ塔では未使用）
               </h3>
               <div style="display:flex;gap:8px;margin-bottom:8px;">
                 <button type="button" class="dungeon-btn" style="min-height:30px;padding:2px 8px;font-size:12px;" onclick="toggleAllUnits('expr', true)">全選択</button>
@@ -1392,7 +1409,7 @@
   <script src="js/modules/externalLearning.js?v=20261022-ext-fast"></script>
   <script src="js/modules/parentAdmin.js?v=20261028-reward-hist"></script>
   <script src="js/modules/authPin.js?v=20261017-inv-login"></script>
-  <script src="js/modules/dungeonGame.js?v=20261024-explore-perf"></script>
+  <script src="js/modules/dungeonGame.js?v=20261030-floor-depth-mult"></script>
   <script src="js/app.js?v=20261028-so-tts-yomi"></script>
 </body>
 </html>

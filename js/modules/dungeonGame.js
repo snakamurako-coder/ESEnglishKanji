@@ -305,12 +305,13 @@ function haptic(ms=15){
     {
       id: "tower_self_intro",
       name: "自己紹介の塔",
-      desc: "自己紹介の単語を、四択→穴埋め→タイピングの段階で鍛える塔",
+      desc: "自己紹介の単語セット2つだけで、四択→穴埋め→タイピングの段階で鍛える塔（表現なし）",
       maxFloor: 50,
       timeMultiplier: 1.0,
       quizPreset: "jiko_vocab",
+      vocabOnly: true,
       vocabUnits: ["自己紹介用１", "自己紹介用２"],
-      exprUnits: ["あかり自己紹介", "ひかり自己紹介", "ひかりを紹介"]
+      exprUnits: []
     },
     {
       id: "tower_hundred",
@@ -319,8 +320,9 @@ function haptic(ms=15){
       maxFloor: 100,
       timeMultiplier: 1.0,
       quizPreset: "english_all",
-      vocabUnits: [], // 空 = 全単元
-      exprUnits: []   // 空 = 全単元
+      vocabOnly: false,
+      vocabUnits: [], // 空 = 全単元（vocabOnly でない場合）
+      exprUnits: []   // 空 = 全単元（vocabOnly でない場合）
     }
   ];
 
@@ -331,12 +333,22 @@ function haptic(ms=15){
       if (Array.isArray(v) && v.length > 0) {
         TOWERS = v.map(function (t) {
           const def = DEFAULT_TOWERS.find(function (d) { return d.id === t.id; });
-          return Object.assign({}, t, {
+          const out = Object.assign({}, t, {
             timeMultiplier: (typeof t.timeMultiplier === "number" && t.timeMultiplier > 0) ? t.timeMultiplier : 1.0,
             // 既定塔はプリセット定義を常に同期（自己紹介の穴埋め段階など）
             quizPreset: (def && def.quizPreset) || t.quizPreset || "english_all",
             desc: (def && def.desc) ? def.desc : t.desc
           });
+          // 自己紹介の塔：単語2セットのみ＋表現なし を既定定義へ強制同期
+          if (def && def.id === "tower_self_intro") {
+            out.vocabOnly = true;
+            out.vocabUnits = Array.isArray(def.vocabUnits) ? def.vocabUnits.slice() : ["自己紹介用１", "自己紹介用２"];
+            out.exprUnits = [];
+            out.quizPreset = "jiko_vocab";
+          } else if (typeof out.vocabOnly !== "boolean") {
+            out.vocabOnly = out.quizPreset === "jiko_vocab";
+          }
+          return out;
         });
         return;
       }
@@ -362,25 +374,51 @@ function haptic(ms=15){
   function getTowerRecKey(towerId) {
     return "tango-meikyu-rec-" + (towerId || (currentTower && currentTower.id) || "default");
   }
+  function normalizeTowerRec_(rec) {
+    const r = Object.assign({ best: 0, bestCleared: 0, save: null }, rec && typeof rec === "object" ? rec : {});
+    r.best = Math.max(0, Math.round(Number(r.best) || 0));
+    let bc = Math.max(0, Math.round(Number(r.bestCleared) || 0));
+    if (r.save && typeof r.save.cleared === "number") {
+      bc = Math.max(bc, Math.round(Number(r.save.cleared) || 0));
+    }
+    // 旧セーブ互換: bestCleared 未設定なら best を最深踏破の近似にする
+    if (!(Number(rec && rec.bestCleared) > 0) && bc <= 0 && r.best > 0) {
+      bc = r.best;
+    }
+    r.bestCleared = bc;
+    if (r.bestCleared > r.best) r.best = r.bestCleared;
+    return r;
+  }
   function loadTowerRec(towerId) {
     try {
-      return Object.assign({ best: 0, save: null }, JSON.parse(localStorage.getItem(getTowerRecKey(towerId))) || {});
+      return normalizeTowerRec_(JSON.parse(localStorage.getItem(getTowerRecKey(towerId))) || {});
     } catch(e) {
-      return { best: 0, save: null };
+      return normalizeTowerRec_({});
     }
   }
   function saveTowerRec(rec, towerId) {
     try {
-      localStorage.setItem(getTowerRecKey(towerId), JSON.stringify(rec));
+      localStorage.setItem(getTowerRecKey(towerId), JSON.stringify(normalizeTowerRec_(rec)));
     } catch(e) {}
+  }
+
+  /** 塔の単元指定を解決。空配列は「全単元」(互換)。vocabOnly 時の表現は常になし。 */
+  function resolveTowerUnitNames_(selected, allUnits, emptyMeansNone) {
+    const all = Array.isArray(allUnits) ? allUnits : [];
+    if (!Array.isArray(selected) || selected.length === 0) {
+      return emptyMeansNone ? [] : all.slice();
+    }
+    return selected.slice();
   }
 
   // 選択された塔の出題プールを取得
   function getActiveVocabPool() {
     const list = [];
-    const selected = (currentTower && Array.isArray(currentTower.vocabUnits) && currentTower.vocabUnits.length > 0)
-      ? currentTower.vocabUnits
-      : ALL_VOCAB_UNITS;
+    const selected = resolveTowerUnitNames_(
+      currentTower && currentTower.vocabUnits,
+      ALL_VOCAB_UNITS,
+      false
+    );
     selected.forEach(u => {
       if (Array.isArray(VOCAB_BY_UNIT[u])) list.push(...VOCAB_BY_UNIT[u]);
     });
@@ -388,10 +426,16 @@ function haptic(ms=15){
   }
 
   function getActiveExprPool() {
+    // 単語のみ塔／jiko_vocab プリセットでは表現を出さない
+    if (currentTower && (currentTower.vocabOnly === true || currentTower.quizPreset === "jiko_vocab")) {
+      return [];
+    }
     const list = [];
-    const selected = (currentTower && Array.isArray(currentTower.exprUnits) && currentTower.exprUnits.length > 0)
-      ? currentTower.exprUnits
-      : ALL_EXPR_UNITS;
+    const selected = resolveTowerUnitNames_(
+      currentTower && currentTower.exprUnits,
+      ALL_EXPR_UNITS,
+      false
+    );
     selected.forEach(u => {
       if (Array.isArray(EXPR_BY_UNIT[u])) list.push(...EXPR_BY_UNIT[u]);
     });
@@ -1035,7 +1079,7 @@ const SCHEMA=[
  ["必殺技・とくぎ",[["spPow","必殺技の威力（通常の何倍か）",3,0.5,50,0.1],["spSureLv","必殺技が必中になるLv",10,1,999,1],["spDrainLv","必殺技が吸収を得るLv",20,1,999,1],["spDrain","必殺技の吸収量（与ダメージの%）",20,0,100,1],["spAllLv","必殺技が全体攻撃になるLv",30,1,999,1],["s1lv","二連切：習得Lv",5,1,999,1],["s1mp","二連切：消費MP",4,0,999,1],["s1pow","二連切：1発の威力（%）",60,1,1000,5],["s2lv","回転切り：習得Lv",10,1,999,1],["s2mp","回転切り：消費MP",6,0,999,1],["s2pow","回転切り：威力（%）",60,1,1000,5],["s3lv","三連斬：習得Lv",15,1,999,1],["s3mp","三連斬：消費MP",8,0,999,1],["s3pow","三連斬：1発の威力（%）",50,1,1000,5],["s4lv","竜巻切り：習得Lv",20,1,999,1],["s4mp","竜巻切り：消費MP",10,0,999,1],["s4pow","竜巻切り：威力（%）",70,1,1000,5]]],
  ["回復",[["stairHeal","階段を降りたときのHP・MP回復（%）",20,0,100,1],["revive","復活の首飾りで戻るHP（%）",50,1,100,1]]],
  ["どうぐ",[["iPot","初期所持：ポーション",3,0,99,1],["iEth","初期所持：まりょくの水",2,0,99,1],["iWing","初期所持：導きのコンパス",1,0,99,1],["iGate","初期所持：さいしんの渦",1,0,99,1],["iNeck","初期所持：復活の首飾り",1,0,99,1],["chestMin","1階あたりの宝箱の数",1,0,10,1],["chest2","宝箱がもう1つ出る確率（%）",40,0,100,1],["dNeck","宝箱：復活の首飾りの確率（%）",1.5,0,100,0.1],["dPot","宝箱：ポーションの比率",50,0,1000,1],["dEth","宝箱：まりょくの水の比率",28,0,1000,1],["dWing","宝箱：コンパスの比率",12,0,1000,1],["dGate","宝箱：さいしんの渦の比率",10,0,1000,1]]],
- ["学習ポイント",[["ptQuiz","正解時：難易度(1〜10)×この値",1,0,999,1],["ptFloor","踏破時：階層(1〜100)×この値",150,0,9999,1],["ptBoss","守護竜撃退：階層(10,20,…,100)×この値",50,0,9999,1]]],
+ ["学習ポイント",[["ptQuiz","正解時：難易度(1〜10)×この値",1,0,999,1],["ptFloor","踏破時：階層×この値×深度倍率",150,0,9999,1],["ptBoss","守護竜撃退：階層(10,20,…,100)×この値",50,0,9999,1]]],
  ["プレイ時間上限（分/日）",[
    ["playLim1","月曜",10,0,600,1],["playLim2","火曜",10,0,600,1],["playLim3","水曜",10,0,600,1],
    ["playLim4","木曜",10,0,600,1],["playLim5","金曜",10,0,600,1],
@@ -1354,16 +1398,56 @@ function awardQuizPoints_(diffLv) {
   const pts = L * (isFinite(mult) ? mult : 1);
   return addDungeonPoints_("quiz", pts, { toast: pts > 0 });
 }
-function awardFloorClearPoints_(floorNum) {
+/**
+ * 階層踏破の深度倍率。
+ * 塔の最深踏破階と同じ → 1.0倍。1階少ない毎に -20%（下限20%）、1階多い毎に +20%（上限200%）。
+ */
+function floorClearDepthMult_(floorNum, deepestCleared) {
+  const f = Math.max(1, Math.round(Number(floorNum) || 1));
+  const deep = Math.max(0, Math.round(Number(deepestCleared) || 0));
+  let m = 1 + 0.2 * (f - deep);
+  if (m < 0.2) m = 0.2;
+  if (m > 2) m = 2;
+  return Math.round(m * 100) / 100;
+}
+function getTowerBestClearedFloor_() {
+  if (!REC) return 0;
+  const n = normalizeTowerRec_(REC);
+  REC.best = n.best;
+  REC.bestCleared = n.bestCleared;
+  return Math.max(0, n.bestCleared || 0);
+}
+function noteTowerClearedFloor_(clearedFloor) {
+  const f = Math.max(0, Math.round(Number(clearedFloor) || 0));
+  if (!REC || f <= 0) return;
+  if (typeof REC.bestCleared !== "number") REC.bestCleared = 0;
+  if (f > REC.bestCleared) REC.bestCleared = f;
+  if (f > (REC.best || 0)) REC.best = f;
+}
+/**
+ * @param {number} floorNum 踏破した階
+ * @param {number} [deepestBeforeOpt] この踏破前の最深踏破階（省略時は塔記録）
+ * @returns {number} 付与ポイント
+ */
+function awardFloorClearPoints_(floorNum, deepestBeforeOpt) {
   const f = Math.max(1, Math.min(100, Math.round(Number(floorNum) || 0)));
   if (!f || !S || S.practice) return 0;
   S.st = ensurePointStats_(S.st);
   const key = String(f);
   if (S.st.awardedFloors[key]) return 0;
   S.st.awardedFloors[key] = true;
-  const mult = Number(CFG.ptFloor);
-  const pts = f * (isFinite(mult) ? mult : 150);
-  return addDungeonPoints_("floor", pts, { toast: pts > 0 });
+  const deepestBefore = deepestBeforeOpt != null
+    ? Math.max(0, Math.round(Number(deepestBeforeOpt) || 0))
+    : getTowerBestClearedFloor_();
+  const depthMult = floorClearDepthMult_(f, deepestBefore);
+  const baseMult = Number(CFG.ptFloor);
+  const pts = Math.max(0, Math.round(f * (isFinite(baseMult) ? baseMult : 150) * depthMult));
+  const gained = addDungeonPoints_("floor", pts, { toast: pts > 0 });
+  if (gained > 0 && S.st) {
+    S.st.lastFloorDepthMult = depthMult;
+    S.st.lastFloorDeepestBefore = deepestBefore;
+  }
+  return gained;
 }
 function awardBossPoints_(floorNum) {
   const f = Math.max(1, Math.min(100, Math.round(Number(floorNum) || 0)));
@@ -1649,10 +1733,13 @@ function log(t){S.log.push(t);if(S.log.length>40)S.log.shift();renderLog()}
 
 function newState(f,practice){
   return {screen:"explore",floor:f,practice:!!practice,cleared:practice?f-1:0,diff:(S&&S.diff)||5,
+    depthRefBest:null,
     p:{lv:f,exp:0,hp:pMaxHp(f),mp:pMaxMp(f),gauge:0,gearMax:practice?tierAt(f):1,eq:fullSet(practice?tierAt(f):1),it:{pot:CFG.iPot,eth:CFG.iEth,wing:CFG.iWing,gate:CFG.iGate,neck:CFG.iNeck}},st:emptyPointStats_(),log:[],b:null,map:null};
 }
 function start(f,practice){
   S=newState(f,practice);
+  // ラン開始時の最深踏破を深度倍率の基準にする（このラン中は固定）
+  S.depthRefBest = practice ? 0 : getTowerBestClearedFloor_();
   // 「最初から」は当該塔の進行中セーブを消す（最高記録 best は残す）
   if(!practice){REC.save=null;saveRec()}
   se("game_start");enterFloor("地下 "+f+" 階に おりたった。");
@@ -1663,6 +1750,10 @@ function resume(){
   if(!v){ start(1,false); return; }
   S=newState(v.floor,false);
   S.cleared=v.cleared;S.diff=v.diff||5;S.p=clone(v.p);S.p.it=fillItems(S.p.it);fillGear(S.p,S.cleared);S.st=ensurePointStats_(clone(v.st)||emptyPointStats_());
+  // セーブに基準があればそれを使い、無ければ現在の塔記録（旧セーブ互換）
+  S.depthRefBest = (v.depthRefBest != null && isFinite(Number(v.depthRefBest)))
+    ? Math.max(0, Math.round(Number(v.depthRefBest) || 0))
+    : getTowerBestClearedFloor_();
   se("game_start");enterFloor("地下 "+v.floor+" 階から さいかい。");
   forceBgmRestart_();
 }
@@ -1691,8 +1782,17 @@ function autosave(opts){
   if(S.screen!=="explore" && S.screen!=="battle")return;
   try {
     if(S.floor>REC.best)REC.best=S.floor;
+    // 最深踏破は階段クリア済み階のみ（到達だけでは更新しない）
+    if (S.cleared > 0) noteTowerClearedFloor_(S.cleared);
     // 各塔につき進行中セーブは1件（上書き）
-    REC.save={floor:S.floor,cleared:S.cleared,diff:S.diff,p:clone(S.p),st:clone(S.st)};
+    REC.save={
+      floor:S.floor,
+      cleared:S.cleared,
+      diff:S.diff,
+      depthRefBest: (S.depthRefBest != null ? S.depthRefBest : getTowerBestClearedFloor_()),
+      p:clone(S.p),
+      st:clone(S.st)
+    };
     saveRec();
     lastAutosaveTs_ = Date.now();
   } catch (e) {
@@ -3663,10 +3763,21 @@ function descend(){
   // 階段を降りた＝その階を「踏破」。たどり着いただけでは踏破にならない。
   const clearedFloor = S.floor;
   const prevCleared = S.cleared || 0;
+  // 深度倍率の基準はラン開始時の最深踏破（S.depthRefBest）。ラン中は固定。
+  const deepestBefore = (S.depthRefBest != null && isFinite(Number(S.depthRefBest)))
+    ? Math.max(0, Math.round(Number(S.depthRefBest) || 0))
+    : getTowerBestClearedFloor_();
   S.cleared = Math.max(prevCleared, clearedFloor);
   if (S.cleared > prevCleared) {
-    const floorPts = awardFloorClearPoints_(clearedFloor);
-    if (floorPts > 0) log("地下 " + clearedFloor + " 階を 踏破！ +" + floorPts + "pt");
+    const floorPts = awardFloorClearPoints_(clearedFloor, deepestBefore);
+    const depthMult = floorClearDepthMult_(clearedFloor, deepestBefore);
+    if (floorPts > 0) {
+      log("地下 " + clearedFloor + " 階を 踏破！ +" + floorPts + "pt（深度×" + depthMult + "）");
+    }
+    if (!S.practice) {
+      noteTowerClearedFloor_(clearedFloor);
+      try { saveRec(); } catch (_) {}
+    }
   }
   if (S.floor >= 100) return finishRun("clear");
   S.floor++;
@@ -3701,7 +3812,14 @@ function finishRun(kind){
   const bestCand = (kind === "retire")
     ? r.cleared
     : Math.max(S.floor || 0, r.cleared || 0);
-  if (!S.practice && bestCand > REC.best) { REC.best = bestCand; r.isNew = true; saveRec(); }
+  if (!S.practice) {
+    const prevBestCleared = getTowerBestClearedFloor_();
+    if (r.cleared > 0) noteTowerClearedFloor_(r.cleared);
+    if (bestCand > REC.best) { REC.best = bestCand; r.isNew = true; }
+    // 踏破記録の更新も「新記録」扱い
+    if (r.cleared > prevBestCleared) r.isNew = true;
+    saveRec();
+  }
   // 最深踏破ランキング（踏破済み階＝cleared）を提出
   if (!S.practice && r.cleared > 0 && currentTower && currentTower.id) {
     try { submitTowerRanking_(currentTower.id, r.cleared, r.lv); } catch (_) {}
@@ -5914,6 +6032,7 @@ function getDungeonDiffPracticeConfig_(lv, formatIdOpt) {
 function getTowerPracticeUnits_(tower, modeKind) {
   if (!tower) return [];
   if (modeKind === "expr") {
+    if (tower.vocabOnly === true || tower.quizPreset === "jiko_vocab") return [];
     if (Array.isArray(tower.exprUnits) && tower.exprUnits.length > 0) return tower.exprUnits.slice();
     return (ALL_EXPR_UNITS || []).slice();
   }
@@ -6265,7 +6384,12 @@ function renderAdminTowerList() {
 
   container.innerHTML = TOWERS.map(tower => {
     const vCount = tower.vocabUnits && tower.vocabUnits.length > 0 ? tower.vocabUnits.length + ' 単元' : '全単語（' + ALL_VOCAB_UNITS.length + ' 単元）';
-    const eCount = tower.exprUnits && tower.exprUnits.length > 0 ? tower.exprUnits.length + ' 単元' : '全表現（' + ALL_EXPR_UNITS.length + ' 単元）';
+    const vocabOnly = tower.vocabOnly === true || tower.quizPreset === "jiko_vocab";
+    const eCount = vocabOnly
+      ? 'なし（単語のみ）'
+      : (tower.exprUnits && tower.exprUnits.length > 0 ? tower.exprUnits.length + ' 単元' : '全表現（' + ALL_EXPR_UNITS.length + ' 単元）');
+    const presetMeta = DUNGEON_QUIZ_PRESETS[tower.quizPreset] || DUNGEON_QUIZ_PRESETS.english_all;
+    const presetLabel = presetMeta && presetMeta.name ? presetMeta.name : "英語全形式ミックス";
 
     return `
       <div style="background:#1b1a2a;border:1px solid #37344f;border-radius:6px;padding:12px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
@@ -6275,6 +6399,7 @@ function renderAdminTowerList() {
           <div style="font-size:11px;color:var(--fg);display:flex;gap:12px;flex-wrap:wrap;">
             <span>最大: ${tower.maxFloor || 100}階</span>
             <span>制限時間: ${Math.round((tower.timeMultiplier || 1.0) * 100)}%</span>
+            <span>プリセット: ${presetLabel}</span>
             <span>単語: ${vCount}</span>
             <span>表現: ${eCount}</span>
           </div>
@@ -6299,6 +6424,8 @@ function openTowerEditModal(towerId) {
     desc: "",
     maxFloor: 100,
     timeMultiplier: 1.0,
+    quizPreset: "english_all",
+    vocabOnly: false,
     vocabUnits: [],
     exprUnits: []
   };
@@ -6309,6 +6436,14 @@ function openTowerEditModal(towerId) {
   document.getElementById("tower-edit-desc").value = tower.desc || "";
   document.getElementById("tower-edit-maxfloor").value = tower.maxFloor || 100;
   document.getElementById("tower-edit-timemul").value = Math.round((tower.timeMultiplier || 1.0) * 100);
+  const presetSel = document.getElementById("tower-edit-quiz-preset");
+  if (presetSel) {
+    presetSel.value = tower.quizPreset || "english_all";
+  }
+  const vocabOnlyCb = document.getElementById("tower-edit-vocab-only");
+  if (vocabOnlyCb) {
+    vocabOnlyCb.checked = tower.vocabOnly === true || tower.quizPreset === "jiko_vocab";
+  }
 
   // 単元チェックボックス群の生成
   const vContainer = document.getElementById("tower-edit-vocab-units");
@@ -6320,11 +6455,26 @@ function openTowerEditModal(towerId) {
   }
 
   const eContainer = document.getElementById("tower-edit-expr-units");
+  const vocabOnly = tower.vocabOnly === true || tower.quizPreset === "jiko_vocab";
   if (eContainer) {
     eContainer.innerHTML = ALL_EXPR_UNITS.map(u => {
-      const checked = !tower.exprUnits || tower.exprUnits.length === 0 || tower.exprUnits.includes(u);
+      // 単語のみ塔は表現を未選択。それ以外で空配列は「全単元」互換
+      const checked = vocabOnly
+        ? false
+        : (!tower.exprUnits || tower.exprUnits.length === 0 || tower.exprUnits.includes(u));
       return `<label style="font-size:12px;display:flex;align-items:center;gap:4px;cursor:pointer;"><input type="checkbox" name="expr_unit" value="${u}" ${checked ? 'checked' : ''}><span>${u}</span></label>`;
     }).join("");
+  }
+
+  if (presetSel && !presetSel.__dungeonBound) {
+    presetSel.__dungeonBound = true;
+    presetSel.addEventListener("change", function () {
+      const cb = document.getElementById("tower-edit-vocab-only");
+      if (presetSel.value === "jiko_vocab" && cb) {
+        cb.checked = true;
+        toggleAllUnits("expr", false);
+      }
+    });
   }
 
   panel.style.display = "block";
@@ -6355,17 +6505,32 @@ if (towerForm) {
 
     const vSelected = [...document.querySelectorAll('input[name="vocab_unit"]:checked')].map(cb => cb.value);
     const eSelected = [...document.querySelectorAll('input[name="expr_unit"]:checked')].map(cb => cb.value);
+    const presetEl = document.getElementById("tower-edit-quiz-preset");
+    const vocabOnlyEl = document.getElementById("tower-edit-vocab-only");
+    let quizPreset = (presetEl && presetEl.value) || "english_all";
+    if (!DUNGEON_QUIZ_PRESETS[quizPreset]) quizPreset = "english_all";
+    // 表現を1つも選ばない／チェックON／jiko_vocab → 単語のみ塔
+    let vocabOnly = !!(vocabOnlyEl && vocabOnlyEl.checked) || eSelected.length === 0 || quizPreset === "jiko_vocab";
+    if (quizPreset === "jiko_vocab") vocabOnly = true;
 
     const existingIdx = TOWERS.findIndex(t => t.id === id);
+    const prev = existingIdx >= 0 ? TOWERS[existingIdx] : null;
     const newTower = {
       id: id || ("tower_" + Date.now()),
       name: name || "新しい塔",
       desc: desc,
       maxFloor: Math.max(10, Math.min(100, maxFloor)),
       timeMultiplier: Math.max(0.3, Math.min(3.0, timeMul)),
-      vocabUnits: vSelected.length === ALL_VOCAB_UNITS.length ? [] : vSelected,
-      exprUnits: eSelected.length === ALL_EXPR_UNITS.length ? [] : eSelected
+      quizPreset: quizPreset,
+      vocabOnly: vocabOnly,
+      // 全選択時は [] = 全単元（互換）。0件選択は vocabOnly で表現なしを表現
+      vocabUnits: (vSelected.length === 0 || vSelected.length === ALL_VOCAB_UNITS.length) ? [] : vSelected,
+      exprUnits: vocabOnly ? [] : ((eSelected.length === 0 || eSelected.length === ALL_EXPR_UNITS.length) ? [] : eSelected)
     };
+    if (prev && prev.id === "tower_self_intro" && quizPreset === "jiko_vocab") {
+      newTower.vocabOnly = true;
+      newTower.exprUnits = [];
+    }
 
     if (existingIdx >= 0) {
       TOWERS[existingIdx] = newTower;
