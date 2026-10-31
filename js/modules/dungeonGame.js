@@ -125,6 +125,105 @@ function haptic(ms=15){
   VOCAB_BY_UNIT["基本単語"] = DEFAULT_VOCAB.slice();
   EXPR_BY_UNIT["基本表現"] = DEFAULT_EXPR.slice();
 
+  /** ビルトインローマ字単元（マニフェスト後も維持。百階塔の「全単元」からは除外） */
+  const ROMAJI_VOCAB_UNIT_PREFIX = "ローマ字Lv";
+  const ROMAJI_VOCAB_UNIT_NAMES = [];
+  function makeRomajiVocabRow_(kana, romaji, unit) {
+    const r = String(romaji || "").trim().toLowerCase();
+    return {
+      英単語: r,
+      日本語: String(kana || "").trim(),
+      イニシャル: r.charAt(0) || "",
+      イニシャルと文字数: "",
+      ヒント: "",
+      unit: unit
+    };
+  }
+  function buildBuiltinRomajiVocabByUnit_() {
+    const out = {};
+    function add(unit, pairs) {
+      out[unit] = pairs.map(function (p) { return makeRomajiVocabRow_(p[0], p[1], unit); });
+      if (ROMAJI_VOCAB_UNIT_NAMES.indexOf(unit) < 0) ROMAJI_VOCAB_UNIT_NAMES.push(unit);
+    }
+    add("ローマ字Lv1", [
+      ["あ", "a"], ["い", "i"], ["う", "u"], ["え", "e"], ["お", "o"],
+      ["か", "ka"], ["き", "ki"], ["く", "ku"], ["け", "ke"], ["こ", "ko"],
+      ["な", "na"], ["に", "ni"], ["ぬ", "nu"], ["ね", "ne"], ["の", "no"],
+      ["は", "ha"], ["ひ", "hi"], ["ふ", "fu"], ["へ", "he"], ["ほ", "ho"],
+      ["ま", "ma"], ["み", "mi"], ["む", "mu"], ["め", "me"], ["も", "mo"],
+      ["ら", "ra"], ["り", "ri"], ["る", "ru"], ["れ", "re"], ["ろ", "ro"]
+    ]);
+    add("ローマ字Lv2", [
+      ["さ", "sa"], ["し", "shi"], ["す", "su"], ["せ", "se"], ["そ", "so"],
+      ["た", "ta"], ["ち", "chi"], ["つ", "tsu"], ["て", "te"], ["と", "to"],
+      ["や", "ya"], ["ゆ", "yu"], ["よ", "yo"],
+      ["わ", "wa"], ["を", "wo"], ["ん", "n"]
+    ]);
+    add("ローマ字Lv3", [
+      ["ば", "ba"], ["び", "bi"], ["ぶ", "bu"], ["べ", "be"], ["ぼ", "bo"],
+      ["が", "ga"], ["ぎ", "gi"], ["ぐ", "gu"], ["げ", "ge"], ["ご", "go"],
+      ["ぱ", "pa"], ["ぴ", "pi"], ["ぷ", "pu"], ["ぺ", "pe"], ["ぽ", "po"]
+    ]);
+    add("ローマ字Lv4", [
+      ["だ", "da"], ["ぢ", "ji"], ["づ", "dzu"], ["で", "de"], ["ど", "do"],
+      ["ざ", "za"], ["じ", "ji"], ["ず", "zu"], ["ぜ", "ze"], ["ぞ", "zo"]
+    ]);
+    add("ローマ字Lv5", [
+      ["ぎゃ", "gya"], ["ぎゅ", "gyu"], ["ぎょ", "gyo"],
+      ["じゃ", "ja"], ["じゅ", "ju"], ["じょ", "jo"],
+      ["にゃ", "nya"], ["にゅ", "nyu"], ["にょ", "nyo"],
+      ["びゃ", "bya"], ["びゅ", "byu"], ["びょ", "byo"],
+      ["ぴゃ", "pya"], ["ぴゅ", "pyu"], ["ぴょ", "pyo"],
+      ["きゃ", "kya"], ["きゅ", "kyu"], ["きょ", "kyo"],
+      ["しゃ", "sha"], ["しゅ", "shu"], ["しょ", "sho"],
+      ["ちゃ", "cha"], ["ちゅ", "chu"], ["ちょ", "cho"],
+      ["ひゃ", "hya"], ["ひゅ", "hyu"], ["ひょ", "hyo"],
+      ["みゃ", "mya"], ["みゅ", "myu"], ["みょ", "myo"],
+      ["りゃ", "rya"], ["りゅ", "ryu"], ["りょ", "ryo"]
+    ]);
+    add("ローマ字Lv6", [
+      ["っぱ", "ppa"], ["っぴ", "ppi"], ["っぷ", "ppu"], ["っぺ", "ppe"], ["っぽ", "ppo"],
+      ["っか", "kka"], ["った", "tta"], ["っさ", "ssa"],
+      ["でゅ", "dyu"], ["ぢゅ", "ju"], ["どぅ", "dwu"], ["ちゅ", "chu"], ["とぅ", "twu"], ["てゅ", "tyu"],
+      ["ファ", "fa"], ["フィ", "fi"], ["フェ", "fe"], ["フォ", "fo"],
+      ["ティ", "ti"], ["ディ", "di"],
+      ["シェ", "she"], ["ジェ", "je"], ["チェ", "che"],
+      ["ヴァ", "va"], ["ヴィ", "vi"], ["ヴ", "vu"], ["ヴェ", "ve"], ["ヴォ", "vo"]
+    ]);
+    add("ローマ字Lv7", [
+      ["はな", "hana"], ["かさ", "kasa"], ["やま", "yama"], ["かわ", "kawa"], ["いぬ", "inu"],
+      ["ねこ", "neko"], ["てら", "tera"], ["かぎ", "kagi"], ["あめ", "ame"], ["くも", "kumo"],
+      ["さけ", "sake"], ["たけ", "take"], ["はこ", "hako"], ["まど", "mado"], ["かど", "kado"]
+    ]);
+    add("ローマ字Lv8", [
+      ["たべる", "taberu"], ["のむ", "nomu"], ["よむ", "yomu"], ["かく", "kaku"], ["はく", "haku"],
+      ["あさ", "asa"], ["よる", "yoru"], ["あか", "aka"], ["しろ", "shiro"], ["くろ", "kuro"],
+      ["がっこう", "gakkou"], ["せんせい", "sensei"], ["でんわ", "denwa"], ["ともだち", "tomodachi"]
+    ]);
+    add("ローマ字Lv9", [
+      ["ありがとう", "arigatou"], ["おはよう", "ohayou"], ["こんにちは", "konnichiwa"],
+      ["さようなら", "sayounara"], ["がっこう", "gakkou"], ["せんせい", "sensei"],
+      ["てんき", "tenki"], ["でんしゃ", "densha"], ["りょこう", "ryokou"], ["しゅくだい", "shukudai"]
+    ]);
+    add("ローマ字Lv10", [
+      ["はっぴょう", "happyou"], ["てんぷら", "tempura"], ["しんぶん", "shimbun"], ["さんぽ", "sanpo"],
+      ["にっぽん", "nippon"], ["がっこう", "gakkou"], ["きっぷ", "kippu"], ["がっき", "gakki"],
+      ["しっぱい", "shippai"], ["きゃく", "kyaku"], ["りょこう", "ryokou"], ["しゅっぱつ", "shuppatsu"]
+    ]);
+    return out;
+  }
+  const BUILTIN_ROMAJI_VOCAB_BY_UNIT = buildBuiltinRomajiVocabByUnit_();
+  function isRomajiBuiltinUnitName_(name) {
+    return String(name || "").indexOf(ROMAJI_VOCAB_UNIT_PREFIX) === 0;
+  }
+  function mergeBuiltinRomajiVocabIntoDungeon_() {
+    Object.keys(BUILTIN_ROMAJI_VOCAB_BY_UNIT).forEach(function (unit) {
+      VOCAB_BY_UNIT[unit] = BUILTIN_ROMAJI_VOCAB_BY_UNIT[unit].slice();
+      if (ALL_VOCAB_UNITS.indexOf(unit) < 0) ALL_VOCAB_UNITS.push(unit);
+    });
+  }
+  mergeBuiltinRomajiVocabIntoDungeon_();
+
   function tokenizeSentence(text) {
     if (!text) return [];
     return text.trim()
@@ -277,11 +376,13 @@ function haptic(ms=15){
         ALL_EXPR_UNITS = [...new Set(exprUnitNames)];
         EXPR_BY_UNIT = exprMap;
       }
+      mergeBuiltinRomajiVocabIntoDungeon_();
       isManifestLoaded = true;
       renderTowerCards();
       renderAdminTowerList();
     } catch (err) {
       console.warn('[Dungeon] Manifest load failed, using fallback.', err);
+      mergeBuiltinRomajiVocabIntoDungeon_();
     }
   }
 
@@ -311,6 +412,17 @@ function haptic(ms=15){
       quizPreset: "jiko_vocab",
       vocabOnly: true,
       vocabUnits: ["自己紹介用１", "自己紹介用２"],
+      exprUnits: []
+    },
+    {
+      id: "tower_romaji",
+      name: "ローマ字の塔",
+      desc: "厳格ヘボン式ローマ字を、難易度1〜10のかな→ローマ字タイピングで段階的に練習する塔（表現なし）",
+      maxFloor: 50,
+      timeMultiplier: 1.0,
+      quizPreset: "romaji_hepburn",
+      vocabOnly: true,
+      vocabUnits: ROMAJI_VOCAB_UNIT_NAMES.slice(),
       exprUnits: []
     },
     {
@@ -345,11 +457,22 @@ function haptic(ms=15){
             out.vocabUnits = Array.isArray(def.vocabUnits) ? def.vocabUnits.slice() : ["自己紹介用１", "自己紹介用２"];
             out.exprUnits = [];
             out.quizPreset = "jiko_vocab";
+          } else if (def && def.id === "tower_romaji") {
+            out.vocabOnly = true;
+            out.vocabUnits = Array.isArray(def.vocabUnits) ? def.vocabUnits.slice() : ROMAJI_VOCAB_UNIT_NAMES.slice();
+            out.exprUnits = [];
+            out.quizPreset = "romaji_hepburn";
           } else if (typeof out.vocabOnly !== "boolean") {
-            out.vocabOnly = out.quizPreset === "jiko_vocab";
+            out.vocabOnly = out.quizPreset === "jiko_vocab" || out.quizPreset === "romaji_hepburn";
           }
           return out;
         });
+        DEFAULT_TOWERS.forEach(function (def) {
+          if (!TOWERS.some(function (t) { return t.id === def.id; })) {
+            TOWERS.push(JSON.parse(JSON.stringify(def)));
+          }
+        });
+        saveTowers();
         return;
       }
     } catch(e) {}
@@ -406,13 +529,71 @@ function haptic(ms=15){
   function resolveTowerUnitNames_(selected, allUnits, emptyMeansNone) {
     const all = Array.isArray(allUnits) ? allUnits : [];
     if (!Array.isArray(selected) || selected.length === 0) {
-      return emptyMeansNone ? [] : all.slice();
+      if (emptyMeansNone) return [];
+      let list = all.slice();
+      const towerUsesRomaji = currentTower && (
+        currentTower.quizPreset === "romaji_hepburn" ||
+        (Array.isArray(currentTower.vocabUnits) && currentTower.vocabUnits.some(isRomajiBuiltinUnitName_))
+      );
+      if (!towerUsesRomaji) {
+        list = list.filter(function (u) { return !isRomajiBuiltinUnitName_(u); });
+      }
+      return list;
     }
     return selected.slice();
   }
 
+  function getVocabPoolForUnit_(unitName) {
+    if (unitName && Array.isArray(VOCAB_BY_UNIT[unitName]) && VOCAB_BY_UNIT[unitName].length) {
+      return VOCAB_BY_UNIT[unitName].slice();
+    }
+    return [];
+  }
+
+  function getRomajiUnitNameForLevel_(lv) {
+    const L = Math.max(1, Math.min(10, Math.round(Number(lv) || 1)));
+    return ROMAJI_VOCAB_UNIT_PREFIX + L;
+  }
+
+  function getRomajiVocabRowsForLevel_(lv) {
+    return getVocabPoolForUnit_(getRomajiUnitNameForLevel_(lv));
+  }
+
+  function buildRomajiLearnerQuestions_(unitName) {
+    return getVocabPoolForUnit_(unitName).map(function (row) {
+      return {
+        日本語: String(row.日本語 || "").trim(),
+        英単語: String(row.英単語 || "").trim().toLowerCase(),
+        イニシャル: String(row.イニシャル || "").trim(),
+        ヒント: String(row.ヒント || "").trim()
+      };
+    });
+  }
+
+  function isRomajiTypingQuestion_(spec) {
+    if (!spec) return false;
+    if (spec.qFormat === "かな→ローマ字") return true;
+    return !!(currentTower && currentTower.quizPreset === "romaji_hepburn");
+  }
+
+  /** ローマ字塔：解答表示は必ず「かな」＋ローマ字の対 */
+  function dungeonQuizAnswerPairLabel_(q) {
+    if (!q) return "";
+    const rom = String(q.answer || (q.validAnswers && q.validAnswers[0]) || "").trim();
+    const isRomaji = q.qFormat === "かな→ローマ字" || q.kanaAnswer;
+    if (isRomaji) {
+      const kana = String(q.kanaAnswer || "").trim();
+      if (kana && rom) return "「" + kana + "」 " + rom;
+    }
+    return rom ? "「" + rom + "」" : "";
+  }
+
   // 選択された塔の出題プールを取得
-  function getActiveVocabPool() {
+  function getActiveVocabPool(specVocabUnit) {
+    if (specVocabUnit) {
+      const uPool = getVocabPoolForUnit_(specVocabUnit);
+      if (uPool.length) return uPool;
+    }
     const list = [];
     const selected = resolveTowerUnitNames_(
       currentTower && currentTower.vocabUnits,
@@ -426,8 +607,12 @@ function haptic(ms=15){
   }
 
   function getActiveExprPool() {
-    // 単語のみ塔／jiko_vocab プリセットでは表現を出さない
-    if (currentTower && (currentTower.vocabOnly === true || currentTower.quizPreset === "jiko_vocab")) {
+    // 単語のみ塔／jiko_vocab・romaji_hepburn プリセットでは表現を出さない
+    if (currentTower && (
+      currentTower.vocabOnly === true ||
+      currentTower.quizPreset === "jiko_vocab" ||
+      currentTower.quizPreset === "romaji_hepburn"
+    )) {
       return [];
     }
     const list = [];
@@ -526,7 +711,40 @@ function haptic(ms=15){
    * 難易度×形式プリセット（塔ごとに切替）。
    * - english_all: 英語学習の全形式を Lv 帯で解禁（既存）
    * - jiko_vocab: 自己紹介単語向け固定表（四択→穴埋め字数→タイピング）
+   * - romaji_hepburn: 厳格ヘボン式 かな→ローマ字タイピング（Lv1〜10）
+   * （scripts/build-dungeon-game.js 再生成時は本定義を再適用すること）
    */
+  const ROMAJI_HEPBURN_LEVEL_LABELS = {
+    1: "あ・か・な・は・ま・ら行",
+    2: "さ・た・や・わをん（shi/chi/tsu）",
+    3: "ば・が・ぱ行",
+    4: "だ・ざ行（ji/dzu）",
+    5: "拗音（きゃ・ぎゃ・しゃ等）",
+    6: "促音・外来音（っぱ・ティ等）",
+    7: "初級3文字程度の語",
+    8: "中級4文字程度の語",
+    9: "基本5文字程度の語",
+    10: "最難（はっぴょう・てんぷら等）"
+  };
+  function buildRomajiHepburnPresetLevels_() {
+    const levels = {};
+    const timeByLv = { 1: 20, 2: 20, 3: 20, 4: 20, 5: 20, 6: 20, 7: 30, 8: 40, 9: 50, 10: 60 };
+    for (let n = 1; n <= 10; n++) {
+      levels[n] = {
+        modeKind: "vocab",
+        format: "ja_to_en",
+        ansType: "typing",
+        blankCount: 0,
+        noneChoice: false,
+        timeSec: timeByLv[n],
+        vocabUnit: ROMAJI_VOCAB_UNIT_PREFIX + n,
+        label: "ローマ字 Lv" + n + " " + (ROMAJI_HEPBURN_LEVEL_LABELS[n] || ""),
+        qFormat: "かな→ローマ字",
+        aFormat: "タイピング"
+      };
+    }
+    return levels;
+  }
   const DUNGEON_QUIZ_PRESETS = {
     english_all: {
       id: "english_all",
@@ -549,6 +767,12 @@ function haptic(ms=15){
         9:  { modeKind: "vocab", format: "ja_to_en", ansType: "fill_typing",  blankCount: 3, noneChoice: false, timeSec: 50, label: "単語 日→英 穴埋め（3字：タイピング）", qFormat: "日本語→英単語", aFormat: "穴埋めタイピング" },
         10: { modeKind: "vocab", format: "ja_to_en", ansType: "typing",       blankCount: 0, noneChoice: false, timeSec: 60, label: "単語 日→英 タイピング", qFormat: "日本語→英単語", aFormat: "タイピング" }
       }
+    },
+    romaji_hepburn: {
+      id: "romaji_hepburn",
+      name: "厳格ヘボン式ローマ字",
+      mode: "fixed",
+      levels: buildRomajiHepburnPresetLevels_()
     }
   };
 
@@ -740,8 +964,9 @@ function haptic(ms=15){
     };
 
     if (spec.modeKind === "vocab") {
-      const vPool = getActiveVocabPool();
+      const vPool = getActiveVocabPool(spec.vocabUnit);
       if (!vPool.length) return null;
+      const romajiQ = isRomajiTypingQuestion_(spec);
       const w = vPool[ri(vPool.length)];
       const en = String(w.英単語 || "").trim();
       const ja = String(w.日本語 || "").trim();
@@ -862,6 +1087,19 @@ function haptic(ms=15){
           answer: en.toLowerCase(),
           rawWord: en,
           audioText: spec.format === "en_audio_to_en" ? en : ""
+        });
+      }
+      if (romajiQ) {
+        return Object.assign({}, base, {
+          type: "type",
+          lang: "ja",
+          kanaAnswer: ja,
+          prompt: "「" + ja + "」をローマ字で入力しよう（厳格ヘボン）",
+          hint: en.length ? (en[0] + "…（" + en.length + "文字）") : "",
+          answer: en.toLowerCase(),
+          rawWord: en,
+          validAnswers: [normalizeText(en)],
+          audioText: ""
         });
       }
       return Object.assign({}, base, {
@@ -3052,6 +3290,12 @@ function ask(L, kind, done, name) {
     }, 2200);
   }
 
+  function closeQuizAndDone_(payload) {
+    if (root) root.classList.remove("is-quiz");
+    if (qp) qp.style.display = "none";
+    done(payload);
+  }
+
   function finish(ok, timeout, btn) {
     if (fin) return;
     fin = true;
@@ -3085,36 +3329,68 @@ function ask(L, kind, done, name) {
       quizPts = awardQuizPoints_(L);
     }
     const sp = spdOf(r);
-    const correctDisplay = q.answer || (q.validAnswers && q.validAnswers[0]) || "";
+    const correctDisplay = dungeonQuizAnswerPairLabel_(q);
+    const answerPairNote = (q.qFormat === "かな→ローマ字" || q.kanaAnswer)
+      ? (" こたえ：" + correctDisplay)
+      : "";
     const resTxt = ok
       ? "せいかい！ 速さ補正 " + (sp > 0 ? "+" : sp < 0 ? "−" : "±") + Math.abs(sp) + "% → 効果 " + (bonus(L) + sp) + "%" +
-        (quizPts > 0 ? " ／ +" + quizPts + "pt" : "")
-      : (timeout ? "じかんぎれ… " : "ざんねん… ") + "こたえは「" + correctDisplay + "」";
+        (quizPts > 0 ? " ／ +" + quizPts + "pt" : "") + answerPairNote
+      : (timeout ? "じかんぎれ… " : "ざんねん… ") + "こたえは " + correctDisplay;
 
     se(ok ? "quiz_correct" : "quiz_wrong");
     if (ok && sp >= CFG.sp1 && CFG.sp1 > CFG.sp2) se("speed_bonus", 250);
+
+    const quizPayload = { ok: ok, r: r, L: L, sp: sp };
+    const confirmBtnHtml =
+      '<button type="button" id="dungeonConfirmAnswerBtn" class="dungeon-btn" ' +
+      'style="display:block;width:100%;max-width:320px;margin:12px auto 0;font-size:15px;font-weight:bold;padding:10px 16px;">答えを確認した</button>';
+
+    function bindConfirmAnswerBtn_(container) {
+      const cBtn = container && container.querySelector("#dungeonConfirmAnswerBtn");
+      if (!cBtn) {
+        closeQuizAndDone_(quizPayload);
+        return;
+      }
+      cBtn.disabled = false;
+      cBtn.onclick = function () {
+        cBtn.disabled = true;
+        closeQuizAndDone_(quizPayload);
+      };
+    }
 
     if (isGB) {
       if (root) root.classList.remove("is-quiz");
       if (qp) qp.style.display = "none";
       const w = winEl();
       if (w) {
-        w.innerHTML = '<p class="msg ' + (ok ? "ok" : "ng") + '" style="color:' + (ok ? 'var(--heal)' : 'var(--danger)') + ';font-weight:bold;">' + (ok ? '⭕ ' : '❌ ') + resTxt + '</p>';
+        w.innerHTML =
+          '<p class="msg ' + (ok ? "ok" : "ng") + '" style="color:' + (ok ? "var(--heal)" : "var(--danger)") + ';font-weight:bold;">' +
+          (ok ? "⭕ " : "❌ ") + resTxt + "</p>" +
+          (ok ? "" : confirmBtnHtml);
       }
-      setTimeout(() => done({ ok, r, L, sp }), ok ? 800 : 1500);
+      if (ok) {
+        setTimeout(function () { closeQuizAndDone_(quizPayload); }, 2000);
+      } else {
+        bindConfirmAnswerBtn_(w);
+      }
     } else {
-      targetBox.querySelectorAll("button,input").forEach(b => b.disabled = true);
+      targetBox.querySelectorAll("button,input").forEach(function (b) { b.disabled = true; });
       if (btn) btn.classList.add(ok ? "ok" : "ng");
       const res = $("#qres");
       if (res) {
         res.className = "qres " + (ok ? "ok" : "ng");
-        res.textContent = resTxt;
+        if (ok) {
+          res.textContent = resTxt;
+        } else {
+          res.innerHTML = resTxt + confirmBtnHtml;
+        }
       }
-      setTimeout(() => {
-        if (root) root.classList.remove("is-quiz");
-        if (qp) qp.style.display = "none";
-        done({ ok, r, L, sp });
-      }, ok ? 800 : 1500);
+      if (ok) {
+        setTimeout(function () { closeQuizAndDone_(quizPayload); }, 2000);
+      } else {
+        bindConfirmAnswerBtn_(targetBox);
+      }
     }
   }
 
@@ -6013,7 +6289,8 @@ function getDungeonDiffPracticeConfig_(lv, formatIdOpt) {
       qFormat: fixed.qFormat,
       aFormat: fixed.aFormat,
       blankCount: fixed.blankCount || 0,
-      timeSec: fixed.timeSec || null
+      timeSec: fixed.timeSec || null,
+      vocabUnit: fixed.vocabUnit || null
     };
   }
   const atDiff = DUNGEON_EN_CATALOG.filter(function (e) { return e.diff === L; });
@@ -6041,7 +6318,7 @@ function getDungeonDiffPracticeConfig_(lv, formatIdOpt) {
 function getTowerPracticeUnits_(tower, modeKind) {
   if (!tower) return [];
   if (modeKind === "expr") {
-    if (tower.vocabOnly === true || tower.quizPreset === "jiko_vocab") return [];
+    if (tower.vocabOnly === true || tower.quizPreset === "jiko_vocab" || tower.quizPreset === "romaji_hepburn") return [];
     if (Array.isArray(tower.exprUnits) && tower.exprUnits.length > 0) return tower.exprUnits.slice();
     return (ALL_EXPR_UNITS || []).slice();
   }
@@ -6049,16 +6326,77 @@ function getTowerPracticeUnits_(tower, modeKind) {
   return (ALL_VOCAB_UNITS || []).slice();
 }
 
+function openRomajiTowerLevelReferencePanel_(towerId, difficulty) {
+  const L = Math.max(1, Math.min(10, Math.round(Number(difficulty) || 1)));
+  loadTowers();
+  const tower = TOWERS.find(function (t) { return t.id === towerId; });
+  const card = document.querySelector('.dungeon-tower-card[data-tower-id="' + towerId + '"]');
+  const host = card && card.querySelector(".dungeon-practice-unit-host");
+  if (!host || !tower) return;
+
+  document.querySelectorAll(".dungeon-practice-unit-host").forEach(function (el) {
+    if (el !== host) {
+      el.style.display = "none";
+      el.innerHTML = "";
+    }
+  });
+
+  const prevTower = currentTower;
+  currentTower = tower;
+  const cfg = getDungeonDiffPracticeConfig_(L);
+  currentTower = prevTower;
+
+  const rows = getRomajiVocabRowsForLevel_(L);
+  const sub = ROMAJI_HEPBURN_LEVEL_LABELS[L] || "";
+  const listHtml = rows.map(function (row) {
+    return '<li class="dungeon-romaji-ref-item">' +
+      '<span class="dungeon-romaji-kana">' + escapeHtmlDungeon_(row.日本語) + "</span>" +
+      '<span class="dungeon-romaji-eq" aria-hidden="true">→</span>' +
+      '<span class="dungeon-romaji-rom">' + escapeHtmlDungeon_(row.英単語) + "</span>" +
+      "</li>";
+  }).join("");
+
+  host.style.display = "block";
+  host.innerHTML =
+    '<p class="dungeon-practice-unit-title">Lv' + L + "：" + escapeHtmlDungeon_(cfg.label || ("難易度" + L)) + "</p>" +
+    '<p class="dungeon-romaji-ref-desc">' + escapeHtmlDungeon_(sub) +
+    "（" + rows.length + "語・厳格ヘボン）</p>" +
+    '<ul class="dungeon-romaji-ref-list">' + listHtml + "</ul>" +
+    '<div class="dungeon-romaji-ref-actions">' +
+    '<button type="button" class="dungeon-btn dungeon-romaji-learn-btn">📚 学習モードで練習</button>' +
+    '<button type="button" class="dungeon-btn dungeon-romaji-ref-close" data-cancel="1">とじる</button>' +
+    "</div>";
+
+  const unit = getRomajiUnitNameForLevel_(L);
+  const learnBtn = host.querySelector(".dungeon-romaji-learn-btn");
+  if (learnBtn) {
+    learnBtn.onclick = function () {
+      launchDungeonDiffPractice_(tower, unit, cfg);
+    };
+  }
+  const closeBtn = host.querySelector("[data-cancel]");
+  if (closeBtn) {
+    closeBtn.onclick = function () {
+      host.style.display = "none";
+      host.innerHTML = "";
+    };
+  }
+  try { host.scrollIntoView({ block: "nearest", behavior: "smooth" }); } catch (_) {}
+}
+
 function renderTowerPracticeDiffButtons_(towerId) {
   const tower = TOWERS.find(function (t) { return t.id === towerId; });
   const prevTower = currentTower;
   if (tower) currentTower = tower;
   const preset = getActiveQuizPreset_();
+  const isRomajiTower = !!(tower && tower.quizPreset === "romaji_hepburn");
   let h = '<div class="dungeon-practice-diffs">';
   if (preset && preset.mode === "fixed" && preset.levels) {
     for (let n = 1; n <= 10; n++) {
       const lv = preset.levels[n];
-      const short = lv ? String(lv.label || "").replace(/^単語\s*/, "").slice(0, 10) : ("Lv" + n);
+      const short = isRomajiTower
+        ? "一覧"
+        : (lv ? String(lv.label || "").replace(/^単語\s*/, "").slice(0, 10) : ("Lv" + n));
       h += '<button type="button" class="dungeon-practice-diff-btn" title="' + escapeHtmlDungeon_(lv ? lv.label : ("難易度" + n)) + '" ' +
         'onclick="startDungeonDiffPractice(\'' + towerId + '\',' + n + ')">' +
         '<span class="dp-lv">Lv' + n + '</span><span class="dp-kind">' + escapeHtmlDungeon_(short) + '</span></button>';
@@ -6082,6 +6420,10 @@ function startDungeonDiffPractice(towerId, difficulty, formatCatalogIndex) {
   const tower = TOWERS.find(function (t) { return t.id === towerId; }) || TOWERS[0];
   if (!tower) {
     alert("塔が見つかりません。");
+    return;
+  }
+  if (tower.quizPreset === "romaji_hepburn") {
+    openRomajiTowerLevelReferencePanel_(towerId, difficulty);
     return;
   }
   const prevTower = currentTower;
@@ -6274,8 +6616,10 @@ function renderTowerCards() {
         </div>
         <div class="dungeon-rank-host" data-rank-for="${tower.id}">${renderRankingHtml_(localRank)}</div>
         <div class="dungeon-practice-box">
-          <div class="dungeon-practice-title">📚 難易度別練習（通常の学習モード）</div>
-          <p class="dungeon-practice-hint">迷宮と同じ形式で、設定画面からスタートできます</p>
+          <div class="dungeon-practice-title">📚 難易度別${tower.quizPreset === "romaji_hepburn" ? "確認・練習" : "練習（通常の学習モード）"}</div>
+          <p class="dungeon-practice-hint">${tower.quizPreset === "romaji_hepburn"
+            ? "Lvを押すと、その難易度のひらがなとヘボン式ローマ字の一覧を確認できます（学習モードへも進めます）"
+            : "迷宮と同じ形式で、設定画面からスタートできます"}</p>
           ${renderTowerPracticeDiffButtons_(tower.id)}
           <div class="dungeon-practice-unit-host" style="display:none;"></div>
         </div>
@@ -6393,7 +6737,7 @@ function renderAdminTowerList() {
 
   container.innerHTML = TOWERS.map(tower => {
     const vCount = tower.vocabUnits && tower.vocabUnits.length > 0 ? tower.vocabUnits.length + ' 単元' : '全単語（' + ALL_VOCAB_UNITS.length + ' 単元）';
-    const vocabOnly = tower.vocabOnly === true || tower.quizPreset === "jiko_vocab";
+    const vocabOnly = tower.vocabOnly === true || tower.quizPreset === "jiko_vocab" || tower.quizPreset === "romaji_hepburn";
     const eCount = vocabOnly
       ? 'なし（単語のみ）'
       : (tower.exprUnits && tower.exprUnits.length > 0 ? tower.exprUnits.length + ' 単元' : '全表現（' + ALL_EXPR_UNITS.length + ' 単元）');
@@ -6451,7 +6795,7 @@ function openTowerEditModal(towerId) {
   }
   const vocabOnlyCb = document.getElementById("tower-edit-vocab-only");
   if (vocabOnlyCb) {
-    vocabOnlyCb.checked = tower.vocabOnly === true || tower.quizPreset === "jiko_vocab";
+    vocabOnlyCb.checked = tower.vocabOnly === true || tower.quizPreset === "jiko_vocab" || tower.quizPreset === "romaji_hepburn";
   }
 
   // 単元チェックボックス群の生成
@@ -6464,7 +6808,7 @@ function openTowerEditModal(towerId) {
   }
 
   const eContainer = document.getElementById("tower-edit-expr-units");
-  const vocabOnly = tower.vocabOnly === true || tower.quizPreset === "jiko_vocab";
+  const vocabOnly = tower.vocabOnly === true || tower.quizPreset === "jiko_vocab" || tower.quizPreset === "romaji_hepburn";
   if (eContainer) {
     eContainer.innerHTML = ALL_EXPR_UNITS.map(u => {
       // 単語のみ塔は表現を未選択。それ以外で空配列は「全単元」互換
@@ -6479,7 +6823,7 @@ function openTowerEditModal(towerId) {
     presetSel.__dungeonBound = true;
     presetSel.addEventListener("change", function () {
       const cb = document.getElementById("tower-edit-vocab-only");
-      if (presetSel.value === "jiko_vocab" && cb) {
+      if ((presetSel.value === "jiko_vocab" || presetSel.value === "romaji_hepburn") && cb) {
         cb.checked = true;
         toggleAllUnits("expr", false);
       }
@@ -6518,9 +6862,10 @@ if (towerForm) {
     const vocabOnlyEl = document.getElementById("tower-edit-vocab-only");
     let quizPreset = (presetEl && presetEl.value) || "english_all";
     if (!DUNGEON_QUIZ_PRESETS[quizPreset]) quizPreset = "english_all";
-    // 表現を1つも選ばない／チェックON／jiko_vocab → 単語のみ塔
-    let vocabOnly = !!(vocabOnlyEl && vocabOnlyEl.checked) || eSelected.length === 0 || quizPreset === "jiko_vocab";
-    if (quizPreset === "jiko_vocab") vocabOnly = true;
+    // 表現を1つも選ばない／チェックON／jiko_vocab・romaji_hepburn → 単語のみ塔
+    let vocabOnly = !!(vocabOnlyEl && vocabOnlyEl.checked) || eSelected.length === 0 ||
+      quizPreset === "jiko_vocab" || quizPreset === "romaji_hepburn";
+    if (quizPreset === "jiko_vocab" || quizPreset === "romaji_hepburn") vocabOnly = true;
 
     const existingIdx = TOWERS.findIndex(t => t.id === id);
     const prev = existingIdx >= 0 ? TOWERS[existingIdx] : null;
@@ -6538,6 +6883,11 @@ if (towerForm) {
     };
     if (prev && prev.id === "tower_self_intro" && quizPreset === "jiko_vocab") {
       newTower.vocabOnly = true;
+      newTower.exprUnits = [];
+    }
+    if (prev && prev.id === "tower_romaji" && quizPreset === "romaji_hepburn") {
+      newTower.vocabOnly = true;
+      newTower.vocabUnits = ROMAJI_VOCAB_UNIT_NAMES.slice();
       newTower.exprUnits = [];
     }
 
@@ -6713,6 +7063,9 @@ function renderAdminParamsTable() {
   global.exitDungeonToHome = exitDungeonToHome;
   global.startDungeonWithTower = startDungeonWithTower;
   global.startDungeonDiffPractice = startDungeonDiffPractice;
+  global.getDungeonRomajiQuestionsForUnit = function (unitName) {
+    return buildRomajiLearnerQuestions_(unitName);
+  };
 
   global.openParentAdminDungeon = openParentAdminDungeon;
   global.exitParentAdminDungeon = exitParentAdminDungeon;

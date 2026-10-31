@@ -7376,6 +7376,64 @@ body.in-dungeon-game {
   border: 1px solid #4a4668;
   color: #eeece2;
 }
+.dungeon-romaji-ref-desc {
+  margin: 0 0 8px;
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+.dungeon-romaji-ref-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: min(42vh, 320px);
+  overflow: auto;
+  border: 1px solid #3a3652;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.25);
+}
+.dungeon-romaji-ref-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  font-size: 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  font-family: var(--game, inherit);
+}
+.dungeon-romaji-ref-item:last-child {
+  border-bottom: none;
+}
+.dungeon-romaji-kana {
+  flex: 1;
+  color: #ffe082;
+  font-weight: bold;
+}
+.dungeon-romaji-eq {
+  color: var(--muted);
+  font-size: 12px;
+}
+.dungeon-romaji-rom {
+  flex: 1;
+  text-align: right;
+  color: #90caf9;
+  letter-spacing: 0.03em;
+}
+.dungeon-romaji-ref-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+.dungeon-romaji-learn-btn {
+  flex: 1;
+  background: #2ed573 !important;
+  color: #000 !important;
+  font-weight: bold;
+}
+.dungeon-romaji-ref-close {
+  font-size: 12px;
+}
 
 /* 保護者管理ダンジョン補助スタイル */
 #section-parent-admin-dungeon {

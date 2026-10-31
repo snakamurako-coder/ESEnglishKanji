@@ -14320,6 +14320,79 @@ var global = typeof window !== 'undefined' ? window : this;
         return;
       }
 
+      if (/^ローマ字Lv\d+$/.test(unitName) && typeof window.getDungeonRomajiQuestionsForUnit === "function") {
+        const builtInQs = window.getDungeonRomajiQuestionsForUnit(unitName);
+        if (!builtInQs || !builtInQs.length) {
+          alert("ローマ字の問題データがありません。");
+          return;
+        }
+        document.body.classList.remove("in-dungeon-game");
+        try {
+          if (window.AppKeyboard && typeof AppKeyboard.hide === "function") AppKeyboard.hide();
+        } catch (_eRom) {}
+        const dungeonSecRom = document.getElementById("section-dungeon");
+        if (dungeonSecRom) {
+          dungeonSecRom.classList.remove("active");
+          dungeonSecRom.style.display = "none";
+        }
+        isTrainingMode = false;
+        currentModeId = "dungeon-romaji-builtin";
+        currentModeName = "単語迷宮・ローマ字";
+        currentUnitName = unitName;
+        currentQuestions = builtInQs.slice();
+        switchSection("section-settings");
+        const titleElRom = document.getElementById("settings-title");
+        if (titleElRom) {
+          titleElRom.textContent = "📚 迷宮練習 Lv" + difficulty + " " + label +
+            " ／ 【ローマ字】" + unitName;
+        }
+        openSettingsScreen();
+        const fSelectRom = document.getElementById("setting-format");
+        if (fSelectRom) {
+          const hasFmtRom = Array.from(fSelectRom.options || []).some(function (o) { return o.value === format; });
+          if (!hasFmtRom) {
+            const optRom = document.createElement("option");
+            optRom.value = format;
+            optRom.textContent = String(opts.qFormat || "かな→ローマ字");
+            fSelectRom.appendChild(optRom);
+          }
+          fSelectRom.value = format;
+        }
+        updateAnswerTypeUI();
+        const aSelectRom = document.getElementById("setting-answer-type");
+        if (aSelectRom) {
+          const hasAnsRom = Array.from(aSelectRom.options || []).some(function (o) { return o.value === ansType; });
+          if (!hasAnsRom) {
+            const optAns = document.createElement("option");
+            optAns.value = ansType;
+            optAns.textContent = String(opts.aFormat || ansType);
+            aSelectRom.appendChild(optAns);
+          }
+          aSelectRom.value = ansType;
+        }
+        toggleBlankSetting();
+        const orderElRom = document.getElementById("setting-order");
+        if (orderElRom) orderElRom.value = "random";
+        const playElRom = document.getElementById("setting-play-mode");
+        if (playElRom) playElRom.value = "normal";
+        let noteRom = document.getElementById("dungeon-practice-settings-note");
+        if (!noteRom) {
+          noteRom = document.createElement("p");
+          noteRom.id = "dungeon-practice-settings-note";
+          noteRom.style.cssText = "text-align:center;color:#90CAF9;font-size:13px;margin:8px auto 0;max-width:420px;line-height:1.45;";
+          const startBtnRom = document.querySelector("#section-settings .submit-btn");
+          if (startBtnRom && startBtnRom.parentNode) {
+            startBtnRom.parentNode.insertBefore(noteRom, startBtnRom);
+          } else {
+            const secRom = document.getElementById("section-settings");
+            if (secRom) secRom.appendChild(noteRom);
+          }
+        }
+        noteRom.textContent = "単語迷宮「" + (towerName || "ローマ字の塔") + "」Lv" + difficulty +
+          "の語（厳格ヘボン・「かな」→ローマ字）です。内容を確認して「スタート！」を押してください。";
+        return;
+      }
+
       document.body.classList.remove("in-dungeon-game");
       try {
         if (window.AppKeyboard && typeof AppKeyboard.hide === "function") AppKeyboard.hide();
