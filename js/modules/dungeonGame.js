@@ -1400,11 +1400,14 @@ function awardQuizPoints_(diffLv) {
 }
 /**
  * 階層踏破の深度倍率。
- * 塔の最深踏破階と同じ → 1.0倍。1階少ない毎に -20%（下限20%）、1階多い毎に +20%（上限200%）。
+ * - 最深踏破の記録がまだない（0）→ 常に 1.0倍（「0より深い」で初回から2倍にしない）
+ * - 記録と同じ階 → 1.0倍
+ * - 1階浅い毎に -20%（下限 0.2）／1階深い毎に +20%（上限 2.0）
  */
 function floorClearDepthMult_(floorNum, deepestCleared) {
   const f = Math.max(1, Math.round(Number(floorNum) || 1));
   const deep = Math.max(0, Math.round(Number(deepestCleared) || 0));
+  if (deep <= 0) return 1;
   let m = 1 + 0.2 * (f - deep);
   if (m < 0.2) m = 0.2;
   if (m > 2) m = 2;
@@ -3772,7 +3775,13 @@ function descend(){
     const floorPts = awardFloorClearPoints_(clearedFloor, deepestBefore);
     const depthMult = floorClearDepthMult_(clearedFloor, deepestBefore);
     if (floorPts > 0) {
-      log("地下 " + clearedFloor + " 階を 踏破！ +" + floorPts + "pt（深度×" + depthMult + "）");
+      const baseMult = Number(CFG.ptFloor);
+      const base = clearedFloor * (isFinite(baseMult) ? baseMult : 150);
+      log(
+        "地下 " + clearedFloor + " 階を 踏破！ +" + floorPts + "pt" +
+        "（" + base + "×深度" + depthMult +
+        "／基準最深" + deepestBefore + "階／踏破合計" + (S.st && S.st.ptsFloor ? S.st.ptsFloor : floorPts) + "）"
+      );
     }
     if (!S.practice) {
       noteTowerClearedFloor_(clearedFloor);
