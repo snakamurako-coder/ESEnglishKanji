@@ -520,9 +520,20 @@ function haptic(ms=15){
     }
   }
   function saveTowerRec(rec, towerId) {
+    const tid = towerId || (currentTower && currentTower.id) || "default";
     try {
-      localStorage.setItem(getTowerRecKey(towerId), JSON.stringify(normalizeTowerRec_(rec)));
-    } catch(e) {}
+      localStorage.setItem(getTowerRecKey(tid), JSON.stringify(normalizeTowerRec_(rec)));
+      return true;
+    } catch (e) {
+      try { console.warn("[Dungeon] saveTowerRec failed", tid, e); } catch (_e) {}
+      return false;
+    }
+  }
+
+  /** 進行中ランの塔ID（currentTower の一時切替で記録が別塔へ書かれないようにする） */
+  function getActiveRunTowerId_() {
+    if (S && S.towerId) return String(S.towerId);
+    return (currentTower && currentTower.id) || "default";
   }
 
   /** 塔の単元指定を解決。空配列は「全単元」(互換)。vocabOnly 時の表現は常になし。 */
@@ -1881,13 +1892,14 @@ function makeMon(f,ai,boss){
 const LEGACY_KEY = "tango-meikyu-v1";
 function loadRec() {
   // 起動直後は currentTower 基準。塔切替時は loadTowerRec で差し替える
-  return loadTowerRec(currentTower && currentTower.id);
+  return loadTowerRec(getActiveRunTowerId_());
 }
 function saveRec() {
-  saveTowerRec(REC, currentTower && currentTower.id);
+  const tid = getActiveRunTowerId_();
+  saveTowerRec(REC, tid);
   // 旧グローバルキーへもミラー（後方互換・移行用）
   try {
-    if (currentTower && currentTower.id === "default") {
+    if (tid === "default") {
       localStorage.setItem(LEGACY_KEY, JSON.stringify(REC));
     }
   } catch (e) {}
@@ -1974,11 +1986,13 @@ function log(t){S.log.push(t);if(S.log.length>40)S.log.shift();renderLog()}
 
 function newState(f,practice){
   return {screen:"explore",floor:f,practice:!!practice,cleared:practice?f-1:0,diff:(S&&S.diff)||5,
+    towerId: (currentTower && currentTower.id) || null,
     depthRefBest:null,
     p:{lv:f,exp:0,hp:pMaxHp(f),mp:pMaxMp(f),gauge:0,gearMax:practice?tierAt(f):1,eq:fullSet(practice?tierAt(f):1),it:{pot:CFG.iPot,eth:CFG.iEth,wing:CFG.iWing,gate:CFG.iGate,neck:CFG.iNeck}},st:emptyPointStats_(),log:[],b:null,map:null};
 }
 function start(f,practice){
   S=newState(f,practice);
+  S.towerId = (currentTower && currentTower.id) || S.towerId;
   // ラン開始時の最深踏破を深度倍率の基準にする（このラン中は固定）
   S.depthRefBest = practice ? 0 : getTowerBestClearedFloor_();
   // 「最初から」は当該塔の進行中セーブを消す（最高記録 best は残す）
@@ -1990,6 +2004,7 @@ function resume(){
   const v=REC.save;
   if(!v){ start(1,false); return; }
   S=newState(v.floor,false);
+  S.towerId = (currentTower && currentTower.id) || S.towerId || (v.towerId || null);
   S.cleared=v.cleared;S.diff=v.diff||5;S.p=clone(v.p);S.p.it=fillItems(S.p.it);fillGear(S.p,S.cleared);S.st=ensurePointStats_(clone(v.st)||emptyPointStats_());
   // セーブに基準があればそれを使い、無ければ現在の塔記録（旧セーブ互換）
   S.depthRefBest = (v.depthRefBest != null && isFinite(Number(v.depthRefBest)))
@@ -2021,20 +2036,24 @@ let autosaveHeartbeatTimer_ = null;
 function autosave(opts){
   if(!S || S.practice)return;
   if(S.screen!=="explore" && S.screen!=="battle")return;
+  const tid = getActiveRunTowerId_();
+  if (!tid) return;
   try {
-    if(S.floor>REC.best)REC.best=S.floor;
+    // currentTower が UI 用に一時切替されても、ラン中の塔IDへ必ず書く
+    if (S.floor > (REC.best || 0)) REC.best = S.floor;
     // 最深踏破は階段クリア済み階のみ（到達だけでは更新しない）
     if (S.cleared > 0) noteTowerClearedFloor_(S.cleared);
     // 各塔につき進行中セーブは1件（上書き）
-    REC.save={
-      floor:S.floor,
-      cleared:S.cleared,
-      diff:S.diff,
+    REC.save = {
+      floor: S.floor,
+      cleared: S.cleared,
+      diff: S.diff,
+      towerId: tid,
       depthRefBest: (S.depthRefBest != null ? S.depthRefBest : getTowerBestClearedFloor_()),
-      p:clone(S.p),
-      st:clone(S.st)
+      p: clone(S.p),
+      st: clone(S.st)
     };
-    saveRec();
+    saveTowerRec(REC, tid);
     lastAutosaveTs_ = Date.now();
   } catch (e) {
     try { console.warn("[dungeon] autosave failed", e); } catch (_) {}
@@ -2042,7 +2061,6 @@ function autosave(opts){
   }
   // 進行中の最深踏破もランキングに反映（自己ベスト更新時のみ／明示指定時）
   const forceRank = !!(opts && opts.rank);
-  const tid = currentTower && currentTower.id ? currentTower.id : "";
   if (S.cleared > 0 && tid) {
     if (forceRank || tid !== lastRankSubmittedTower_ || S.cleared > lastRankSubmittedCleared_) {
       lastRankSubmittedTower_ = tid;
@@ -3157,15 +3175,34 @@ function winDefend(t){
 let currentRecognition = null;
 
 function ask(L, kind, done, name) {
-  const K = KIND[kind];
-  const q = makeQ(L);
+  const safeDone = function (payload) {
+    try {
+      if (typeof done === "function") done(payload);
+    } catch (err) {
+      try { console.warn("[Dungeon] quiz done callback failed", err); } catch (_e) {}
+    }
+  };
+  let K;
+  let q;
+  try {
+    K = KIND[kind] || KIND.atk;
+    q = makeQ(L);
+  } catch (err) {
+    try { console.warn("[Dungeon] makeQ failed", err); } catch (_e) {}
+    clearQuizState();
+    safeDone({ ok: false, r: 1, L: L, sp: 0 });
+    return;
+  }
   const limit = tlim(L) * 1000;
   const t0 = performance.now();
   let fin = false, hurry = false;
 
   const qp = $("#quizPane");
   const targetBox = qp || winEl();
-  if (!targetBox) return;
+  if (!targetBox) {
+    safeDone({ ok: false, r: 1, L: L, sp: 0 });
+    return;
+  }
 
   const root = $("#appRoot");
   const isGB = root && root.classList.contains("mode-gb");
@@ -3176,7 +3213,7 @@ function ask(L, kind, done, name) {
   if (!q) {
     if (root) root.classList.remove("is-quiz");
     if (qp) qp.style.display = "none";
-    done({ ok: false, r: 1, L: L, sp: 0 });
+    safeDone({ ok: false, r: 1, L: L, sp: 0 });
     return;
   }
 
@@ -3293,104 +3330,137 @@ function ask(L, kind, done, name) {
   function closeQuizAndDone_(payload) {
     if (root) root.classList.remove("is-quiz");
     if (qp) qp.style.display = "none";
-    done(payload);
+    if (window.AppKeyboard) {
+      try { AppKeyboard.hide(); AppKeyboard.resetTarget(); } catch (_k) {}
+    }
+    safeDone(payload);
+    // クイズ中に保留した向き変更レイアウトを、クイズ終了後に適用
+    if (pendingLayoutRefresh_) {
+      try { applyLayout({ force: true }); } catch (_al) { pendingLayoutRefresh_ = false; }
+    }
   }
 
   function finish(ok, timeout, btn) {
     if (fin) return;
     fin = true;
-    cancelAnimationFrame(raf);
-    quizKey = null;
-    dungeonFillCtrl_ = null;
-
-    if (currentRecognition) {
-      try { currentRecognition.abort(); } catch(e) {}
-      currentRecognition = null;
-    }
     try {
-      if (window.PiperTtsStore && typeof window.PiperTtsStore.stop === "function") window.PiperTtsStore.stop();
-    } catch (_ps) {}
-    try {
-      if ("speechSynthesis" in window) window.speechSynthesis.cancel();
-    } catch (_ss) {}
+      cancelAnimationFrame(raf);
+      quizKey = null;
+      dungeonFillCtrl_ = null;
 
-    // 回答終了時にソフトウェアキーボードを直ちに格納
-    if (window.AppKeyboard) {
-      AppKeyboard.hide();
-      AppKeyboard.resetTarget();
-    }
-
-    const r = Math.min(1, (performance.now() - t0) / limit);
-    S.st = ensurePointStats_(S.st);
-    S.st.total++;
-    let quizPts = 0;
-    if (ok) {
-      S.st.ok++;
-      quizPts = awardQuizPoints_(L);
-    }
-    const sp = spdOf(r);
-    const correctDisplay = dungeonQuizAnswerPairLabel_(q);
-    const answerPairNote = (q.qFormat === "かな→ローマ字" || q.kanaAnswer)
-      ? (" こたえ：" + correctDisplay)
-      : "";
-    const resTxt = ok
-      ? "せいかい！ 速さ補正 " + (sp > 0 ? "+" : sp < 0 ? "−" : "±") + Math.abs(sp) + "% → 効果 " + (bonus(L) + sp) + "%" +
-        (quizPts > 0 ? " ／ +" + quizPts + "pt" : "") + answerPairNote
-      : (timeout ? "じかんぎれ… " : "ざんねん… ") + "こたえは " + correctDisplay;
-
-    se(ok ? "quiz_correct" : "quiz_wrong");
-    if (ok && sp >= CFG.sp1 && CFG.sp1 > CFG.sp2) se("speed_bonus", 250);
-
-    const quizPayload = { ok: ok, r: r, L: L, sp: sp };
-    const confirmBtnHtml =
-      '<button type="button" id="dungeonConfirmAnswerBtn" class="dungeon-btn" ' +
-      'style="display:block;width:100%;max-width:320px;margin:12px auto 0;font-size:15px;font-weight:bold;padding:10px 16px;">答えを確認した</button>';
-
-    function bindConfirmAnswerBtn_(container) {
-      const cBtn = container && container.querySelector("#dungeonConfirmAnswerBtn");
-      if (!cBtn) {
-        closeQuizAndDone_(quizPayload);
-        return;
+      if (currentRecognition) {
+        try { currentRecognition.abort(); } catch (e) {}
+        currentRecognition = null;
       }
-      cBtn.disabled = false;
-      cBtn.onclick = function () {
-        cBtn.disabled = true;
-        closeQuizAndDone_(quizPayload);
-      };
-    }
+      try {
+        if (window.PiperTtsStore && typeof window.PiperTtsStore.stop === "function") window.PiperTtsStore.stop();
+      } catch (_ps) {}
+      try {
+        if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+      } catch (_ss) {}
 
-    if (isGB) {
-      if (root) root.classList.remove("is-quiz");
-      if (qp) qp.style.display = "none";
-      const w = winEl();
-      if (w) {
-        w.innerHTML =
-          '<p class="msg ' + (ok ? "ok" : "ng") + '" style="color:' + (ok ? "var(--heal)" : "var(--danger)") + ';font-weight:bold;">' +
-          (ok ? "⭕ " : "❌ ") + resTxt + "</p>" +
-          (ok ? "" : confirmBtnHtml);
+      // 回答終了時にソフトウェアキーボードを直ちに格納
+      if (window.AppKeyboard) {
+        try { AppKeyboard.hide(); AppKeyboard.resetTarget(); } catch (_kb) {}
       }
-      if (ok) {
-        setTimeout(function () { closeQuizAndDone_(quizPayload); }, 2000);
-      } else {
-        bindConfirmAnswerBtn_(w);
+
+      const r = Math.min(1, (performance.now() - t0) / limit);
+      if (S) S.st = ensurePointStats_(S.st);
+      if (S && S.st) S.st.total++;
+      let quizPts = 0;
+      if (ok && S && S.st) {
+        S.st.ok++;
+        try { quizPts = awardQuizPoints_(L); } catch (_ap) { quizPts = 0; }
       }
-    } else {
-      targetBox.querySelectorAll("button,input").forEach(function (b) { b.disabled = true; });
-      if (btn) btn.classList.add(ok ? "ok" : "ng");
-      const res = $("#qres");
-      if (res) {
-        res.className = "qres " + (ok ? "ok" : "ng");
+      const sp = spdOf(r);
+      const correctDisplay = dungeonQuizAnswerPairLabel_(q);
+      const answerPairNote = (q.qFormat === "かな→ローマ字" || q.kanaAnswer)
+        ? (" こたえ：" + correctDisplay)
+        : "";
+      const resTxt = ok
+        ? "せいかい！ 速さ補正 " + (sp > 0 ? "+" : sp < 0 ? "−" : "±") + Math.abs(sp) + "% → 効果 " + (bonus(L) + sp) + "%" +
+          (quizPts > 0 ? " ／ +" + quizPts + "pt" : "") + answerPairNote
+        : (timeout ? "じかんぎれ… " : "ざんねん… ") + "こたえは " + correctDisplay;
+      const resTxtSafe = escapeHtmlDungeon_(resTxt);
+
+      try { se(ok ? "quiz_correct" : "quiz_wrong"); } catch (_se) {}
+      if (ok && sp >= CFG.sp1 && CFG.sp1 > CFG.sp2) {
+        try { se("speed_bonus", 250); } catch (_se2) {}
+      }
+
+      // クイズ解答直後にも到達状況を保存（クラッシュ耐性）
+      try {
+        if (S && !S.practice && (S.screen === "explore" || S.screen === "battle")) autosave();
+      } catch (_as) {}
+
+      const quizPayload = { ok: ok, r: r, L: L, sp: sp };
+      const confirmBtnHtml =
+        '<button type="button" id="dungeonConfirmAnswerBtn" class="dungeon-btn" ' +
+        'style="display:block;width:100%;max-width:320px;margin:12px auto 0;font-size:15px;font-weight:bold;padding:10px 16px;">答えを確認した</button>';
+
+      function bindConfirmAnswerBtn_(container) {
+        const liveRoot = container && document.body.contains(container) ? container : (winEl() || targetBox);
+        const cBtn = liveRoot && liveRoot.querySelector("#dungeonConfirmAnswerBtn");
+        if (!cBtn) {
+          closeQuizAndDone_(quizPayload);
+          return;
+        }
+        cBtn.disabled = false;
+        cBtn.onclick = function () {
+          cBtn.disabled = true;
+          closeQuizAndDone_(quizPayload);
+        };
+      }
+
+      const liveIsGB = !!(root && root.classList.contains("mode-gb"));
+      if (liveIsGB || isGB) {
+        if (root) root.classList.remove("is-quiz");
+        if (qp) qp.style.display = "none";
+        const w = winEl();
+        if (w) {
+          w.innerHTML =
+            '<p class="msg ' + (ok ? "ok" : "ng") + '" style="color:' + (ok ? "var(--heal)" : "var(--danger)") + ';font-weight:bold;">' +
+            (ok ? "⭕ " : "❌ ") + resTxtSafe + "</p>" +
+            (ok ? "" : confirmBtnHtml);
+        }
         if (ok) {
-          res.textContent = resTxt;
+          setTimeout(function () { closeQuizAndDone_(quizPayload); }, 2000);
         } else {
-          res.innerHTML = resTxt + confirmBtnHtml;
+          bindConfirmAnswerBtn_(w);
+        }
+      } else {
+        if (targetBox && document.body.contains(targetBox)) {
+          targetBox.querySelectorAll("button,input").forEach(function (b) { b.disabled = true; });
+        }
+        if (btn) btn.classList.add(ok ? "ok" : "ng");
+        const res = (targetBox && targetBox.querySelector("#qres")) || $("#qres");
+        if (res && document.body.contains(res)) {
+          res.className = "qres " + (ok ? "ok" : "ng");
+          if (ok) {
+            res.textContent = resTxt;
+          } else {
+            res.innerHTML = resTxtSafe + confirmBtnHtml;
+          }
+        } else if (!ok) {
+          // quizPane が破棄済みでも確認UIを出す
+          const w2 = winEl();
+          if (w2) {
+            w2.innerHTML =
+              '<p class="msg ng" style="color:var(--danger);font-weight:bold;">❌ ' + resTxtSafe + "</p>" + confirmBtnHtml;
+            bindConfirmAnswerBtn_(w2);
+            return;
+          }
+        }
+        if (ok) {
+          setTimeout(function () { closeQuizAndDone_(quizPayload); }, 2000);
+        } else {
+          bindConfirmAnswerBtn_(targetBox);
         }
       }
-      if (ok) {
-        setTimeout(function () { closeQuizAndDone_(quizPayload); }, 2000);
-      } else {
-        bindConfirmAnswerBtn_(targetBox);
-      }
+    } catch (err) {
+      try { console.warn("[Dungeon] quiz finish failed", err); } catch (_e) {}
+      clearQuizState();
+      safeDone({ ok: !!ok, r: 1, L: L, sp: 0 });
     }
   }
 
@@ -4097,21 +4167,26 @@ function finishRun(kind){
   const bestCand = (kind === "retire")
     ? r.cleared
     : Math.max(S.floor || 0, r.cleared || 0);
+  const runTowerId = getActiveRunTowerId_();
   if (!S.practice) {
     const prevBestCleared = getTowerBestClearedFloor_();
     if (r.cleared > 0) noteTowerClearedFloor_(r.cleared);
-    if (bestCand > REC.best) { REC.best = bestCand; r.isNew = true; }
+    if (bestCand > (REC.best || 0)) { REC.best = bestCand; r.isNew = true; }
     // 踏破記録の更新も「新記録」扱い
     if (r.cleared > prevBestCleared) r.isNew = true;
-    saveRec();
+    saveTowerRec(REC, runTowerId);
   }
   // 最深踏破ランキング（踏破済み階＝cleared）を提出
-  if (!S.practice && r.cleared > 0 && currentTower && currentTower.id) {
-    try { submitTowerRanking_(currentTower.id, r.cleared, r.lv); } catch (_) {}
+  if (!S.practice && r.cleared > 0 && runTowerId) {
+    try { submitTowerRanking_(runTowerId, r.cleared, r.lv); } catch (_) {}
   }
   if (kind === "over" || kind === "clear" || kind === "retire") {
     // ラン終了時はセーブを消す（コンパスで戻れる踏破階は REC に残さない＝新規スタート想定）
-    if (!S.practice) { REC.save = null; saveRec(); }
+    // 最高記録 best / bestCleared は必ず残す
+    if (!S.practice) {
+      REC.save = null;
+      saveTowerRec(REC, runTowerId);
+    }
   }
   S.result = r; S.screen = kind;
   stopAllBgm_();
@@ -4370,7 +4445,24 @@ function handleButtonY(){
    ========================================================================== */
 let currentDisplayMode = "auto"; // "auto" | "gb" | "switch"
 
-function applyLayout(){
+/** クイズUI表示中か（向き変更で DOM 再生成すると致命的に壊れる） */
+function isDungeonQuizUiActive_() {
+  const root = $("#appRoot");
+  if (root && root.classList.contains("is-quiz")) return true;
+  const qp = $("#quizPane");
+  return !!(qp && qp.style.display !== "none" && qp.childNodes && qp.childNodes.length);
+}
+let pendingLayoutRefresh_ = false;
+
+function applyLayout(opts){
+  const force = !!(opts && opts.force);
+  // クイズ中の orientation 切替で appRoot を作り直すと、回答不能／コールバック孤児化→体感クラッシュになる
+  if (!force && isDungeonQuizUiActive_()) {
+    pendingLayoutRefresh_ = true;
+    return;
+  }
+  pendingLayoutRefresh_ = false;
+
   const isLandscape = window.innerWidth > window.innerHeight;
   let mode = currentDisplayMode;
   if(mode === "auto"){
@@ -4378,6 +4470,7 @@ function applyLayout(){
   }
 
   const root = $("#appRoot");
+  if (!root) return;
   root.className = mode === "switch" ? "mode-switch" : "mode-gb";
 
   if(mode === "switch"){
@@ -4392,8 +4485,8 @@ function applyLayout(){
   updatePlayTimeHud_();
 
   // 現在の画面に応じたウィンドウを確実に再描画
-  if(S.screen === "title"){
-    winTitle();
+  if(S.screen === "title" || S.screen === "tower_select"){
+    if (S.screen === "title") winTitle();
   } else if(S.screen === "explore"){
     winExplore(S.floor%10===0?"つよい けはいが する…":"どちらへ すすむ？");
   } else if(S.screen === "battle"){
@@ -4568,10 +4661,15 @@ function bindPadButtons(){
 }
 
 let lastIsLandscape = window.innerWidth > window.innerHeight;
-window.addEventListener("resize",()=>{ if(!isDungeonActive()) return;
+window.addEventListener("resize", function () {
+  if (!isDungeonActive()) return;
   const curLandscape = window.innerWidth > window.innerHeight;
-  if(currentDisplayMode === "auto" && curLandscape !== lastIsLandscape){
+  if (currentDisplayMode === "auto" && curLandscape !== lastIsLandscape) {
     lastIsLandscape = curLandscape;
+    if (isDungeonQuizUiActive_()) {
+      pendingLayoutRefresh_ = true;
+      return;
+    }
     applyLayout();
   }
 });
@@ -4711,15 +4809,19 @@ function buildSoundTestGrid(){
   if ($("#chSkip")) { $("#chSkip").onclick = ()=>{ if(!S.p) return; log("【テスター】階段を降りて次の階へスキップした！"); closeMenu(); descend(); }; }
   if ($("#chBattle")) { $("#chBattle").onclick = ()=>{ if(!S.p) return; closeMenu(); startBattle(null, {t:"mon", a:ri(4)}, false); }; }
   if ($("#chBoss")) { $("#chBoss").onclick = ()=>{ if(!S.p) return; closeMenu(); startBattle(null, {t:"boss"}, false); }; }
-$("#mResetSaveBtn").onclick = ()=>{
-  if(confirm("この塔のセーブデータを初期化しますか？（最高記録もリセットされます）")){
-    REC = {best:0, save:null};
-    saveRec();
-    renderStatus();
-    try { renderTowerCards(); } catch (_) {}
-    alert("この塔のセーブデータを初期化しました。");
-  }
-};
+(function bindResetSaveBtn_() {
+  const rSaveBtn = $("#mResetSaveBtn");
+  if (!rSaveBtn) return;
+  rSaveBtn.onclick = function () {
+    if (confirm("この塔のセーブデータを初期化しますか？（最高記録もリセットされます）")) {
+      REC = { best: 0, bestCleared: 0, save: null };
+      saveTowerRec(REC, getActiveRunTowerId_());
+      renderStatus();
+      try { renderTowerCards(); } catch (_) {}
+      alert("この塔のセーブデータを初期化しました。");
+    }
+  };
+})();
 
 /* 画面モード切り替え */
 $$(".mode-btn").forEach(b=>{
@@ -6263,10 +6365,13 @@ function backToTowerSelect() {
   document.body.classList.add('in-dungeon-game');
   if (window.AppKeyboard) AppKeyboard.hide();
   stopAllBgm_();
+  clearQuizState();
   const afterFlush = function () {
     try {
       if (S && (S.screen === "explore" || S.screen === "battle") && !S.practice) autosave();
     } catch (_) {}
+    // 心拍オートセーブが塔選択中に別塔へ書かないよう、ラン画面状態を解除
+    if (S) S.screen = "tower_select";
     stopAllBgm_();
     const selectView = document.getElementById("dungeon-tower-select");
     const mainView = document.getElementById("dungeon-game-main");
@@ -6289,7 +6394,11 @@ function startDungeonWithTower(towerId, startFloor, isPractice) {
   if (selectView) selectView.style.display = "none";
   if (mainView) mainView.style.display = "block";
 
-  applyLayout();
+  // 塔切替前にクイズ残留状態を掃除
+  clearQuizState();
+  pendingLayoutRefresh_ = false;
+
+  applyLayout({ force: true });
   buildSoundTestGrid();
   renderTune();
   autoLoadRelativeAudio();
@@ -6661,6 +6770,7 @@ function renderTowerCards() {
         </div>
         <div class="dungeon-tower-meta">
           <span>最高到達: <b>${rec.best ? '地下 ' + rec.best + ' 階' : '未挑戦'}</b></span>
+          <span>最深踏破: <b>${rec.bestCleared ? '地下 ' + rec.bestCleared + ' 階' : '—'}</b></span>
           <span>最大: <b>${tower.maxFloor || 100}階</b></span>
           <span>セーブ: <b>${hasSave ? '地下 ' + rec.save.floor + ' 階' : 'なし（各塔1件）'}</b></span>
         </div>
