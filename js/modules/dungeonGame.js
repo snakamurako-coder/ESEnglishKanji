@@ -1522,6 +1522,26 @@ function mergeRankingEntry_(list, entry, limit) {
   });
   return filtered.slice(0, lim);
 }
+/** 塔ランキングの現在1位の踏破階（ローカルキャッシュ。未登録は0） */
+function getTowerRankingLeaderFloor_(towerId) {
+  if (!towerId) return 0;
+  const list = (loadRankingsLocal_()[towerId]) || [];
+  let top = 0;
+  for (let i = 0; i < list.length; i++) {
+    const f = Math.round(Number(list[i] && list[i].floor) || 0);
+    if (f > top) top = f;
+  }
+  return top;
+}
+/**
+ * この踏破階が「全体ランキング1位の記録を更新」するか。
+ * （既存1位より深い／まだ1位がいない）
+ */
+function wouldUpdateRankingFirst_(towerId, clearedFloor) {
+  const f = Math.max(0, Math.round(Number(clearedFloor) || 0));
+  if (!towerId || f < 1) return false;
+  return f > getTowerRankingLeaderFloor_(towerId);
+}
 function submitTowerRanking_(towerId, floor, lv) {
   if (!towerId || !floor || floor < 1) return Promise.resolve();
   const entry = {
@@ -1679,9 +1699,10 @@ function noteTowerClearedFloor_(clearedFloor) {
 /**
  * @param {number} floorNum 踏破した階
  * @param {number} [deepestBeforeOpt] この踏破前の最深踏破階（省略時は塔記録）
- * @returns {number} 付与ポイント
+ * @param {string} [towerIdOpt] ランキング判定用の塔ID
+ * @returns {number} 付与ポイント（ランキング1位更新ボーナス込み）
  */
-function awardFloorClearPoints_(floorNum, deepestBeforeOpt) {
+function awardFloorClearPoints_(floorNum, deepestBeforeOpt, towerIdOpt) {
   const f = Math.max(1, Math.min(100, Math.round(Number(floorNum) || 0)));
   if (!f || !S || S.practice) return 0;
   S.st = ensurePointStats_(S.st);
@@ -1693,11 +1714,21 @@ function awardFloorClearPoints_(floorNum, deepestBeforeOpt) {
     : getTowerBestClearedFloor_();
   const depthMult = floorClearDepthMult_(f, deepestBefore);
   const baseMult = Number(CFG.ptFloor);
-  const pts = Math.max(0, Math.round(f * (isFinite(baseMult) ? baseMult : 150) * depthMult));
+  const basePts = Math.max(0, Math.round(f * (isFinite(baseMult) ? baseMult : 150) * depthMult));
+  const tid = towerIdOpt || getActiveRunTowerId_();
+  const leaderBefore = getTowerRankingLeaderFloor_(tid);
+  const isRankFirstUpdate = wouldUpdateRankingFirst_(tid, f);
+  // 全体ランキング1位更新 → 踏破ボーナスにさらに50%上乗せ
+  const rankBonusPts = isRankFirstUpdate ? Math.max(0, Math.round(basePts * 0.5)) : 0;
+  const pts = basePts + rankBonusPts;
   const gained = addDungeonPoints_("floor", pts, { toast: pts > 0 });
   if (gained > 0 && S.st) {
     S.st.lastFloorDepthMult = depthMult;
     S.st.lastFloorDeepestBefore = deepestBefore;
+    S.st.lastFloorBasePts = basePts;
+    S.st.lastFloorRankBonusPts = rankBonusPts;
+    S.st.lastFloorRankLeaderBefore = leaderBefore;
+    S.st.lastFloorRankFirstUpdate = isRankFirstUpdate;
   }
   return gained;
 }
@@ -4118,20 +4149,34 @@ function descend(){
     : getTowerBestClearedFloor_();
   S.cleared = Math.max(prevCleared, clearedFloor);
   if (S.cleared > prevCleared) {
-    const floorPts = awardFloorClearPoints_(clearedFloor, deepestBefore);
+    const runTowerId = getActiveRunTowerId_();
+    const floorPts = awardFloorClearPoints_(clearedFloor, deepestBefore, runTowerId);
     const depthMult = floorClearDepthMult_(clearedFloor, deepestBefore);
     if (floorPts > 0) {
       const baseMult = Number(CFG.ptFloor);
       const base = clearedFloor * (isFinite(baseMult) ? baseMult : 150);
+      const rankBonus = (S.st && S.st.lastFloorRankBonusPts) ? S.st.lastFloorRankBonusPts : 0;
+      const rankNote = rankBonus > 0
+        ? (" ／🏆ランキング1位更新ボーナス +" + rankBonus + "pt（踏破の+50%）")
+        : "";
       log(
         "地下 " + clearedFloor + " 階を 踏破！ +" + floorPts + "pt" +
         "（" + base + "×深度" + depthMult +
-        "／基準最深" + deepestBefore + "階／踏破合計" + (S.st && S.st.ptsFloor ? S.st.ptsFloor : floorPts) + "）"
+        "／基準最深" + deepestBefore + "階／踏破合計" + (S.st && S.st.ptsFloor ? S.st.ptsFloor : floorPts) +
+        rankNote + "）"
       );
+      if (rankBonus > 0) {
+        try { pop("🏆 ランキング1位更新！", "crit", 0, true); } catch (_p) {}
+        try { se("new_record"); } catch (_s) {}
+      }
     }
     if (!S.practice) {
       noteTowerClearedFloor_(clearedFloor);
       try { saveRec(); } catch (_) {}
+      // ランキングへ即反映（次階の1位判定を正確にするため）
+      try {
+        submitTowerRanking_(runTowerId, S.cleared, S.p && S.p.lv);
+      } catch (_r) {}
     }
   }
   if (S.floor >= 100) return finishRun("clear");
@@ -6408,6 +6453,10 @@ function startDungeonWithTower(towerId, startFloor, isPractice) {
 
   migrateLegacyRecIfNeeded_(tower.id);
   REC = loadTowerRec(tower.id);
+  // 全体ランキング1位判定用にクラウド／ローカルを先読み
+  try {
+    fetchTowerRanking_(tower.id).catch(function () {});
+  } catch (_fr) {}
   const bestTag = $("#best");
   if (bestTag) bestTag.textContent = REC.best ? "地下 " + REC.best + " 階" : "—";
 
