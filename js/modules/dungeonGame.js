@@ -5882,9 +5882,50 @@ window.AppKeyboard = {
   currentMode: 'english',
   scale: 1.0,
   fontSize: 18,
+  /** 'retro' = DotGothic系 / 'readable' = 一般ゴシック */
+  fontStyle: 'retro',
   activeInstance: null,
   customTarget: null,
   _initialized: false,
+  _fontStyleKey: 'tango-meikyu-vk-font-style',
+
+  loadFontStyle_() {
+    try {
+      const v = localStorage.getItem(this._fontStyleKey);
+      this.fontStyle = (v === 'readable') ? 'readable' : 'retro';
+    } catch (_e) {
+      this.fontStyle = 'retro';
+    }
+  },
+
+  saveFontStyle_() {
+    try {
+      localStorage.setItem(this._fontStyleKey, this.fontStyle === 'readable' ? 'readable' : 'retro');
+    } catch (_e) {}
+  },
+
+  applyFontStyle_() {
+    const overlay = document.getElementById('keyboardOverlay');
+    const btn = document.getElementById('vkFontStyleBtn');
+    const readable = this.fontStyle === 'readable';
+    if (overlay) overlay.classList.toggle('vk-font-readable', readable);
+    if (btn) {
+      btn.classList.toggle('is-readable', readable);
+      // ボタンは「次に切り替えられる先」を表示
+      btn.textContent = readable ? 'レトロ' : '見やすい';
+      btn.title = readable
+        ? 'レトロゲーム風フォントに切替'
+        : '見やすい一般フォントに切替';
+      btn.setAttribute('aria-pressed', readable ? 'true' : 'false');
+    }
+  },
+
+  toggleFontStyle() {
+    this.fontStyle = (this.fontStyle === 'readable') ? 'retro' : 'readable';
+    this.saveFontStyle_();
+    this.applyFontStyle_();
+    if (typeof se === 'function') se('select');
+  },
 
   setMode(mode) {
     if (this.currentMode === mode && this.activeInstance) return;
@@ -5960,10 +6001,13 @@ window.AppKeyboard = {
     const clearBtn = document.getElementById('vkClearBtn');
     const sizeUpBtn = document.getElementById('vkSizeUpBtn');
     const sizeDownBtn = document.getElementById('vkSizeDownBtn');
+    const fontStyleBtn = document.getElementById('vkFontStyleBtn');
     const modeTabs = document.querySelectorAll('.vk-tab-btn');
 
     if (!overlay || !mountPoint) return;
 
+    this.loadFontStyle_();
+    this.applyFontStyle_();
     hardenDungeonTextInput_(previewInput);
 
     modeTabs.forEach(btn => {
@@ -6023,6 +6067,12 @@ window.AppKeyboard = {
           this.activeInstance.setFontSize(this.fontSize);
           this.activeInstance.setScale(this.scale);
         }
+      });
+    }
+    if (fontStyleBtn) {
+      fontStyleBtn.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        this.toggleFontStyle();
       });
     }
 

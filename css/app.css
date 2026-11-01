@@ -6970,6 +6970,7 @@ input[type=number] { flex: 0 0 80px; font-size: 14px; }
    仮想キーボード オーバーレイ設定（横いっぱい＆パッド覆い配置）
    ========================================================================== */
 #keyboardOverlay {
+  --vk-readable-font: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic UI", "Yu Gothic", Meiryo, "Segoe UI", sans-serif;
   position: fixed;
   left: 0;
   right: 0;
@@ -7133,12 +7134,42 @@ input[type=number] { flex: 0 0 80px; font-size: 14px; }
   border-color: var(--gold, #f5b027);
   color: #fff;
 }
+.vk-font-style-btn {
+  min-width: 72px;
+  letter-spacing: 0.02em;
+}
+.vk-font-style-btn.is-readable {
+  background: rgba(33, 150, 243, 0.16);
+  border-color: rgba(33, 150, 243, 0.55);
+  color: #90caf9;
+}
+/* キーボードのみ見やすい一般フォントへ（ゲーム本体のレトロ書体は維持） */
+#keyboardOverlay.vk-font-readable .vk-key,
+#keyboardOverlay.vk-font-readable .key,
+#keyboardOverlay.vk-font-readable #vkPreviewInput,
+#keyboardOverlay.vk-font-readable .vk-tab-btn,
+#keyboardOverlay.vk-font-readable .vk-clear-btn,
+#keyboardOverlay.vk-font-readable .vk-size-btn,
+#keyboardOverlay.vk-font-readable .vk-minimize-btn,
+#keyboardOverlay.vk-font-readable .vk-hint,
+#keyboardOverlay.vk-font-readable .vk-tail-hint,
+#keyboardOverlay.vk-font-readable .vk-layout-btn,
+#keyboardOverlay.vk-font-readable .vk-sub,
+#keyboardOverlay.vk-font-readable .vk-main {
+  font-family: var(--vk-readable-font) !important;
+  letter-spacing: 0;
+}
+#keyboardOverlay.vk-font-readable .vk-key,
+#keyboardOverlay.vk-font-readable .key {
+  font-weight: 600;
+}
 @media (max-width: 480px) {
   .vk-overlay-header { gap: 4px; }
   .vk-tab-btn { padding: 0 6px; font-size: 11px; height: 30px; }
   #vkPreviewInput { height: 30px; font-size: 12px; padding: 0 6px; }
   .vk-clear-btn { padding: 0 8px; min-width: 46px; height: 30px; font-size: 11px; }
   .vk-size-btn { padding: 0 6px; min-width: 36px; height: 30px; font-size: 11px; }
+  .vk-font-style-btn { min-width: 58px; padding: 0 6px; font-size: 10px; }
   .vk-minimize-btn { padding: 0 8px; min-width: 52px; height: 30px; font-size: 11px; }
 }
 .vk-floating-toggle {
