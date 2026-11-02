@@ -2200,6 +2200,8 @@ const BGM={}, BGM_TOTAL=4;
 let seOn=true, bgmOn=true;
 let seVol=0.7, bgmVol=0.35;
 let bgmCur=0;
+/** ブラウザが play() を拒否したまま無音で固まらないよう、次の操作で必ず再試行する */
+let bgmPlayBlocked_ = false;
 
 try{
   const v=JSON.parse(localStorage.getItem("tango-meikyu-se")||"null");
@@ -2233,6 +2235,28 @@ function stopAllBgm_(){
     });
   }catch(e){}
   bgmCur = 0;
+  bgmPlayBlocked_ = false;
+}
+
+/** play() の成否を追跡。拒否されたら次のユーザー操作で必ずやり直す */
+function playBgmEl_(aud) {
+  if (!aud) return;
+  try {
+    aud.muted = false;
+    aud.volume = bgmVol;
+    const pr = aud.play();
+    if (pr && typeof pr.then === "function") {
+      pr.then(function () {
+        bgmPlayBlocked_ = false;
+      }).catch(function () {
+        bgmPlayBlocked_ = true;
+        if (bgmCur && BGM[bgmCur] === aud) bgmCur = 0;
+      });
+    }
+  } catch (_e) {
+    bgmPlayBlocked_ = true;
+    bgmCur = 0;
+  }
 }
 
 /**
@@ -2248,17 +2272,14 @@ function ensureBgmPlaying_(){
     bgmUpdate();
     return;
   }
-  if (bgmCur !== want) {
+  if (bgmPlayBlocked_ || bgmCur !== want || a.paused) {
+    bgmCur = 0;
     bgmUpdate();
     return;
   }
   try {
     setupBgmElement(a, want);
     a.volume = bgmVol;
-    if (a.paused) {
-      const pr = a.play();
-      if (pr && typeof pr.catch === "function") pr.catch(function () {});
-    }
   } catch (e) {}
 }
 
@@ -2287,18 +2308,13 @@ function forceBgmRestart_(){
       try { BGM[bgmCur].pause(); BGM[bgmCur].currentTime = 0; } catch (_p) {}
     }
     setupBgmElement(a, want);
-    a.currentTime = 0;
+    try { a.currentTime = 0; } catch (_ct) {}
     a.volume = bgmVol;
     bgmCur = want;
-    const pr = a.play();
-    if (pr && typeof pr.then === "function") {
-      pr.then(function () {}).catch(function () {
-        // 自動再生拒否: 未再生扱いに戻して、次のタップで再開させる
-        if (bgmCur === want && a.paused) bgmCur = 0;
-      });
-    }
+    playBgmEl_(a);
   } catch (e) {
     bgmCur = 0;
+    bgmPlayBlocked_ = true;
   }
 }
 
@@ -2313,9 +2329,8 @@ function setupBgmElement(aud, id){
     aud._hasBgmLoopHook = true;
     aud.addEventListener("ended", ()=>{
       if(bgmOn && bgmCur === id){
-        aud.currentTime = 0;
-        const pr = aud.play();
-        if(pr) pr.catch(()=>{});
+        try { aud.currentTime = 0; } catch (_ct) {}
+        playBgmEl_(aud);
       }
     });
     // ブラウザが裏で pause した場合の復帰フック（探索中の無音化対策）
@@ -2329,10 +2344,7 @@ function setupBgmElement(aud, id){
         if (!bgmOn || bgmCur !== id) return;
         if (bgmWant() !== id) return;
         if (!aud.paused) return;
-        try {
-          const pr = aud.play();
-          if (pr && typeof pr.catch === "function") pr.catch(function () {});
-        } catch (_e) {}
+        playBgmEl_(aud);
       }, 120);
     });
   }
@@ -2352,13 +2364,10 @@ function bgmUpdate(){
 
   // 違うBGMに切り替わっていない場合（同じBGM）:
   // 曲を巻き戻さず、ずっとループ再生を維持する
-  if(k === bgmCur){
+  if(k === bgmCur && !bgmPlayBlocked_){
     if(a){
       setupBgmElement(a, k);
-      if(a.paused){
-        const pr = a.play();
-        if(pr) pr.catch(()=>{});
-      }
+      if(a.paused) playBgmEl_(a);
     }
     return;
   }
@@ -2381,10 +2390,9 @@ function bgmUpdate(){
   bgmCur = k;
 
   setupBgmElement(a, k);
-  a.currentTime = 0;
+  try { a.currentTime = 0; } catch (_ct) {}
   a.volume = bgmVol;
-  const pr = a.play();
-  if(pr) pr.catch(()=>{});
+  playBgmEl_(a);
 }
 
 /** SE プール（重ね再生用）。毎回 new Audio するとメディア資源が枯渇してフリーズする */
@@ -6417,15 +6425,22 @@ function handleTopBack() {
 }
 
 function bindDungeonBgmUnlockOnce_() {
-  const sec = document.getElementById("section-dungeon");
-  if (!sec || sec.__bgmUnlockBound) return;
-  sec.__bgmUnlockBound = true;
-  // 自動再生制限の解除のみ。操作のたびに先頭へ巻き戻さない
+  if (typeof document === "undefined" || document.__dungeonBgmUnlockBound) return;
+  document.__dungeonBgmUnlockBound = true;
+  // 自動再生拒否の解除は document で受ける。
+  // 塔選択のボタンは section より先に click が処理され、迷宮セクション外のこともある。
   const unlock = function () {
-    try { ensureBgmPlaying_(); } catch (_) {}
+    try {
+      if (!bgmOn) return;
+      if (!document.body.classList.contains("in-dungeon-game")) return;
+      if (bgmWant() && (bgmPlayBlocked_ || !bgmCur || (BGM[bgmWant()] && BGM[bgmWant()].paused))) {
+        ensureBgmPlaying_();
+      }
+    } catch (_) {}
   };
-  sec.addEventListener("pointerdown", unlock, { passive: true });
-  sec.addEventListener("touchstart", unlock, { passive: true });
+  document.addEventListener("pointerdown", unlock, true);
+  document.addEventListener("touchstart", unlock, true);
+  document.addEventListener("keydown", unlock, true);
 }
 
 function openDungeonGame(startFloor, isPractice) {
