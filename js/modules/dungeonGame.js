@@ -2057,6 +2057,8 @@ function enterFloor(msg){
   // 同じ探索BGMは巻き戻さず継続（途切れ防止）
   ensureBgmPlaying_();
   try { autosave(); } catch (_) {}
+  // クイズ中に保留した向き変更レイアウトを、探索復帰の安全なタイミングで適用
+  tryApplyPendingLayoutRefresh_();
 }
 /** ランキング提出の重複抑制（心拍セーブで Firestore を叩かない） */
 let lastRankSubmittedCleared_ = -1;
@@ -2893,8 +2895,12 @@ function updatePadFocus(){
 function clearQuizState(){
   const root = $("#appRoot");
   const qp = $("#quizPane");
-  if(root) root.classList.remove("is-quiz");
-  if(qp) qp.style.display = "none";
+  // is-quiz が残ると Switch で quiz-pane が !important 表示され中央が真っ暗に見える
+  if (root) root.classList.remove("is-quiz");
+  if (qp) {
+    qp.style.display = "none";
+    try { qp.innerHTML = ""; } catch (_q) {}
+  }
 }
 
 function say(t){
@@ -3359,16 +3365,13 @@ function ask(L, kind, done, name) {
   }
 
   function closeQuizAndDone_(payload) {
-    if (root) root.classList.remove("is-quiz");
-    if (qp) qp.style.display = "none";
+    clearQuizState();
     if (window.AppKeyboard) {
       try { AppKeyboard.hide(); AppKeyboard.resetTarget(); } catch (_k) {}
     }
     safeDone(payload);
-    // クイズ中に保留した向き変更レイアウトを、クイズ終了後に適用
-    if (pendingLayoutRefresh_) {
-      try { applyLayout({ force: true }); } catch (_al) { pendingLayoutRefresh_ = false; }
-    }
+    // 戦闘演出中に DOM 全再生成すると中央が真っ暗になるため、安全なタイミングまで待つ
+    tryApplyPendingLayoutRefresh_();
   }
 
   function finish(ok, timeout, btn) {
@@ -3443,55 +3446,30 @@ function ask(L, kind, done, name) {
         };
       }
 
-      const liveIsGB = !!(root && root.classList.contains("mode-gb"));
-      if (liveIsGB || isGB) {
-        if (root) root.classList.remove("is-quiz");
-        if (qp) qp.style.display = "none";
-        const w = winEl();
-        if (w) {
-          w.innerHTML =
-            '<p class="msg ' + (ok ? "ok" : "ng") + '" style="color:' + (ok ? "var(--heal)" : "var(--danger)") + ';font-weight:bold;">' +
-            (ok ? "⭕ " : "❌ ") + resTxtSafe + "</p>" +
-            (ok ? "" : confirmBtnHtml);
-        }
-        if (ok) {
-          setTimeout(function () { closeQuizAndDone_(quizPayload); }, 2000);
-        } else {
-          bindConfirmAnswerBtn_(w);
-        }
+      // GB / Switch 共通: 直後に is-quiz を外し、結果は下部ウィンドウへ出す
+      // （Switch で is-quiz が残ると右半分〜中央が暗い空 quiz-pane のまま固まる）
+      if (root) root.classList.remove("is-quiz");
+      if (qp) {
+        qp.style.display = "none";
+        try { qp.innerHTML = ""; } catch (_q) {}
+      }
+      const w = winEl();
+      if (w) {
+        w.innerHTML =
+          '<p class="msg ' + (ok ? "ok" : "ng") + '" style="color:' + (ok ? "var(--heal)" : "var(--danger)") + ';font-weight:bold;">' +
+          (ok ? "⭕ " : "❌ ") + resTxtSafe + "</p>" +
+          (ok ? "" : confirmBtnHtml);
+      }
+      if (ok) {
+        setTimeout(function () { closeQuizAndDone_(quizPayload); }, 2000);
       } else {
-        if (targetBox && document.body.contains(targetBox)) {
-          targetBox.querySelectorAll("button,input").forEach(function (b) { b.disabled = true; });
-        }
-        if (btn) btn.classList.add(ok ? "ok" : "ng");
-        const res = (targetBox && targetBox.querySelector("#qres")) || $("#qres");
-        if (res && document.body.contains(res)) {
-          res.className = "qres " + (ok ? "ok" : "ng");
-          if (ok) {
-            res.textContent = resTxt;
-          } else {
-            res.innerHTML = resTxtSafe + confirmBtnHtml;
-          }
-        } else if (!ok) {
-          // quizPane が破棄済みでも確認UIを出す
-          const w2 = winEl();
-          if (w2) {
-            w2.innerHTML =
-              '<p class="msg ng" style="color:var(--danger);font-weight:bold;">❌ ' + resTxtSafe + "</p>" + confirmBtnHtml;
-            bindConfirmAnswerBtn_(w2);
-            return;
-          }
-        }
-        if (ok) {
-          setTimeout(function () { closeQuizAndDone_(quizPayload); }, 2000);
-        } else {
-          bindConfirmAnswerBtn_(targetBox);
-        }
+        bindConfirmAnswerBtn_(w);
       }
     } catch (err) {
       try { console.warn("[Dungeon] quiz finish failed", err); } catch (_e) {}
       clearQuizState();
       safeDone({ ok: !!ok, r: 1, L: L, sp: 0 });
+      tryApplyPendingLayoutRefresh_();
     }
   }
 
@@ -4493,11 +4471,40 @@ let currentDisplayMode = "auto"; // "auto" | "gb" | "switch"
 /** クイズUI表示中か（向き変更で DOM 再生成すると致命的に壊れる） */
 function isDungeonQuizUiActive_() {
   const root = $("#appRoot");
-  if (root && root.classList.contains("is-quiz")) return true;
-  const qp = $("#quizPane");
-  return !!(qp && qp.style.display !== "none" && qp.childNodes && qp.childNodes.length);
+  return !!(root && root.classList.contains("is-quiz"));
 }
 let pendingLayoutRefresh_ = false;
+
+/** 現在の向き／設定から望む mode-gb / mode-switch クラス */
+function getDesiredDungeonModeClass_() {
+  const isLandscape = window.innerWidth > window.innerHeight;
+  let mode = currentDisplayMode;
+  if (mode === "auto") mode = isLandscape ? "switch" : "gb";
+  return mode === "switch" ? "mode-switch" : "mode-gb";
+}
+
+/**
+ * クイズ後などに保留したレイアウト再生成を、安全なタイミングで適用する。
+ * 既に正しい mode なら HTML を作り直さない（真っ暗化の主因を回避）。
+ */
+function tryApplyPendingLayoutRefresh_() {
+  if (!pendingLayoutRefresh_) return;
+  if (isDungeonQuizUiActive_()) return;
+  // 戦闘演出の最中に DOM を壊さない
+  if (S && S.screen === "battle") return;
+  const root = $("#appRoot");
+  const desired = getDesiredDungeonModeClass_();
+  if (root && root.classList.contains(desired) && root.querySelector("#win") && root.querySelector("#stage")) {
+    pendingLayoutRefresh_ = false;
+    return;
+  }
+  pendingLayoutRefresh_ = false;
+  try {
+    applyLayout({ force: true });
+  } catch (_e) {
+    pendingLayoutRefresh_ = false;
+  }
+}
 
 function applyLayout(opts){
   const force = !!(opts && opts.force);
@@ -4506,19 +4513,27 @@ function applyLayout(opts){
     pendingLayoutRefresh_ = true;
     return;
   }
-  pendingLayoutRefresh_ = false;
 
-  const isLandscape = window.innerWidth > window.innerHeight;
-  let mode = currentDisplayMode;
-  if(mode === "auto"){
-    mode = isLandscape ? "switch" : "gb";
-  }
-
+  const desiredClass = getDesiredDungeonModeClass_();
   const root = $("#appRoot");
   if (!root) return;
-  root.className = mode === "switch" ? "mode-switch" : "mode-gb";
 
-  if(mode === "switch"){
+  // 同じ mode で主要ノードが残っているなら全再生成しない（クイズ後の force も含む）
+  if (root.classList.contains(desiredClass) && root.querySelector("#win") && root.querySelector("#stage")) {
+    pendingLayoutRefresh_ = false;
+    root.classList.remove("is-quiz");
+    const qpKeep = $("#quizPane");
+    if (qpKeep) {
+      qpKeep.style.display = "none";
+      try { qpKeep.innerHTML = ""; } catch (_q) {}
+    }
+    return;
+  }
+
+  pendingLayoutRefresh_ = false;
+  root.className = desiredClass;
+
+  if (desiredClass === "mode-switch") {
     renderSwitchHTML(root);
   } else {
     renderGameBoyHTML(root);
@@ -4530,15 +4545,16 @@ function applyLayout(opts){
   updatePlayTimeHud_();
 
   // 現在の画面に応じたウィンドウを確実に再描画
-  if(S.screen === "title" || S.screen === "tower_select"){
-    if (S.screen === "title") winTitle();
-  } else if(S.screen === "explore"){
-    winExplore(S.floor%10===0?"つよい けはいが する…":"どちらへ すすむ？");
-  } else if(S.screen === "battle"){
-    if(S.b && S.b.m) winCmd("どうする？");
-  } else if(S.screen === "over" || S.screen === "clear" || S.screen === "retire"){
+  if (S.screen === "title") {
+    winTitle();
+  } else if (S.screen === "explore") {
+    winExplore(S.floor % 10 === 0 ? "つよい けはいが する…" : "どちらへ すすむ？");
+  } else if (S.screen === "battle") {
+    if (S.b && S.b.m) winCmd("どうする？");
+  } else if (S.screen === "over" || S.screen === "clear" || S.screen === "retire") {
     winEnd();
   }
+  // tower_select は塔選択DOM側。ここは触らない
 }
 
 function renderGameBoyHTML(root){
