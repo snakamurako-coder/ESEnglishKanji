@@ -2265,6 +2265,8 @@ function ensureBgmPlaying_(){
 /**
  * 再入室・再開時に BGM を先頭から強制再生
  * （塔選択から入室した直後など、明示的に始め直すときだけ使う）
+ * 音声がまだ無い／自動再生が拒否された場合は bgmCur を 0 のまま残し、
+ * 次の操作・ロード完了で ensureBgmPlaying_ / bgmUpdate が再試行できるようにする。
  */
 function forceBgmRestart_(){
   if (!bgmOn) return;
@@ -2273,18 +2275,30 @@ function forceBgmRestart_(){
     stopAllBgm_();
     return;
   }
-  // 同じ曲でも先頭から再開できるように、現在曲 ID をクリアしてから bgmUpdate
-  bgmCur = 0;
-  bgmUpdate();
   const a = BGM[want];
-  if (a) {
-    try {
-      a.volume = bgmVol;
-      if (a.paused) {
-        const pr = a.play();
-        if (pr && typeof pr.catch === "function") pr.catch(function () {});
-      }
-    } catch (e) {}
+  if (!a) {
+    // ファイル未登録のまま bgmCur を進めると、以後「再生中」扱いで無音のまま固まる
+    bgmCur = 0;
+    return;
+  }
+  // 同じ曲でも先頭から再開
+  try {
+    if (bgmCur && BGM[bgmCur] && BGM[bgmCur] !== a) {
+      try { BGM[bgmCur].pause(); BGM[bgmCur].currentTime = 0; } catch (_p) {}
+    }
+    setupBgmElement(a, want);
+    a.currentTime = 0;
+    a.volume = bgmVol;
+    bgmCur = want;
+    const pr = a.play();
+    if (pr && typeof pr.then === "function") {
+      pr.then(function () {}).catch(function () {
+        // 自動再生拒否: 未再生扱いに戻して、次のタップで再開させる
+        if (bgmCur === want && a.paused) bgmCur = 0;
+      });
+    }
+  } catch (e) {
+    bgmCur = 0;
   }
 }
 
@@ -2359,8 +2373,12 @@ function bgmUpdate(){
   }
 
   // 2. 新しいBGMを先頭からループ再生開始
+  // 要素がまだ無いときは bgmCur を進めない（未ロードなのに「再生済み」になって無音固定になる）
+  if(!a){
+    bgmCur = 0;
+    return;
+  }
   bgmCur = k;
-  if(!a) return;
 
   setupBgmElement(a, k);
   a.currentTime = 0;
@@ -2488,7 +2506,9 @@ function registerDungeonAudio_(item, aud) {
         const pr = aud.play();
         if (pr && typeof pr.catch === "function") pr.catch(function () {});
       } catch (_) {}
-    } else if (bgmOn && bgmWant() === item.id && bgmCur === 0) {
+    } else if (bgmOn && bgmWant() === item.id && (bgmCur === 0 || bgmCur === item.id)) {
+      // 入室時点でファイルが無く force が空振りしたあとでも、ロード完了で鳴らす
+      bgmCur = 0;
       bgmUpdate();
     }
   } else {
@@ -2564,13 +2584,22 @@ function loadDungeonAudioFromCache_() {
             resolve();
           }, { once: true });
           aud.onerror = function () { resolve(); };
-          // タイムアウト相当: すぐ登録だけ試みる
-          setTimeout(resolve, 800);
+          // タイムアウト相当: 登録を試みてから BGM を再要求
+          setTimeout(function () {
+            try { registerDungeonAudio_(item, aud); } catch (_r) {}
+            resolve();
+          }, 800);
         });
       });
     })).then(function () {
       updateSoundUI();
-      bgmUpdate();
+      // 探索／戦闘中なら、入室時に空振りした BGM をここで開始する
+      try {
+        if (bgmOn && bgmWant()) {
+          bgmCur = 0;
+          bgmUpdate();
+        }
+      } catch (_bu) {}
       return result || { ok: 0, fail: 0 };
     });
   }).catch(function (err) {
@@ -6514,9 +6543,6 @@ function startDungeonWithTower(towerId, startFloor, isPractice) {
   const bestTag = $("#best");
   if (bestTag) bestTag.textContent = REC.best ? "地下 " + REC.best + " 階" : "—";
 
-  // クリック直後に BGM を再開（他モード経由の再入室対策）
-  forceBgmRestart_();
-
   // 本編開始はレイアウト成否に依存させない（ここまで来ないと中央が空のまま固まる）
   try {
     if (typeof startFloor === "number" && startFloor > 0) {
@@ -6530,7 +6556,8 @@ function startDungeonWithTower(towerId, startFloor, isPractice) {
   } catch (errStart) {
     try { console.warn("[Dungeon] start/resume failed", errStart); } catch (_e2) {}
   }
-  forceBgmRestart_();
+  // start/resume 内でも force するが、音声が後から届く場合に備えてここでも一度要求する
+  try { forceBgmRestart_(); } catch (_bg) {}
   bindDungeonBgmUnlockOnce_();
 }
 
