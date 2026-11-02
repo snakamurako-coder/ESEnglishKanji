@@ -2745,7 +2745,7 @@ function renderHUD(){
 
 function renderStage(){
   const stage=$("#stage"); if(!stage) return;
-  if(S.screen==="title"){
+  if(S.screen==="title" || S.screen==="tower_select"){
     stage.innerHTML='<div class="result"><div class="big">百階</div><p>正解の むずかしさと速さが、そのまま力になる。</p><p style="color:var(--muted)">地下100階まで、どこまで もぐれるか。</p></div>';
     return;
   }
@@ -2768,11 +2768,17 @@ function renderStage(){
     return;
   }
   if(S.screen==="battle"){
+    if(!S.b || !S.b.m){ stage.innerHTML=""; return; }
     const m=S.b.m;
     stage.innerHTML='<div class="scene"><div class="glyph'+(m.boss?" boss":"")+'" id="glyph">'+m.g+'</div><div class="mname">'+m.name+'</div><div class="bar"><i style="width:'+(100*m.hp/m.max)+'%"></i></div><div style="color:var(--muted);font-size:12px;font-family:var(--game)">HP '+m.hp+' / '+m.max+'　こうげき '+m.atk+'</div></div>';
     return;
   }
   const m=S.map;
+  if(!m || !m.cells || !m.seen){
+    // マップ未生成（塔選択直後の applyLayout など）で落とさない
+    stage.innerHTML="";
+    return;
+  }
   let h='<div class="map">';
   for(let i=0;i<W*H;i++){
     const x=i%W, y=(i-x)/W;
@@ -4518,8 +4524,14 @@ function applyLayout(opts){
   const root = $("#appRoot");
   if (!root) return;
 
-  // 同じ mode で主要ノードが残っているなら全再生成しない（クイズ後の force も含む）
-  if (root.classList.contains(desiredClass) && root.querySelector("#win") && root.querySelector("#stage")) {
+  const canReuse =
+    root.classList.contains(desiredClass) &&
+    root.querySelector("#win") &&
+    root.querySelector("#stage");
+
+  // 向き変更の保留解消など「ソフト」時だけシェル再利用。
+  // startDungeonWithTower の force では、再利用してもパッド再バインドは必ず行う。
+  if (canReuse && !force) {
     pendingLayoutRefresh_ = false;
     root.classList.remove("is-quiz");
     const qpKeep = $("#quizPane");
@@ -4531,30 +4543,41 @@ function applyLayout(opts){
   }
 
   pendingLayoutRefresh_ = false;
-  root.className = desiredClass;
-
-  if (desiredClass === "mode-switch") {
-    renderSwitchHTML(root);
+  if (!canReuse) {
+    root.className = desiredClass;
+    if (desiredClass === "mode-switch") {
+      renderSwitchHTML(root);
+    } else {
+      renderGameBoyHTML(root);
+    }
   } else {
-    renderGameBoyHTML(root);
+    // force + 同 mode: シェルは残しつつクイズ残骸だけ掃除
+    root.classList.remove("is-quiz");
+    const qpKeep = $("#quizPane");
+    if (qpKeep) {
+      qpKeep.style.display = "none";
+      try { qpKeep.innerHTML = ""; } catch (_q) {}
+    }
   }
 
   bindPadButtons();
-  render();
+  try { render(); } catch (_r) {}
   ensurePlayTimeTicker_();
   updatePlayTimeHud_();
 
   // 現在の画面に応じたウィンドウを確実に再描画
-  if (S.screen === "title") {
-    winTitle();
-  } else if (S.screen === "explore") {
-    winExplore(S.floor % 10 === 0 ? "つよい けはいが する…" : "どちらへ すすむ？");
-  } else if (S.screen === "battle") {
-    if (S.b && S.b.m) winCmd("どうする？");
-  } else if (S.screen === "over" || S.screen === "clear" || S.screen === "retire") {
-    winEnd();
-  }
-  // tower_select は塔選択DOM側。ここは触らない
+  try {
+    if (S.screen === "title") {
+      winTitle();
+    } else if (S.screen === "explore") {
+      winExplore(S.floor % 10 === 0 ? "つよい けはいが する…" : "どちらへ すすむ？");
+    } else if (S.screen === "battle") {
+      if (S.b && S.b.m) winCmd("どうする？");
+    } else if (S.screen === "over" || S.screen === "clear" || S.screen === "retire") {
+      winEnd();
+    }
+    // tower_select は塔選択DOM側。ここは触らない（直後に start/resume が描画する）
+  } catch (_w) {}
 }
 
 function renderGameBoyHTML(root){
@@ -6459,11 +6482,26 @@ function startDungeonWithTower(towerId, startFloor, isPractice) {
   clearQuizState();
   pendingLayoutRefresh_ = false;
 
-  applyLayout({ force: true });
-  buildSoundTestGrid();
-  renderTune();
-  autoLoadRelativeAudio();
-  if (window.AppKeyboard) AppKeyboard.init();
+  try {
+    applyLayout({ force: true });
+  } catch (err) {
+    try { console.warn("[Dungeon] applyLayout failed", err); } catch (_e) {}
+    // シェルが空なら最低限 GB レイアウトを起こす
+    const root = $("#appRoot");
+    if (root && !root.querySelector("#stage")) {
+      try {
+        root.className = "mode-gb";
+        renderGameBoyHTML(root);
+        bindPadButtons();
+      } catch (_r2) {}
+    }
+  }
+  try { buildSoundTestGrid(); } catch (_b) {}
+  try { renderTune(); } catch (_t) {}
+  try { autoLoadRelativeAudio(); } catch (_a) {}
+  if (window.AppKeyboard) {
+    try { AppKeyboard.init(); } catch (_k) {}
+  }
   bindDungeonEmergencySaveOnce_();
   ensureAutosaveHeartbeat_();
 
@@ -6479,13 +6517,18 @@ function startDungeonWithTower(towerId, startFloor, isPractice) {
   // クリック直後に BGM を再開（他モード経由の再入室対策）
   forceBgmRestart_();
 
-  if (typeof startFloor === "number" && startFloor > 0) {
-    // startFloor 明示指定＝最初から／指定階スタート（進行中セーブは start 内でクリア）
-    start(startFloor, !!isPractice);
-  } else if (REC.save && !isPractice) {
-    resume();
-  } else {
-    start(1, false);
+  // 本編開始はレイアウト成否に依存させない（ここまで来ないと中央が空のまま固まる）
+  try {
+    if (typeof startFloor === "number" && startFloor > 0) {
+      // startFloor 明示指定＝最初から／指定階スタート（進行中セーブは start 内でクリア）
+      start(startFloor, !!isPractice);
+    } else if (REC.save && !isPractice) {
+      resume();
+    } else {
+      start(1, false);
+    }
+  } catch (errStart) {
+    try { console.warn("[Dungeon] start/resume failed", errStart); } catch (_e2) {}
   }
   forceBgmRestart_();
   bindDungeonBgmUnlockOnce_();
