@@ -402,7 +402,7 @@
     <h1>⚙ おうちの人：管理メニュー</h1>
     <p style="max-width:420px;margin:0 auto 12px;line-height:1.5;color:#ccc;">管理者PIN（<code style="color:#9C27B0;">アプリ設定</code>の「外部学習_管理者PIN」）を入力してください。</p>
     <div id="parent-admin-pin-panel" style="max-width:400px;margin:0 auto;">
-      <input type="password" id="parent-admin-pin-input" inputmode="numeric" autocomplete="off" placeholder="管理者PIN" style="width:100%;max-width:280px;padding:14px;font-size:20px;border-radius:10px;border:2px solid #555;background:#222;color:#fff;box-sizing:border-box;">
+      <input type="password" id="parent-admin-pin-input" inputmode="numeric" autocomplete="off" placeholder="管理者PIN" data-enter-submit="#parent-admin-pin-panel .submit-btn" style="width:100%;max-width:280px;padding:14px;font-size:20px;border-radius:10px;border:2px solid #555;background:#222;color:#fff;box-sizing:border-box;">
       <button type="button" class="submit-btn btn-purple" style="margin-top:12px;width:100%;max-width:280px;" onclick="loginParentAdmin()">ログイン</button>
     </div>
     <div id="parent-admin-message" style="color:#ff8a80;margin:12px auto;max-width:400px;min-height:1.2em;text-align:center;font-size:14px;"></div>
@@ -559,7 +559,7 @@
   <div id="section-external-admin" class="section">
     <h1>🔐 外部学習の承認</h1>
     <div id="external-admin-pin-panel" style="display:none;max-width:400px;margin:0 auto;">
-      <input type="password" id="external-admin-pin-input" inputmode="numeric" autocomplete="off" placeholder="管理者PIN" style="width:100%;max-width:280px;padding:14px;font-size:20px;border-radius:10px;border:2px solid #555;background:#222;color:#fff;box-sizing:border-box;">
+      <input type="password" id="external-admin-pin-input" inputmode="numeric" autocomplete="off" placeholder="管理者PIN" data-enter-submit="#external-admin-pin-panel .submit-btn" style="width:100%;max-width:280px;padding:14px;font-size:20px;border-radius:10px;border:2px solid #555;background:#222;color:#fff;box-sizing:border-box;">
       <button type="button" class="submit-btn btn-purple" style="margin-top:12px;width:100%;max-width:280px;" onclick="loadExternalAdminPending()">一覧を表示</button>
     </div>
     <div id="external-admin-message" style="color:#ff8a80;margin:12px auto;max-width:400px;min-height:1.2em;"></div>
@@ -570,7 +570,7 @@
   <div id="section-training-admin" class="section">
     <h1>🎯 特訓メニュー管理</h1>
     <div id="training-admin-pin-panel" style="display:none;max-width:400px;margin:0 auto;">
-      <input type="password" id="training-admin-pin-input" inputmode="numeric" autocomplete="off" placeholder="管理者PIN" style="width:100%;max-width:280px;padding:14px;font-size:20px;border-radius:10px;border:2px solid #555;background:#222;color:#fff;box-sizing:border-box;">
+      <input type="password" id="training-admin-pin-input" inputmode="numeric" autocomplete="off" placeholder="管理者PIN" data-enter-submit="#training-admin-pin-panel .submit-btn" style="width:100%;max-width:280px;padding:14px;font-size:20px;border-radius:10px;border:2px solid #555;background:#222;color:#fff;box-sizing:border-box;">
       <button type="button" class="submit-btn btn-purple" style="margin-top:12px;width:100%;max-width:280px;" onclick="loadTrainingMenuAdmin()">ログインして編集</button>
     </div>
     <div id="training-admin-message" class="training-admin-msg" style="color:#ff8a80;"></div>
@@ -1412,6 +1412,7 @@
   <script src="js/modules/parentAdmin.js?v=20261028-reward-hist"></script>
   <script src="js/modules/authPin.js?v=20261017-inv-login"></script>
   <script src="js/modules/dungeonGame.js?v=20261031-floor-depth-fix"></script>
+  <script src="js/modules/enterSubmitShortcut.js?v=20261102-enter-submit"></script>
   <script src="js/app.js?v=20261028-so-tts-yomi"></script>
 </body>
 </html>
