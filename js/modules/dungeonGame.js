@@ -426,6 +426,17 @@ function haptic(ms=15){
       exprUnits: []
     },
     {
+      id: "tower_sansu",
+      name: "算数の塔",
+      desc: "九九・割り算・余り・2〜3桁の加減算を、難易度1〜10で段階的に練習する塔（テンキー回答・表現なし）",
+      maxFloor: 50,
+      timeMultiplier: 1.0,
+      quizPreset: "sansu_arith",
+      vocabOnly: true,
+      vocabUnits: [],
+      exprUnits: []
+    },
+    {
       id: "tower_hundred",
       name: "覇王迷宮 百階",
       desc: "すべての単語と表現・全出題形式からランダムに出題される究極の百階ダンジョン",
@@ -462,8 +473,15 @@ function haptic(ms=15){
             out.vocabUnits = Array.isArray(def.vocabUnits) ? def.vocabUnits.slice() : ROMAJI_VOCAB_UNIT_NAMES.slice();
             out.exprUnits = [];
             out.quizPreset = "romaji_hepburn";
+          } else if (def && def.id === "tower_sansu") {
+            out.vocabOnly = true;
+            out.vocabUnits = [];
+            out.exprUnits = [];
+            out.quizPreset = "sansu_arith";
+            out.name = def.name;
+            out.maxFloor = def.maxFloor || 50;
           } else if (typeof out.vocabOnly !== "boolean") {
-            out.vocabOnly = out.quizPreset === "jiko_vocab" || out.quizPreset === "romaji_hepburn";
+            out.vocabOnly = out.quizPreset === "jiko_vocab" || out.quizPreset === "romaji_hepburn" || out.quizPreset === "sansu_arith";
           }
           return out;
         });
@@ -587,10 +605,13 @@ function haptic(ms=15){
     return !!(currentTower && currentTower.quizPreset === "romaji_hepburn");
   }
 
-  /** ローマ字塔：解答表示は必ず「かな」＋ローマ字の対 */
+  /** ローマ字塔：解答表示は必ず「かな」＋ローマ字の対／算数はそのまま */
   function dungeonQuizAnswerPairLabel_(q) {
     if (!q) return "";
     const rom = String(q.answer || (q.validAnswers && q.validAnswers[0]) || "").trim();
+    if (q.type === "sansu" || q.qFormat === "算数") {
+      return rom ? "「" + rom + "」" : "";
+    }
     const isRomaji = q.qFormat === "かな→ローマ字" || q.kanaAnswer;
     if (isRomaji) {
       const kana = String(q.kanaAnswer || "").trim();
@@ -618,11 +639,12 @@ function haptic(ms=15){
   }
 
   function getActiveExprPool() {
-    // 単語のみ塔／jiko_vocab・romaji_hepburn プリセットでは表現を出さない
+    // 単語のみ塔／固定プリセット塔では表現を出さない
     if (currentTower && (
       currentTower.vocabOnly === true ||
       currentTower.quizPreset === "jiko_vocab" ||
-      currentTower.quizPreset === "romaji_hepburn"
+      currentTower.quizPreset === "romaji_hepburn" ||
+      currentTower.quizPreset === "sansu_arith"
     )) {
       return [];
     }
@@ -723,6 +745,7 @@ function haptic(ms=15){
    * - english_all: 英語学習の全形式を Lv 帯で解禁（既存）
    * - jiko_vocab: 自己紹介単語向け固定表（四択→穴埋め字数→タイピング）
    * - romaji_hepburn: 厳格ヘボン式 かな→ローマ字タイピング（Lv1〜10）
+   * - sansu_arith: 九九・割り算・加減算（アプリ内自動生成・Lv1〜10）
    * （scripts/build-dungeon-game.js 再生成時は本定義を再適用すること）
    */
   const ROMAJI_HEPBURN_LEVEL_LABELS = {
@@ -756,6 +779,46 @@ function haptic(ms=15){
     }
     return levels;
   }
+  /** 表示用モード名（内部の modeKind とは別。算数は単語学習ではない） */
+  const SANSU_MODE_BY_LV = {
+    1: "九九", 2: "九九",
+    3: "割り算", 4: "割り算", 5: "割り算", 6: "割り算",
+    7: "筆算", 8: "筆算", 9: "筆算",
+    10: "複合"
+  };
+  const SANSU_LEVEL_LABELS = {
+    1: "九九｜2〜5の段",
+    2: "九九｜6〜9の段",
+    3: "割り算｜割り切れる（2〜5の段）",
+    4: "割り算｜割り切れる（6〜9の段）",
+    5: "割り算｜余りあり（2〜5の段）",
+    6: "割り算｜余りあり（6〜9の段）",
+    7: "筆算｜2桁±（繰上り・繰下りなし）",
+    8: "筆算｜2桁±（必ず繰上り・繰下り）",
+    9: "筆算｜3桁±（繰上り有無はランダム）",
+    10: "複合｜Lv9・6・4・2からランダム"
+  };
+  function buildSansuArithPresetLevels_() {
+    const timeByLv = { 1: 20, 2: 20, 3: 20, 4: 20, 5: 30, 6: 30, 7: 40, 8: 40, 9: 50, 10: 50 };
+    const levels = {};
+    for (let n = 1; n <= 10; n++) {
+      levels[n] = {
+        // modeKind は塔インフラ用。算数の出題モード名は sansuMode / SANSU_MODE_BY_LV
+        modeKind: "vocab",
+        format: "sansu",
+        ansType: "tenkey",
+        blankCount: 0,
+        noneChoice: false,
+        timeSec: timeByLv[n],
+        label: "算数 Lv" + n + " " + (SANSU_LEVEL_LABELS[n] || ""),
+        qFormat: "算数",
+        aFormat: "テンキー",
+        sansuKind: n,
+        sansuMode: SANSU_MODE_BY_LV[n] || "算数"
+      };
+    }
+    return levels;
+  }
   const DUNGEON_QUIZ_PRESETS = {
     english_all: {
       id: "english_all",
@@ -784,8 +847,156 @@ function haptic(ms=15){
       name: "厳格ヘボン式ローマ字",
       mode: "fixed",
       levels: buildRomajiHepburnPresetLevels_()
+    },
+    sansu_arith: {
+      id: "sansu_arith",
+      name: "算数（九九・四則）",
+      mode: "fixed",
+      levels: buildSansuArithPresetLevels_()
     }
   };
+
+  function isSansuTower_() {
+    return !!(currentTower && currentTower.quizPreset === "sansu_arith");
+  }
+
+  function normalizeSansuAnswer_(s) {
+    return String(s || "")
+      .replace(/[０-９]/g, function (ch) {
+        return String.fromCharCode(ch.charCodeAt(0) - 0xFEE0);
+      })
+      .replace(/\s+/g, "")
+      .replace(/アマリ/gi, "あまり")
+      .toLowerCase()
+      .trim();
+  }
+
+  function formatSansuRemainderAnswer_(quot, rem) {
+    return String(quot) + "あまり" + String(rem);
+  }
+
+  function riRange_(a, b) {
+    return a + ri(b - a + 1);
+  }
+
+  function makeSansuAddSub_(digits, mode) {
+    // mode: "none" | "must" | "random"
+    const isAdd = Math.random() < 0.5;
+    const max = digits === 3 ? 999 : 99;
+    const min = digits === 3 ? 100 : 10;
+    let a = 0, b = 0, tries = 0;
+    while (tries++ < 80) {
+      a = riRange_(min, max);
+      b = riRange_(min, max);
+      if (!isAdd && b > a) { const t = a; a = b; b = t; }
+      let hasCarry = false;
+      if (isAdd) {
+        let aa = a, bb = b, carry = 0;
+        while (aa > 0 || bb > 0) {
+          const s = (aa % 10) + (bb % 10) + carry;
+          if (s >= 10) { hasCarry = true; break; }
+          carry = 0;
+          aa = Math.floor(aa / 10);
+          bb = Math.floor(bb / 10);
+        }
+      } else {
+        let aa = a, bb = b;
+        while (aa > 0 || bb > 0) {
+          if ((aa % 10) < (bb % 10)) { hasCarry = true; break; }
+          aa = Math.floor(aa / 10);
+          bb = Math.floor(bb / 10);
+        }
+      }
+      if (mode === "none" && hasCarry) continue;
+      if (mode === "must" && !hasCarry) continue;
+      break;
+    }
+    const ans = isAdd ? (a + b) : (a - b);
+    return {
+      prompt: a + (isAdd ? " ＋ " : " − ") + b + " ＝ ?",
+      answer: String(ans),
+      needMemo: true,
+      allowRemainder: false
+    };
+  }
+
+  function makeSansuKuku_(lo, hi) {
+    const a = riRange_(lo, hi);
+    const b = riRange_(1, 9);
+    return {
+      prompt: a + " × " + b + " ＝ ?",
+      answer: String(a * b),
+      needMemo: false,
+      allowRemainder: false
+    };
+  }
+
+  function makeSansuDivExact_(lo, hi) {
+    const d = riRange_(lo, hi);
+    const q = riRange_(1, 9);
+    const dividend = d * q;
+    return {
+      prompt: dividend + " ÷ " + d + " ＝ ?",
+      answer: String(q),
+      needMemo: false,
+      allowRemainder: false
+    };
+  }
+
+  function makeSansuDivRemainder_(lo, hi) {
+    const d = riRange_(lo, hi);
+    const q = riRange_(1, 9);
+    const rem = riRange_(1, d - 1);
+    const dividend = d * q + rem;
+    return {
+      prompt: dividend + " ÷ " + d + " ＝ ?（あまりも答えてね）",
+      answer: formatSansuRemainderAnswer_(q, rem),
+      needMemo: false,
+      allowRemainder: true
+    };
+  }
+
+  function makeSansuByKind_(kind) {
+    const k = Math.max(1, Math.min(10, Math.round(Number(kind) || 1)));
+    if (k === 1) return makeSansuKuku_(2, 5);
+    if (k === 2) return makeSansuKuku_(6, 9);
+    if (k === 3) return makeSansuDivExact_(2, 5);
+    if (k === 4) return makeSansuDivExact_(6, 9);
+    if (k === 5) return makeSansuDivRemainder_(2, 5);
+    if (k === 6) return makeSansuDivRemainder_(6, 9);
+    if (k === 7) return makeSansuAddSub_(2, "none");
+    if (k === 8) return makeSansuAddSub_(2, "must");
+    if (k === 9) return makeSansuAddSub_(3, "random");
+    // 10: Lv9・6・4・2 から無作為
+    const pick = [9, 6, 4, 2][ri(4)];
+    const inner = makeSansuByKind_(pick);
+    inner.sourceKind = pick;
+    return inner;
+  }
+
+  function makeSansuQ_(spec, L) {
+    const lv = Math.max(1, Math.min(10, Math.round(Number(L) || 1)));
+    const kind = (spec && spec.sansuKind) || lv;
+    const built = makeSansuByKind_(kind);
+    if (!built) return null;
+    const uiKind = built.sourceKind || kind;
+    return {
+      type: "sansu",
+      L: lv,
+      fm: (spec && spec.label) || ("算数 Lv" + lv),
+      qFormat: "算数",
+      aFormat: "テンキー",
+      prompt: built.prompt,
+      hint: built.allowRemainder ? "例: 4あまり2" : "",
+      answer: built.answer,
+      validAnswers: [normalizeSansuAnswer_(built.answer)],
+      lang: "ja",
+      sansuAllowRemainder: !!built.allowRemainder,
+      sansuNeedMemo: !!(built.needMemo || (uiKind >= 7 && uiKind <= 9)),
+      sansuKind: uiKind,
+      sansuMode: SANSU_MODE_BY_LV[uiKind] || (spec && spec.sansuMode) || "算数"
+    };
+  }
 
   function getActiveQuizPreset_() {
     const id = (currentTower && currentTower.quizPreset) || "english_all";
@@ -1298,6 +1509,13 @@ function haptic(ms=15){
   function makeQ(L) {
     const lv = Math.max(1, Math.min(10, Math.round(Number(L) || 1)));
     const fixed = getPresetLevelSpec_(lv);
+    // 算数塔：単語プールを通さずアプリ内で生成
+    if (fixed && (fixed.format === "sansu" || isSansuTower_())) {
+      for (let attempt = 0; attempt < 8; attempt++) {
+        const qSansu = makeSansuQ_(fixed, lv);
+        if (qSansu) return qSansu;
+      }
+    }
     if (fixed) {
       for (let attempt = 0; attempt < 6; attempt++) {
         const qFixed = makeQFromSpec_(fixed, lv);
@@ -3361,6 +3579,27 @@ function ask(L, kind, done, name) {
       '<div id="sortPool" style="min-height:46px;border:1px solid var(--line);border-radius:8px;padding:6px;display:flex;flex-wrap:wrap;gap:6px;background:rgba(0,0,0,0.25);align-items:center;"></div>' +
       '<button type="button" id="sortSubmit" style="width:100%;margin-top:6px;background:#2ed573;color:#000;font-weight:bold;font-size:15px;padding:8px;border:none;border-radius:6px;cursor:pointer;display:none;box-shadow:0 2px 4px rgba(0,0,0,0.3);">これで回答する ▶</button>' +
       '</div>';
+  } else if (q.type === "sansu") {
+    h += '<div class="sansu-quiz">' +
+      '<div class="sansu-answer-display" id="sansuAnswerDisplay" aria-live="polite">（入力）</div>' +
+      (q.sansuNeedMemo
+        ? '<div class="sansu-memo-wrap">' +
+          '<div class="sansu-memo-head"><span>筆算メモ（答えは下のテンキーで）</span>' +
+          '<button type="button" id="sansuMemoClear" class="sansu-memo-clear">けす</button></div>' +
+          '<canvas id="sansuMemoCanvas" class="sansu-memo-canvas" width="320" height="160"></canvas>' +
+          '</div>'
+        : '') +
+      '<div class="sansu-tenkey" id="sansuTenkey" role="group" aria-label="テンキー">' +
+      '<button type="button" data-sk="7">7</button><button type="button" data-sk="8">8</button><button type="button" data-sk="9">9</button>' +
+      '<button type="button" data-sk="4">4</button><button type="button" data-sk="5">5</button><button type="button" data-sk="6">6</button>' +
+      '<button type="button" data-sk="1">1</button><button type="button" data-sk="2">2</button><button type="button" data-sk="3">3</button>' +
+      (q.sansuAllowRemainder
+        ? '<button type="button" data-sk="あまり" class="sansu-key-amari">あまり</button>'
+        : '<button type="button" data-sk="" class="sansu-key-spacer" disabled aria-hidden="true"></button>') +
+      '<button type="button" data-sk="0">0</button>' +
+      '<button type="button" data-sk="BS" class="sansu-key-bs">⌫</button>' +
+      '<button type="button" data-sk="OK" class="sansu-key-ok">こたえる</button>' +
+      '</div></div>';
   } else {
     // type
     h += '<form class="typed" id="qform"><input type="text" id="qin" ' + DUNGEON_TEXT_INPUT_ATTRS_ + ' placeholder="英語で入力..." aria-label="英語で入力"><button type="submit">こたえる</button></form>';
@@ -3512,6 +3751,120 @@ function ask(L, kind, done, name) {
     };
     choiceIndex = 0;
     updatePadFocus();
+  } else if (q.type === "sansu") {
+    if (window.AppKeyboard) {
+      AppKeyboard.hide();
+      AppKeyboard.resetTarget();
+    }
+    let sansuBuf = "";
+    const disp = targetBox.querySelector("#sansuAnswerDisplay");
+    const syncDisp = function () {
+      if (disp) disp.textContent = sansuBuf || "（入力）";
+    };
+    const submitSansu = function () {
+      const val = normalizeSansuAnswer_(sansuBuf);
+      const ok = q.validAnswers
+        ? q.validAnswers.some(function (a) { return normalizeSansuAnswer_(a) === val; })
+        : normalizeSansuAnswer_(q.answer) === val;
+      finish(ok, false, null);
+    };
+    const pressSansu = function (key) {
+      if (fin) return;
+      if (key === "OK") {
+        if (!sansuBuf) { se("disabled"); return; }
+        submitSansu();
+        return;
+      }
+      if (key === "BS") {
+        sansuBuf = sansuBuf.slice(0, -1);
+        syncDisp();
+        se("select");
+        return;
+      }
+      if (key === "あまり") {
+        if (!q.sansuAllowRemainder) { se("disabled"); return; }
+        if (sansuBuf.indexOf("あまり") >= 0) { se("disabled"); return; }
+        if (!sansuBuf) { se("disabled"); return; }
+        sansuBuf += "あまり";
+        syncDisp();
+        se("select");
+        return;
+      }
+      if (/^[0-9]$/.test(key)) {
+        if (sansuBuf.length >= 12) { se("disabled"); return; }
+        sansuBuf += key;
+        syncDisp();
+        se("select");
+      }
+    };
+    targetBox.querySelectorAll("#sansuTenkey button[data-sk]").forEach(function (btn) {
+      const k = btn.getAttribute("data-sk") || "";
+      if (!k) return;
+      btn.onclick = function () { pressSansu(k); };
+    });
+    quizKey = function (k) {
+      if (k === "Enter") return pressSansu("OK");
+      if (k === "Backspace") return pressSansu("BS");
+      if (/^[0-9]$/.test(k)) return pressSansu(k);
+    };
+    quizKey.handlesNav = true;
+    // 筆算メモ（採点しない）
+    if (q.sansuNeedMemo) {
+      const canvas = targetBox.querySelector("#sansuMemoCanvas");
+      const clearBtn = targetBox.querySelector("#sansuMemoClear");
+      if (canvas && canvas.getContext) {
+        const ctx = canvas.getContext("2d");
+        const fit = function () {
+          const rect = canvas.getBoundingClientRect();
+          const dpr = Math.min(2, window.devicePixelRatio || 1);
+          const w = Math.max(160, Math.floor(rect.width || 320));
+          const h = Math.max(120, Math.floor(rect.height || 160));
+          canvas.width = Math.floor(w * dpr);
+          canvas.height = Math.floor(h * dpr);
+          ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+          ctx.fillStyle = "#f7f4ea";
+          ctx.fillRect(0, 0, w, h);
+          ctx.strokeStyle = "#333";
+          ctx.lineWidth = 2.5;
+          ctx.lineCap = "round";
+          ctx.lineJoin = "round";
+        };
+        fit();
+        let drawing = false;
+        const pos = function (ev) {
+          const r = canvas.getBoundingClientRect();
+          return { x: (ev.clientX - r.left), y: (ev.clientY - r.top) };
+        };
+        canvas.addEventListener("pointerdown", function (ev) {
+          drawing = true;
+          try { canvas.setPointerCapture(ev.pointerId); } catch (_e) {}
+          const p = pos(ev);
+          ctx.beginPath();
+          ctx.moveTo(p.x, p.y);
+          ev.preventDefault();
+        });
+        canvas.addEventListener("pointermove", function (ev) {
+          if (!drawing) return;
+          const p = pos(ev);
+          ctx.lineTo(p.x, p.y);
+          ctx.stroke();
+          ev.preventDefault();
+        });
+        const endDraw = function (ev) {
+          if (!drawing) return;
+          drawing = false;
+          try { canvas.releasePointerCapture(ev.pointerId); } catch (_e) {}
+        };
+        canvas.addEventListener("pointerup", endDraw);
+        canvas.addEventListener("pointercancel", endDraw);
+        if (clearBtn) {
+          clearBtn.onclick = function () {
+            fit();
+            se("cancel");
+          };
+        }
+      }
+    }
   } else if (q.type === "sort") {
     if (window.AppKeyboard) {
       AppKeyboard.hide();
@@ -5130,8 +5483,14 @@ document.addEventListener("keydown",e=>{ if(!isDungeonActive()) return;
     return;
   }
 
-  // 1〜4キーでクイズ選択肢を即回答（既存互換）
-  if(quizKey && "1234".includes(e.key)){
+  // クイズ用キー（4択の数字／算数テンキー）
+  if (quizKey && /^[0-9]$/.test(e.key)) {
+    e.preventDefault();
+    quizKey(e.key);
+    return;
+  }
+  if (quizKey && quizKey.handlesNav && (e.key === "Enter" || e.key === "Backspace")) {
+    e.preventDefault();
     quizKey(e.key);
     return;
   }
@@ -6609,10 +6968,11 @@ function getDungeonDiffPracticeConfig_(lv, formatIdOpt) {
 function getTowerPracticeUnits_(tower, modeKind) {
   if (!tower) return [];
   if (modeKind === "expr") {
-    if (tower.vocabOnly === true || tower.quizPreset === "jiko_vocab" || tower.quizPreset === "romaji_hepburn") return [];
+    if (tower.vocabOnly === true || tower.quizPreset === "jiko_vocab" || tower.quizPreset === "romaji_hepburn" || tower.quizPreset === "sansu_arith") return [];
     if (Array.isArray(tower.exprUnits) && tower.exprUnits.length > 0) return tower.exprUnits.slice();
     return (ALL_EXPR_UNITS || []).slice();
   }
+  if (tower.quizPreset === "sansu_arith") return [];
   if (Array.isArray(tower.vocabUnits) && tower.vocabUnits.length > 0) return tower.vocabUnits.slice();
   return (ALL_VOCAB_UNITS || []).slice();
 }
@@ -6675,19 +7035,68 @@ function openRomajiTowerLevelReferencePanel_(towerId, difficulty) {
   try { host.scrollIntoView({ block: "nearest", behavior: "smooth" }); } catch (_) {}
 }
 
+function openSansuTowerLevelReferencePanel_(towerId, difficulty) {
+  const L = Math.max(1, Math.min(10, Math.round(Number(difficulty) || 1)));
+  loadTowers();
+  const tower = TOWERS.find(function (t) { return t.id === towerId; });
+  const card = document.querySelector('.dungeon-tower-card[data-tower-id="' + towerId + '"]');
+  const host = card && card.querySelector(".dungeon-practice-unit-host");
+  if (!host || !tower) return;
+
+  document.querySelectorAll(".dungeon-practice-unit-host").forEach(function (el) {
+    if (el !== host) {
+      el.style.display = "none";
+      el.innerHTML = "";
+    }
+  });
+
+  const label = SANSU_LEVEL_LABELS[L] || ("難易度" + L);
+  const modeName = SANSU_MODE_BY_LV[L] || "算数";
+  const timeSec = (DUNGEON_QUIZ_PRESETS.sansu_arith && DUNGEON_QUIZ_PRESETS.sansu_arith.levels[L]
+    && DUNGEON_QUIZ_PRESETS.sansu_arith.levels[L].timeSec) || 20;
+  const uiNote = (L === 5 || L === 6)
+    ? "テンキー＋「あまり」ボタンで回答（例: 4あまり2）"
+    : (L >= 7 && L <= 9)
+      ? "テンキーで回答。筆算メモ欄にスタイラスでメモ可（採点なし）"
+      : (L === 10)
+        ? "Lv9・6・4・2からランダム出題。UIは選ばれた種類に合わせる"
+        : "テンキーで数字を入力して回答";
+
+  host.style.display = "block";
+  host.innerHTML =
+    '<p class="dungeon-practice-unit-title">Lv' + L + "：" + escapeHtmlDungeon_(label) + "</p>" +
+    '<p class="dungeon-romaji-ref-desc">モード：' + escapeHtmlDungeon_(modeName) +
+    " ／ 制限時間 " + timeSec + " 秒<br>" + escapeHtmlDungeon_(uiNote) + "</p>" +
+    '<p style="font-size:12px;color:var(--muted);margin:8px 0 0;">問題は毎回アプリが自動で作ります。塔に入って挑戦してね。</p>' +
+    '<div class="dungeon-romaji-ref-actions">' +
+    '<button type="button" class="dungeon-btn" data-cancel="1">とじる</button>' +
+    "</div>";
+  const closeBtn = host.querySelector("[data-cancel]");
+  if (closeBtn) {
+    closeBtn.onclick = function () {
+      host.style.display = "none";
+      host.innerHTML = "";
+    };
+  }
+  try { host.scrollIntoView({ block: "nearest", behavior: "smooth" }); } catch (_) {}
+}
+
 function renderTowerPracticeDiffButtons_(towerId) {
   const tower = TOWERS.find(function (t) { return t.id === towerId; });
   const prevTower = currentTower;
   if (tower) currentTower = tower;
   const preset = getActiveQuizPreset_();
   const isRomajiTower = !!(tower && tower.quizPreset === "romaji_hepburn");
+  const isSansuTower = !!(tower && tower.quizPreset === "sansu_arith");
   let h = '<div class="dungeon-practice-diffs">';
   if (preset && preset.mode === "fixed" && preset.levels) {
     for (let n = 1; n <= 10; n++) {
       const lv = preset.levels[n];
       const short = isRomajiTower
         ? "一覧"
-        : (lv ? String(lv.label || "").replace(/^単語\s*/, "").slice(0, 10) : ("Lv" + n));
+        : (isSansuTower
+          ? String(SANSU_MODE_BY_LV[n] || "算数")
+          : (lv ? String(lv.label || "").replace(/^単語\s*/, "").slice(0, 10) : ("Lv" + n)));
       h += '<button type="button" class="dungeon-practice-diff-btn" title="' + escapeHtmlDungeon_(lv ? lv.label : ("難易度" + n)) + '" ' +
         'onclick="startDungeonDiffPractice(\'' + towerId + '\',' + n + ')">' +
         '<span class="dp-lv">Lv' + n + '</span><span class="dp-kind">' + escapeHtmlDungeon_(short) + '</span></button>';
@@ -6715,6 +7124,10 @@ function startDungeonDiffPractice(towerId, difficulty, formatCatalogIndex) {
   }
   if (tower.quizPreset === "romaji_hepburn") {
     openRomajiTowerLevelReferencePanel_(towerId, difficulty);
+    return;
+  }
+  if (tower.quizPreset === "sansu_arith") {
+    openSansuTowerLevelReferencePanel_(towerId, difficulty);
     return;
   }
   const prevTower = currentTower;
@@ -6908,10 +7321,17 @@ function renderTowerCards() {
         </div>
         <div class="dungeon-rank-host" data-rank-for="${tower.id}">${renderRankingHtml_(localRank)}</div>
         <div class="dungeon-practice-box">
-          <div class="dungeon-practice-title">📚 難易度別${tower.quizPreset === "romaji_hepburn" ? "確認・練習" : "練習（通常の学習モード）"}</div>
-          <p class="dungeon-practice-hint">${tower.quizPreset === "romaji_hepburn"
-            ? "Lvを押すと、その難易度のひらがなとヘボン式ローマ字の一覧を確認できます（学習モードへも進めます）"
-            : "迷宮と同じ形式で、設定画面からスタートできます"}</p>
+          <div class="dungeon-practice-title">📚 難易度別${
+            tower.quizPreset === "romaji_hepburn" ? "確認・練習"
+              : (tower.quizPreset === "sansu_arith" ? "確認" : "練習（通常の学習モード）")
+          }</div>
+          <p class="dungeon-practice-hint">${
+            tower.quizPreset === "romaji_hepburn"
+              ? "Lvを押すと、その難易度のひらがなとヘボン式ローマ字の一覧を確認できます（学習モードへも進めます）"
+              : (tower.quizPreset === "sansu_arith"
+                ? "Lvを押すと、その難易度の出題内容と制限時間を確認できます（問題は塔の中で毎回自動生成）"
+                : "迷宮と同じ形式で、設定画面からスタートできます")
+          }</p>
           ${renderTowerPracticeDiffButtons_(tower.id)}
           <div class="dungeon-practice-unit-host" style="display:none;"></div>
         </div>
@@ -7029,12 +7449,14 @@ function renderAdminTowerList() {
 
   container.innerHTML = TOWERS.map(tower => {
     const vCount = tower.vocabUnits && tower.vocabUnits.length > 0 ? tower.vocabUnits.length + ' 単元' : '全単語（' + ALL_VOCAB_UNITS.length + ' 単元）';
-    const vocabOnly = tower.vocabOnly === true || tower.quizPreset === "jiko_vocab" || tower.quizPreset === "romaji_hepburn";
+    const vocabOnly = tower.vocabOnly === true || tower.quizPreset === "jiko_vocab" || tower.quizPreset === "romaji_hepburn" || tower.quizPreset === "sansu_arith";
+    const isSansu = tower.quizPreset === "sansu_arith";
     const eCount = vocabOnly
-      ? 'なし（単語のみ）'
+      ? (isSansu ? 'なし（算数）' : 'なし（単語のみ）')
       : (tower.exprUnits && tower.exprUnits.length > 0 ? tower.exprUnits.length + ' 単元' : '全表現（' + ALL_EXPR_UNITS.length + ' 単元）');
     const presetMeta = DUNGEON_QUIZ_PRESETS[tower.quizPreset] || DUNGEON_QUIZ_PRESETS.english_all;
     const presetLabel = presetMeta && presetMeta.name ? presetMeta.name : "英語全形式ミックス";
+    const vLabel = isSansu ? 'アプリ内生成' : vCount;
 
     return `
       <div style="background:#1b1a2a;border:1px solid #37344f;border-radius:6px;padding:12px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
@@ -7045,7 +7467,7 @@ function renderAdminTowerList() {
             <span>最大: ${tower.maxFloor || 100}階</span>
             <span>制限時間: ${Math.round((tower.timeMultiplier || 1.0) * 100)}%</span>
             <span>プリセット: ${presetLabel}</span>
-            <span>単語: ${vCount}</span>
+            <span>単語: ${vLabel}</span>
             <span>表現: ${eCount}</span>
           </div>
         </div>
@@ -7087,7 +7509,7 @@ function openTowerEditModal(towerId) {
   }
   const vocabOnlyCb = document.getElementById("tower-edit-vocab-only");
   if (vocabOnlyCb) {
-    vocabOnlyCb.checked = tower.vocabOnly === true || tower.quizPreset === "jiko_vocab" || tower.quizPreset === "romaji_hepburn";
+    vocabOnlyCb.checked = tower.vocabOnly === true || tower.quizPreset === "jiko_vocab" || tower.quizPreset === "romaji_hepburn" || tower.quizPreset === "sansu_arith";
   }
 
   // 単元チェックボックス群の生成
@@ -7100,7 +7522,7 @@ function openTowerEditModal(towerId) {
   }
 
   const eContainer = document.getElementById("tower-edit-expr-units");
-  const vocabOnly = tower.vocabOnly === true || tower.quizPreset === "jiko_vocab" || tower.quizPreset === "romaji_hepburn";
+  const vocabOnly = tower.vocabOnly === true || tower.quizPreset === "jiko_vocab" || tower.quizPreset === "romaji_hepburn" || tower.quizPreset === "sansu_arith";
   if (eContainer) {
     eContainer.innerHTML = ALL_EXPR_UNITS.map(u => {
       // 単語のみ塔は表現を未選択。それ以外で空配列は「全単元」互換
@@ -7115,7 +7537,7 @@ function openTowerEditModal(towerId) {
     presetSel.__dungeonBound = true;
     presetSel.addEventListener("change", function () {
       const cb = document.getElementById("tower-edit-vocab-only");
-      if ((presetSel.value === "jiko_vocab" || presetSel.value === "romaji_hepburn") && cb) {
+      if ((presetSel.value === "jiko_vocab" || presetSel.value === "romaji_hepburn" || presetSel.value === "sansu_arith") && cb) {
         cb.checked = true;
         toggleAllUnits("expr", false);
       }
@@ -7154,10 +7576,10 @@ if (towerForm) {
     const vocabOnlyEl = document.getElementById("tower-edit-vocab-only");
     let quizPreset = (presetEl && presetEl.value) || "english_all";
     if (!DUNGEON_QUIZ_PRESETS[quizPreset]) quizPreset = "english_all";
-    // 表現を1つも選ばない／チェックON／jiko_vocab・romaji_hepburn → 単語のみ塔
+    // 表現を1つも選ばない／チェックON／固定プリセット → 単語のみ塔
     let vocabOnly = !!(vocabOnlyEl && vocabOnlyEl.checked) || eSelected.length === 0 ||
-      quizPreset === "jiko_vocab" || quizPreset === "romaji_hepburn";
-    if (quizPreset === "jiko_vocab" || quizPreset === "romaji_hepburn") vocabOnly = true;
+      quizPreset === "jiko_vocab" || quizPreset === "romaji_hepburn" || quizPreset === "sansu_arith";
+    if (quizPreset === "jiko_vocab" || quizPreset === "romaji_hepburn" || quizPreset === "sansu_arith") vocabOnly = true;
 
     const existingIdx = TOWERS.findIndex(t => t.id === id);
     const prev = existingIdx >= 0 ? TOWERS[existingIdx] : null;
@@ -7182,6 +7604,13 @@ if (towerForm) {
       newTower.vocabUnits = ROMAJI_VOCAB_UNIT_NAMES.slice();
       newTower.exprUnits = [];
     }
+    if (prev && prev.id === "tower_sansu") {
+      newTower.quizPreset = "sansu_arith";
+      newTower.vocabOnly = true;
+      newTower.vocabUnits = [];
+      newTower.exprUnits = [];
+      newTower.name = "算数の塔";
+    }
 
     if (existingIdx >= 0) {
       TOWERS[existingIdx] = newTower;
@@ -7200,6 +7629,10 @@ if (towerForm) {
 function deleteTower(towerId) {
   if (TOWERS.length <= 1) {
     alert("塔は最低1つ必要です。");
+    return;
+  }
+  if (towerId === "tower_romaji" || towerId === "tower_sansu" || towerId === "tower_self_intro" || towerId === "tower_starter" || towerId === "tower_hundred") {
+    alert("アプリ組み込みの塔は削除できません。");
     return;
   }
   if (!confirm("この塔を削除しますか？")) return;

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>学習アプリ</title>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DotGothic16&family=Zen+Kaku+Gothic+New:wght@400;600;700&display=swap">
-  <link rel="stylesheet" href="css/app.css?v=20261018-dungeon-practice">
+  <link rel="stylesheet" href="css/app.css?v=20261103-sansu-tower">
 </head>
 <body>
 <div id="global-header">👤 <span id="header-user-info"></span></div>
@@ -378,10 +378,12 @@
   </div>
   
   <div id="section-external" class="section">
+    <button type="button" class="cancel-btn" style="display:block;margin:0 auto 8px;" onclick="showHome(JSON.parse(localStorage.getItem('app_kid_user')))">◀ もどる</button>
     <h1>📚 アプリ以外の勉強</h1>
     <p style="max-width:400px;margin:0 auto 12px;line-height:1.5;">やったことを<strong>申請</strong>しよう。<br>おうちの人が<strong>管理者PIN</strong>で承認すると、ポイントが付きます。</p>
     <div id="external-container" style="display: flex; flex-direction: column; gap: 15px; max-width: 400px; margin: 0 auto;"></div>
-    <div id="external-my-requests" style="max-width:400px;margin:20px auto 0;text-align:left;font-size:14px;color:#ccc;"></div>
+    <button type="button" id="external-requests-toggle" class="menu-btn btn-gray" aria-expanded="false" aria-controls="external-my-requests" style="display:block;margin:18px auto 0;" onclick="toggleExternalRequestsHistory()">申請履歴を表示</button>
+    <div id="external-my-requests" style="display:none;max-width:400px;margin:10px auto 0;text-align:left;font-size:14px;color:#ccc;"></div>
     <div id="external-stopwatch" style="margin: 18px auto 0; max-width: 360px; background:#1f1f1f; border:1px solid #333; border-radius:12px; padding:14px;">
       <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
         <div style="font-weight:bold; color:#ccc;">⏱️ ストップウォッチ</div>
@@ -1280,6 +1282,7 @@
                   <option value="english_all">英語全形式ミックス</option>
                   <option value="jiko_vocab">自己紹介単語（穴埋め段階・単語のみ）</option>
                   <option value="romaji_hepburn">厳格ヘボン式ローマ字（かな→ローマ字・単語のみ）</option>
+                  <option value="sansu_arith">算数（九九・四則・テンキー・単語のみ）</option>
                 </select>
               </div>
               <label style="font-size:13px;display:flex;align-items:center;gap:6px;cursor:pointer;padding-bottom:6px;">
@@ -1288,7 +1291,7 @@
               </label>
             </div>
             <p style="margin:0;font-size:12px;color:var(--muted);line-height:1.45;">
-              「自己紹介単語」プリセットは難易度1〜10が四択→穴埋め字数→タイピングの固定表になります。「厳格ヘボン式ローマ字」は難易度1〜10がかな→ローマ字タイピングの固定表です。表現のチェックをすべて外すか「単語セットのみ」にチェックすると、単語だけの塔になります。
+              「自己紹介単語」プリセットは難易度1〜10が四択→穴埋め字数→タイピングの固定表になります。「厳格ヘボン式ローマ字」は難易度1〜10がかな→ローマ字タイピングの固定表です。「算数」は九九・割り算・加減算をアプリが毎回自動生成します。表現のチェックをすべて外すか「単語セットのみ」にチェックすると、単語だけの塔になります。
             </p>
 
             <!-- 単元チェックボックス群 -->
@@ -1408,10 +1411,10 @@
   <script src="js/lib/piper.bundle.js?v=20261014-piper-fix-v8"></script>
   <script src="js/adapters/piperTtsStore.js?v=20261014-piper-fix-v8"></script>
   <script src="js/modules/stopwatch.js?v=20261012-standalone-v1"></script>
-  <script src="js/modules/externalLearning.js?v=20261022-ext-fast"></script>
+  <script src="js/modules/externalLearning.js?v=20261103-ext-history-toggle"></script>
   <script src="js/modules/parentAdmin.js?v=20261028-reward-hist"></script>
   <script src="js/modules/authPin.js?v=20261017-inv-login"></script>
-  <script src="js/modules/dungeonGame.js?v=20261102-bgm-gesture"></script>
+  <script src="js/modules/dungeonGame.js?v=20261103-sansu-tower"></script>
   <script src="js/modules/enterSubmitShortcut.js?v=20261102-enter-submit"></script>
   <script src="js/app.js?v=20261028-so-tts-yomi"></script>
 </body>

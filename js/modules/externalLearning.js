@@ -6,6 +6,8 @@
   'use strict';
 
   let externalMenus = [];
+  /** 申請履歴は長いので、開いているあいだだけ表示する */
+  let externalHistoryOpen_ = false;
 
   function saveKidUser(user) {
     if (typeof global.saveAppKidUserToLocal === 'function') {
@@ -53,8 +55,13 @@
     const origText = callToggleBtnLoading(btn, true);
     const contEl = document.getElementById('external-container');
     const myReqEl = document.getElementById('external-my-requests');
+    externalHistoryOpen_ = false;
     if (contEl) contEl.innerHTML = "<p>さがしています...</p>";
-    if (myReqEl) myReqEl.innerHTML = "";
+    if (myReqEl) {
+      myReqEl.innerHTML = "";
+      myReqEl.dataset.count = "0";
+    }
+    applyExternalHistoryVisibility_();
 
     const onMenusLoaded = function (menus) {
       callToggleBtnLoading(btn, false, origText);
@@ -160,6 +167,23 @@
     return { category: cat, volume: vol, points };
   }
 
+  function applyExternalHistoryVisibility_() {
+    const box = document.getElementById('external-my-requests');
+    const btn = document.getElementById('external-requests-toggle');
+    if (box) box.style.display = externalHistoryOpen_ ? 'block' : 'none';
+    if (btn) {
+      const n = box ? Number(box.dataset.count || 0) : 0;
+      const countLabel = n > 0 ? '（' + n + '件）' : '';
+      btn.textContent = (externalHistoryOpen_ ? '申請履歴を隠す' : '申請履歴を表示') + countLabel;
+      btn.setAttribute('aria-expanded', externalHistoryOpen_ ? 'true' : 'false');
+    }
+  }
+
+  function toggleExternalRequestsHistory() {
+    externalHistoryOpen_ = !externalHistoryOpen_;
+    applyExternalHistoryVisibility_();
+  }
+
   function refreshMyExternalRequests() {
     let user = null;
     try { user = JSON.parse(localStorage.getItem('app_kid_user')); } catch (_) {}
@@ -168,25 +192,31 @@
     if (!box) return;
 
     const renderList = function (list) {
-      if (!list || list.length === 0) {
+      const rows = list || [];
+      box.dataset.count = String(rows.length);
+      if (rows.length === 0) {
         box.innerHTML = "<p style='color:#888;'>※まだ申請履歴はありません。</p>";
+        applyExternalHistoryVisibility_();
         return;
       }
       const label = { "申請中": "⏳ 申請中", "pending": "⏳ 申請中", "承認済み": "✅ 承認済み", "approved": "✅ 承認済み", "却下": "❌ 却下", "rejected": "❌ 却下" };
       let html = "<strong style='color:#fff;'>あなたの申請</strong><ul style='margin:8px 0 0;padding-left:18px;'>";
-      list.forEach(r => {
+      rows.forEach(r => {
         const st = label[r.status] || r.status;
         const memoHtml = r.childMemo ? `<br><span style='font-size:12px;color:#ddd;'>メモ: ${r.childMemo}</span>` : "";
         html += `<li style='margin-bottom:8px;'>${r.category} / ${r.volume}（+${r.points} Pt）<br><span style='font-size:12px;color:#aaa;'>${r.requestedAt} — ${st}</span>${memoHtml}</li>`;
       });
       html += "</ul>";
       box.innerHTML = html;
+      applyExternalHistoryVisibility_();
     };
 
     if (global.externalStore && typeof global.externalStore.subscribeMyRequests === 'function') {
       global.externalStore.subscribeMyRequests(user.id, renderList);
     } else {
+      box.dataset.count = "0";
       box.innerHTML = "<p style='color:#888;'>※まだ申請履歴はありません。</p>";
+      applyExternalHistoryVisibility_();
     }
   }
 
@@ -444,6 +474,7 @@
   global.updateExternalVolumeOptions = updateExternalVolumeOptions;
   global.getSelectedExternalMenu = getSelectedExternalMenu;
   global.refreshMyExternalRequests = refreshMyExternalRequests;
+  global.toggleExternalRequestsHistory = toggleExternalRequestsHistory;
   global.submitExternalLearningRequestSelected = submitExternalLearningRequestSelected;
   global.loadExternalAdminPending = loadExternalAdminPending;
   global.renderExternalAdminList = renderExternalAdminList;

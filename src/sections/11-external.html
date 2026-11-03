@@ -1,8 +1,10 @@
   <div id="section-external" class="section">
+    <button type="button" class="cancel-btn" style="display:block;margin:0 auto 8px;" onclick="showHome(JSON.parse(localStorage.getItem('app_kid_user')))">◀ もどる</button>
     <h1>📚 アプリ以外の勉強</h1>
     <p style="max-width:400px;margin:0 auto 12px;line-height:1.5;">やったことを<strong>申請</strong>しよう。<br>おうちの人が<strong>管理者PIN</strong>で承認すると、ポイントが付きます。</p>
     <div id="external-container" style="display: flex; flex-direction: column; gap: 15px; max-width: 400px; margin: 0 auto;"></div>
-    <div id="external-my-requests" style="max-width:400px;margin:20px auto 0;text-align:left;font-size:14px;color:#ccc;"></div>
+    <button type="button" id="external-requests-toggle" class="menu-btn btn-gray" aria-expanded="false" aria-controls="external-my-requests" style="display:block;margin:18px auto 0;" onclick="toggleExternalRequestsHistory()">申請履歴を表示</button>
+    <div id="external-my-requests" style="display:none;max-width:400px;margin:10px auto 0;text-align:left;font-size:14px;color:#ccc;"></div>
     <div id="external-stopwatch" style="margin: 18px auto 0; max-width: 360px; background:#1f1f1f; border:1px solid #333; border-radius:12px; padding:14px;">
       <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
         <div style="font-weight:bold; color:#ccc;">⏱️ ストップウォッチ</div>
