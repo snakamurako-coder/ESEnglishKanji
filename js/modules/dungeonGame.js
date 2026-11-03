@@ -916,8 +916,67 @@ function haptic(ms=15){
       prompt: a + (isAdd ? " ＋ " : " − ") + b + " ＝ ?",
       answer: String(ans),
       needMemo: true,
-      allowRemainder: false
+      allowRemainder: false,
+      hissan: { a: a, b: b, op: isAdd ? "+" : "-" }
     };
+  }
+
+  /** ちびむすドリル風の筆算枠をキャンバスに事前描画（答え欄は空・書き込み用） */
+  function drawSansuHissanTemplate_(ctx, w, h, hissan) {
+    if (!ctx || !hissan) return;
+    const aStr = String(hissan.a == null ? "" : hissan.a);
+    const bStr = String(hissan.b == null ? "" : hissan.b);
+    if (!aStr || !bStr) return;
+    const op = hissan.op === "-" ? "−" : "＋";
+    const cols = Math.max(aStr.length, bStr.length);
+    const cell = Math.max(28, Math.min(42, Math.floor((w - 72) / Math.max(3, cols + 0.5))));
+    const blockW = cols * cell;
+    const rightX = Math.min(w - 28, Math.floor(w * 0.72) + blockW / 2);
+    const topY = Math.max(34, Math.floor(h * 0.22));
+    const midY = topY + cell + 6;
+    const lineY = midY + Math.floor(cell * 0.55);
+    const fontPx = Math.floor(cell * 0.82);
+
+    ctx.save();
+    ctx.fillStyle = "#1a1a1a";
+    ctx.strokeStyle = "#222";
+    ctx.lineWidth = Math.max(2, Math.floor(cell * 0.08));
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.font = "bold " + fontPx + "px 'Zen Kaku Gothic New', 'Hiragino Sans', sans-serif";
+
+    for (let i = 0; i < cols; i++) {
+      const x = rightX - i * cell;
+      const ai = aStr.length - 1 - i;
+      const bi = bStr.length - 1 - i;
+      if (ai >= 0) ctx.fillText(aStr.charAt(ai), x, topY);
+      if (bi >= 0) ctx.fillText(bStr.charAt(bi), x, midY);
+    }
+
+    // 演算子は下段の左外側（プリントと同じ位置）
+    const opX = rightX - cols * cell + cell * 0.15;
+    ctx.textAlign = "right";
+    ctx.fillText(op, opX, midY);
+
+    // 答えを書くための横線（その下は空欄）
+    const lineLeft = Math.max(16, opX - cell * 0.9);
+    const lineRight = rightX + cell * 0.45;
+    ctx.beginPath();
+    ctx.moveTo(lineLeft, lineY);
+    ctx.lineTo(lineRight, lineY);
+    ctx.stroke();
+
+    // 桁の薄いガイド（書きやすいように）
+    ctx.strokeStyle = "rgba(0,0,0,0.08)";
+    ctx.lineWidth = 1;
+    for (let i = 0; i < cols; i++) {
+      const x = rightX - i * cell;
+      ctx.beginPath();
+      ctx.moveTo(x + cell * 0.45, lineY + 4);
+      ctx.lineTo(x + cell * 0.45, Math.min(h - 10, lineY + cell * 1.35));
+      ctx.stroke();
+    }
+    ctx.restore();
   }
 
   function makeSansuKuku_(lo, hi) {
@@ -994,7 +1053,8 @@ function haptic(ms=15){
       sansuAllowRemainder: !!built.allowRemainder,
       sansuNeedMemo: !!(built.needMemo || (uiKind >= 7 && uiKind <= 9)),
       sansuKind: uiKind,
-      sansuMode: SANSU_MODE_BY_LV[uiKind] || (spec && spec.sansuMode) || "算数"
+      sansuMode: SANSU_MODE_BY_LV[uiKind] || (spec && spec.sansuMode) || "算数",
+      sansuHissan: built.hissan || null
     };
   }
 
@@ -2338,25 +2398,40 @@ function ensureAutosaveHeartbeat_() {
   }, 8000);
 }
 
-/** タブ閉じ・非表示・フリーズ直前の保険セーブ */
+/** タブ閉じ・非表示・フリーズ直前の保険セーブ＋BGM停止 */
 function bindDungeonEmergencySaveOnce_() {
   if (typeof window === "undefined" || window.__dungeonEmergencySaveBound) return;
   window.__dungeonEmergencySaveBound = true;
-  const flush = function () {
+  const flushSave = function () {
     try {
       if (!S || S.practice) return;
       if (S.screen !== "explore" && S.screen !== "battle") return;
       autosave();
     } catch (_) {}
   };
-  window.addEventListener("pagehide", flush);
-  window.addEventListener("beforeunload", flush);
+  const stopAudioOnLeave = function () {
+    try { stopAllBgm_(); } catch (_) {}
+  };
+  // タブ閉じ／タスクキル／バックグラウンド化：BGMを残さない
+  window.addEventListener("pagehide", function () {
+    flushSave();
+    stopAudioOnLeave();
+  });
+  window.addEventListener("beforeunload", function () {
+    flushSave();
+    stopAudioOnLeave();
+  });
   document.addEventListener("visibilitychange", function () {
-    if (document.visibilityState === "hidden") flush();
-    else if (document.visibilityState === "visible") {
+    if (document.visibilityState === "hidden") {
+      flushSave();
+      stopAudioOnLeave();
+    } else if (document.visibilityState === "visible") {
+      // 本編（探索／戦闘）に戻ったときだけ再開。塔選択や他画面では鳴らさない
       try { ensureBgmPlaying_(); } catch (_) {}
     }
   });
+  // iOS / PWA 向け（バックグラウンド凍結）
+  window.addEventListener("freeze", stopAudioOnLeave);
 }
 
 /* ==========================================================================
@@ -2420,6 +2495,8 @@ let seVol=0.7, bgmVol=0.35;
 let bgmCur=0;
 /** ブラウザが play() を拒否したまま無音で固まらないよう、次の操作で必ず再試行する */
 let bgmPlayBlocked_ = false;
+/** stopAllBgm_ 中の pause イベントで自動再開しないためのガード */
+let bgmStopping_ = false;
 
 try{
   const v=JSON.parse(localStorage.getItem("tango-meikyu-se")||"null");
@@ -2443,22 +2520,28 @@ function bgmWant(){
   return 0;
 }
 
-/** すべてのBGMを即停止（ラン終了・塔選択・ホーム復帰時） */
+/** すべてのBGMを即停止（ラン終了・塔選択・ホーム復帰・タブ閉じ時） */
 function stopAllBgm_(){
+  bgmStopping_ = true;
+  bgmCur = 0;
   try{
     Object.keys(BGM).forEach(function(k){
       const a = BGM[k];
       if(!a) return;
-      try{ a.pause(); a.currentTime = 0; }catch(e){}
+      try{
+        a.pause();
+        a.currentTime = 0;
+      }catch(e){}
     });
   }catch(e){}
-  bgmCur = 0;
   bgmPlayBlocked_ = false;
+  // pause リスナーの setTimeout(120) より後まで再開禁止を維持
+  setTimeout(function () { bgmStopping_ = false; }, 400);
 }
 
 /** play() の成否を追跡。拒否されたら次のユーザー操作で必ずやり直す */
 function playBgmEl_(aud) {
-  if (!aud) return;
+  if (!aud || bgmStopping_) return;
   try {
     aud.muted = false;
     aud.volume = bgmVol;
@@ -2482,7 +2565,11 @@ function playBgmEl_(aud) {
  * （操作のたびに巻き戻さない）
  */
 function ensureBgmPlaying_(){
+  if (bgmStopping_) return;
   if (!bgmOn) return;
+  // 塔選択・ホームなど本編外では絶対に鳴らさない
+  if (!isDungeonActive()) return;
+  if (!S || (S.screen !== "explore" && S.screen !== "battle")) return;
   const want = bgmWant();
   if (!want) return;
   const a = BGM[want];
@@ -2508,7 +2595,10 @@ function ensureBgmPlaying_(){
  * 次の操作・ロード完了で ensureBgmPlaying_ / bgmUpdate が再試行できるようにする。
  */
 function forceBgmRestart_(){
+  if (bgmStopping_) return;
   if (!bgmOn) return;
+  if (!isDungeonActive()) return;
+  if (!S || (S.screen !== "explore" && S.screen !== "battle")) return;
   const want = bgmWant();
   if (!want) {
     stopAllBgm_();
@@ -2553,13 +2643,18 @@ function setupBgmElement(aud, id){
     });
     // ブラウザが裏で pause した場合の復帰フック（探索中の無音化対策）
     aud.addEventListener("pause", function () {
+      if (bgmStopping_) return;
       if (!bgmOn || bgmCur !== id) return;
       if (!isDungeonActive()) return;
+      if (!S || (S.screen !== "explore" && S.screen !== "battle")) return;
       const want = bgmWant();
       if (want !== id) return;
       // 意図的な切替直後の pause を避けるため短遅延
       setTimeout(function () {
+        if (bgmStopping_) return;
         if (!bgmOn || bgmCur !== id) return;
+        if (!isDungeonActive()) return;
+        if (!S || (S.screen !== "explore" && S.screen !== "battle")) return;
         if (bgmWant() !== id) return;
         if (!aud.paused) return;
         playBgmEl_(aud);
@@ -2569,11 +2664,16 @@ function setupBgmElement(aud, id){
 }
 
 function bgmUpdate(){
+  if (bgmStopping_) return;
   if(!bgmOn){
     if(bgmCur && BGM[bgmCur]){
       try { BGM[bgmCur].pause(); } catch(e){}
     }
     bgmCur = 0;
+    return;
+  }
+  if (!isDungeonActive() || !S || (S.screen !== "explore" && S.screen !== "battle")) {
+    // 本編外への描画更新では再生を起こさない（停止は呼び出し側の stopAllBgm_）
     return;
   }
 
@@ -3584,9 +3684,9 @@ function ask(L, kind, done, name) {
       '<div class="sansu-answer-display" id="sansuAnswerDisplay" aria-live="polite">（入力）</div>' +
       (q.sansuNeedMemo
         ? '<div class="sansu-memo-wrap">' +
-          '<div class="sansu-memo-head"><span>筆算メモ（答えは下のテンキーで）</span>' +
-          '<button type="button" id="sansuMemoClear" class="sansu-memo-clear">けす</button></div>' +
-          '<canvas id="sansuMemoCanvas" class="sansu-memo-canvas" width="320" height="160"></canvas>' +
+          '<div class="sansu-memo-head"><span>筆算メモ（問題は印刷済み・答えはテンキー）</span>' +
+          '<button type="button" id="sansuMemoClear" class="sansu-memo-clear">かきけす</button></div>' +
+          '<canvas id="sansuMemoCanvas" class="sansu-memo-canvas" width="320" height="200"></canvas>' +
           '</div>'
         : '') +
       '<div class="sansu-tenkey" id="sansuTenkey" role="group" aria-label="テンキー">' +
@@ -3814,22 +3914,24 @@ function ask(L, kind, done, name) {
       const clearBtn = targetBox.querySelector("#sansuMemoClear");
       if (canvas && canvas.getContext) {
         const ctx = canvas.getContext("2d");
-        const fit = function () {
+        const paintBase = function () {
           const rect = canvas.getBoundingClientRect();
           const dpr = Math.min(2, window.devicePixelRatio || 1);
-          const w = Math.max(160, Math.floor(rect.width || 320));
-          const h = Math.max(120, Math.floor(rect.height || 160));
+          const w = Math.max(200, Math.floor(rect.width || 320));
+          const h = Math.max(180, Math.floor(rect.height || 200));
           canvas.width = Math.floor(w * dpr);
           canvas.height = Math.floor(h * dpr);
           ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
           ctx.fillStyle = "#f7f4ea";
           ctx.fillRect(0, 0, w, h);
-          ctx.strokeStyle = "#333";
-          ctx.lineWidth = 2.5;
+          // PDFサンプル同様、筆算の形であらかじめ問題を記す
+          try { drawSansuHissanTemplate_(ctx, w, h, q.sansuHissan); } catch (_d) {}
+          ctx.strokeStyle = "#1e88e5";
+          ctx.lineWidth = 2.6;
           ctx.lineCap = "round";
           ctx.lineJoin = "round";
         };
-        fit();
+        paintBase();
         let drawing = false;
         const pos = function (ev) {
           const r = canvas.getBoundingClientRect();
@@ -3859,7 +3961,7 @@ function ask(L, kind, done, name) {
         canvas.addEventListener("pointercancel", endDraw);
         if (clearBtn) {
           clearBtn.onclick = function () {
-            fit();
+            paintBase();
             se("cancel");
           };
         }
@@ -7355,11 +7457,15 @@ function renderTowerCards() {
 function exitDungeonToHome() {
   document.body.classList.remove('in-dungeon-game');
   if (window.AppKeyboard) AppKeyboard.hide();
+  // 先にセーブ条件を満たす画面のまま止音（pause 再開ガード付き）
   stopAllBgm_();
   const goHome = function () {
     try {
       if (S && (S.screen === "explore" || S.screen === "battle") && !S.practice) autosave();
     } catch (_) {}
+    try {
+      if (S) S.screen = "title";
+    } catch (_s2) {}
     stopAllBgm_();
     const user = JSON.parse(localStorage.getItem('app_kid_user') || 'null');
     if (typeof showHome === "function") {
