@@ -921,29 +921,47 @@ function haptic(ms=15){
     };
   }
 
-  /** ちびむすドリル風の筆算枠をキャンバスに事前描画（答え欄は空・書き込み用） */
+  /** 出題オブジェクトまたは prompt から筆算用の数を解決 */
+  function resolveSansuHissan_(q) {
+    if (q && q.sansuHissan && q.sansuHissan.a != null && q.sansuHissan.b != null) {
+      return {
+        a: q.sansuHissan.a,
+        b: q.sansuHissan.b,
+        op: q.sansuHissan.op === "-" || q.sansuHissan.op === "−" ? "-" : "+"
+      };
+    }
+    const p = String((q && q.prompt) || "");
+    let m = p.match(/(\d+)\s*[＋+]\s*(\d+)/);
+    if (m) return { a: Number(m[1]), b: Number(m[2]), op: "+" };
+    m = p.match(/(\d+)\s*[−\-－]\s*(\d+)/);
+    if (m) return { a: Number(m[1]), b: Number(m[2]), op: "-" };
+    return null;
+  }
+
+  /** ちびむすドリル風の筆算枠を「印刷レイヤー」に事前描画（答え欄は空） */
   function drawSansuHissanTemplate_(ctx, w, h, hissan) {
-    if (!ctx || !hissan) return;
+    if (!ctx || !hissan) return false;
     const aStr = String(hissan.a == null ? "" : hissan.a);
     const bStr = String(hissan.b == null ? "" : hissan.b);
-    if (!aStr || !bStr) return;
-    const op = hissan.op === "-" ? "−" : "＋";
+    if (!aStr || !bStr) return false;
+    const op = hissan.op === "-" || hissan.op === "−" ? "−" : "＋";
     const cols = Math.max(aStr.length, bStr.length);
-    const cell = Math.max(28, Math.min(42, Math.floor((w - 72) / Math.max(3, cols + 0.5))));
+    const cell = Math.max(30, Math.min(46, Math.floor((w - 56) / Math.max(3, cols + 1.2))));
     const blockW = cols * cell;
-    const rightX = Math.min(w - 28, Math.floor(w * 0.72) + blockW / 2);
-    const topY = Math.max(34, Math.floor(h * 0.22));
-    const midY = topY + cell + 6;
-    const lineY = midY + Math.floor(cell * 0.55);
-    const fontPx = Math.floor(cell * 0.82);
+    // メモ中央やや左に配置（プリントの1問分と同じ見え方）
+    const rightX = Math.floor(w / 2 + blockW / 2);
+    const topY = Math.max(36, Math.floor(h * 0.24));
+    const midY = topY + cell + 4;
+    const lineY = midY + Math.floor(cell * 0.58);
+    const fontPx = Math.floor(cell * 0.88);
 
     ctx.save();
-    ctx.fillStyle = "#1a1a1a";
-    ctx.strokeStyle = "#222";
-    ctx.lineWidth = Math.max(2, Math.floor(cell * 0.08));
+    ctx.fillStyle = "#111";
+    ctx.strokeStyle = "#111";
+    ctx.lineWidth = Math.max(2.5, Math.floor(cell * 0.1));
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.font = "bold " + fontPx + "px 'Zen Kaku Gothic New', 'Hiragino Sans', sans-serif";
+    ctx.font = "bold " + fontPx + "px 'Zen Kaku Gothic New', 'Hiragino Sans', 'Noto Sans JP', sans-serif";
 
     for (let i = 0; i < cols; i++) {
       const x = rightX - i * cell;
@@ -953,30 +971,49 @@ function haptic(ms=15){
       if (bi >= 0) ctx.fillText(bStr.charAt(bi), x, midY);
     }
 
-    // 演算子は下段の左外側（プリントと同じ位置）
-    const opX = rightX - cols * cell + cell * 0.15;
+    // 演算子は下段の左外側（ちびむすと同じ位置）
+    const opX = rightX - cols * cell + cell * 0.05;
     ctx.textAlign = "right";
     ctx.fillText(op, opX, midY);
 
     // 答えを書くための横線（その下は空欄）
-    const lineLeft = Math.max(16, opX - cell * 0.9);
-    const lineRight = rightX + cell * 0.45;
+    const lineLeft = Math.max(12, opX - cell * 0.85);
+    const lineRight = rightX + cell * 0.42;
     ctx.beginPath();
     ctx.moveTo(lineLeft, lineY);
     ctx.lineTo(lineRight, lineY);
     ctx.stroke();
 
-    // 桁の薄いガイド（書きやすいように）
-    ctx.strokeStyle = "rgba(0,0,0,0.08)";
+    // 桁の薄いガイド（答え欄）
+    ctx.strokeStyle = "rgba(0,0,0,0.12)";
     ctx.lineWidth = 1;
     for (let i = 0; i < cols; i++) {
       const x = rightX - i * cell;
       ctx.beginPath();
       ctx.moveTo(x + cell * 0.45, lineY + 4);
-      ctx.lineTo(x + cell * 0.45, Math.min(h - 10, lineY + cell * 1.35));
+      ctx.lineTo(x + cell * 0.45, Math.min(h - 8, lineY + cell * 1.25));
       ctx.stroke();
     }
     ctx.restore();
+    return true;
+  }
+
+  function sizeSansuMemoCanvas_(canvas, cssW, cssH) {
+    if (!canvas || !canvas.getContext) return null;
+    const ctx = canvas.getContext("2d", { alpha: true, desynchronized: true });
+    if (!ctx) return null;
+    // 3まで上げて線のギザつきを抑える（Retina / 高DPI）
+    const dpr = Math.min(3, Math.max(1, window.devicePixelRatio || 1));
+    const w = Math.max(200, Math.floor(cssW || 320));
+    const h = Math.max(180, Math.floor(cssH || 200));
+    canvas.width = Math.floor(w * dpr);
+    canvas.height = Math.floor(h * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    try {
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "high";
+    } catch (_s) {}
+    return { ctx: ctx, w: w, h: h, dpr: dpr };
   }
 
   function makeSansuKuku_(lo, hi) {
@@ -3686,8 +3723,10 @@ function ask(L, kind, done, name) {
         ? '<div class="sansu-memo-wrap">' +
           '<div class="sansu-memo-head"><span>筆算メモ（問題は印刷済み・答えはテンキー）</span>' +
           '<button type="button" id="sansuMemoClear" class="sansu-memo-clear">かきけす</button></div>' +
-          '<canvas id="sansuMemoCanvas" class="sansu-memo-canvas" width="320" height="200"></canvas>' +
-          '</div>'
+          '<div class="sansu-memo-stage">' +
+          '<canvas id="sansuMemoPrint" class="sansu-memo-canvas sansu-memo-print" width="320" height="220" aria-hidden="true"></canvas>' +
+          '<canvas id="sansuMemoCanvas" class="sansu-memo-canvas sansu-memo-ink" width="320" height="220"></canvas>' +
+          '</div></div>'
         : '') +
       '<div class="sansu-tenkey" id="sansuTenkey" role="group" aria-label="テンキー">' +
       '<button type="button" data-sk="7">7</button><button type="button" data-sk="8">8</button><button type="button" data-sk="9">9</button>' +
@@ -3908,60 +3947,150 @@ function ask(L, kind, done, name) {
       if (/^[0-9]$/.test(k)) return pressSansu(k);
     };
     quizKey.handlesNav = true;
-    // 筆算メモ（採点しない）
+    // 筆算メモ（採点しない）: 下層=印刷済み問題 / 上層=手書き
     if (q.sansuNeedMemo) {
-      const canvas = targetBox.querySelector("#sansuMemoCanvas");
+      const stage = targetBox.querySelector(".sansu-memo-stage");
+      const printCv = targetBox.querySelector("#sansuMemoPrint");
+      const inkCv = targetBox.querySelector("#sansuMemoCanvas");
       const clearBtn = targetBox.querySelector("#sansuMemoClear");
-      if (canvas && canvas.getContext) {
-        const ctx = canvas.getContext("2d");
-        const paintBase = function () {
-          const rect = canvas.getBoundingClientRect();
-          const dpr = Math.min(2, window.devicePixelRatio || 1);
-          const w = Math.max(200, Math.floor(rect.width || 320));
-          const h = Math.max(180, Math.floor(rect.height || 200));
-          canvas.width = Math.floor(w * dpr);
-          canvas.height = Math.floor(h * dpr);
-          ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-          ctx.fillStyle = "#f7f4ea";
-          ctx.fillRect(0, 0, w, h);
-          // PDFサンプル同様、筆算の形であらかじめ問題を記す
-          try { drawSansuHissanTemplate_(ctx, w, h, q.sansuHissan); } catch (_d) {}
-          ctx.strokeStyle = "#1e88e5";
-          ctx.lineWidth = 2.6;
-          ctx.lineCap = "round";
-          ctx.lineJoin = "round";
+      const hissan = resolveSansuHissan_(q);
+      let inkCtx = null;
+
+      const measureMemo_ = function () {
+        const rect = (stage && stage.getBoundingClientRect()) || (inkCv && inkCv.getBoundingClientRect()) || { width: 320, height: 220 };
+        return {
+          w: Math.max(200, Math.floor(rect.width || 320)),
+          h: Math.max(200, Math.floor(rect.height || 220))
         };
-        paintBase();
+      };
+
+      const paintPrint_ = function () {
+        if (!printCv) return;
+        const m = measureMemo_();
+        const sized = sizeSansuMemoCanvas_(printCv, m.w, m.h);
+        if (!sized) return;
+        sized.ctx.fillStyle = "#f7f4ea";
+        sized.ctx.fillRect(0, 0, sized.w, sized.h);
+        try {
+          drawSansuHissanTemplate_(sized.ctx, sized.w, sized.h, hissan);
+        } catch (err) {
+          try { console.warn("[Dungeon] hissan print failed", err); } catch (_e) {}
+        }
+      };
+
+      const INK_W = 2.35;
+      const INK_MIN_DIST = 0.85; // 近すぎる点は間引き（ジッター抑制）
+      const applyInkStyle_ = function (ctx) {
+        if (!ctx) return;
+        ctx.strokeStyle = "#1565c0";
+        ctx.fillStyle = "#1565c0";
+        ctx.lineWidth = INK_W;
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+        ctx.miterLimit = 2;
+        // ごく薄い影でアンチエイリアスっぽく見せる
+        ctx.shadowColor = "rgba(21, 101, 192, 0.22)";
+        ctx.shadowBlur = 0.9;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 0;
+      };
+
+      const paintInkClear_ = function () {
+        if (!inkCv) return;
+        const m = measureMemo_();
+        const sized = sizeSansuMemoCanvas_(inkCv, m.w, m.h);
+        if (!sized) return;
+        inkCtx = sized.ctx;
+        // 透明のまま（下の印刷レイヤーが見える）
+        inkCtx.clearRect(0, 0, sized.w, sized.h);
+        applyInkStyle_(inkCtx);
+      };
+
+      const paintAll_ = function () {
+        paintPrint_();
+        paintInkClear_();
+      };
+
+      paintAll_();
+      // レイアウト確定後にも再描画（初回 getBoundingClientRect が 0 になる対策）
+      requestAnimationFrame(function () {
+        paintAll_();
+        requestAnimationFrame(paintAll_);
+      });
+
+      if (inkCv && inkCv.getContext) {
         let drawing = false;
+        let lastPt = null;
+        let midPt = null;
         const pos = function (ev) {
-          const r = canvas.getBoundingClientRect();
-          return { x: (ev.clientX - r.left), y: (ev.clientY - r.top) };
+          const r = inkCv.getBoundingClientRect();
+          // CSSピクセル座標（setTransform 済み）
+          return { x: ev.clientX - r.left, y: ev.clientY - r.top };
         };
-        canvas.addEventListener("pointerdown", function (ev) {
+        const dist2_ = function (a, b) {
+          const dx = a.x - b.x, dy = a.y - b.y;
+          return dx * dx + dy * dy;
+        };
+        const drawDot_ = function (p) {
+          if (!inkCtx) return;
+          inkCtx.beginPath();
+          inkCtx.arc(p.x, p.y, INK_W * 0.48, 0, Math.PI * 2);
+          inkCtx.fill();
+        };
+        // 中点二次曲線で折れ線の角をならす（全パス再strokeしない）
+        const strokeTo_ = function (p) {
+          if (!inkCtx || !lastPt || !midPt) return;
+          const nextMid = { x: (lastPt.x + p.x) * 0.5, y: (lastPt.y + p.y) * 0.5 };
+          inkCtx.beginPath();
+          inkCtx.moveTo(midPt.x, midPt.y);
+          inkCtx.quadraticCurveTo(lastPt.x, lastPt.y, nextMid.x, nextMid.y);
+          inkCtx.stroke();
+          midPt = nextMid;
+          lastPt = p;
+        };
+        inkCv.addEventListener("pointerdown", function (ev) {
+          if (!inkCtx) paintInkClear_();
+          if (!inkCtx) return;
           drawing = true;
-          try { canvas.setPointerCapture(ev.pointerId); } catch (_e) {}
+          try { inkCv.setPointerCapture(ev.pointerId); } catch (_e) {}
           const p = pos(ev);
-          ctx.beginPath();
-          ctx.moveTo(p.x, p.y);
+          lastPt = p;
+          midPt = p;
+          applyInkStyle_(inkCtx);
+          drawDot_(p);
           ev.preventDefault();
         });
-        canvas.addEventListener("pointermove", function (ev) {
-          if (!drawing) return;
+        inkCv.addEventListener("pointermove", function (ev) {
+          if (!drawing || !inkCtx || !lastPt) return;
           const p = pos(ev);
-          ctx.lineTo(p.x, p.y);
-          ctx.stroke();
+          if (dist2_(p, lastPt) < INK_MIN_DIST * INK_MIN_DIST) {
+            ev.preventDefault();
+            return;
+          }
+          strokeTo_(p);
           ev.preventDefault();
         });
         const endDraw = function (ev) {
           if (!drawing) return;
           drawing = false;
-          try { canvas.releasePointerCapture(ev.pointerId); } catch (_e) {}
+          // 最後の点まで伸ばして先端を丸く閉じる
+          if (inkCtx && lastPt && midPt && ev) {
+            try {
+              const p = pos(ev);
+              if (dist2_(p, lastPt) >= 0.25) strokeTo_(p);
+              else drawDot_(lastPt);
+            } catch (_e) {}
+          }
+          lastPt = null;
+          midPt = null;
+          try { inkCv.releasePointerCapture(ev.pointerId); } catch (_e) {}
         };
-        canvas.addEventListener("pointerup", endDraw);
-        canvas.addEventListener("pointercancel", endDraw);
+        inkCv.addEventListener("pointerup", endDraw);
+        inkCv.addEventListener("pointercancel", endDraw);
         if (clearBtn) {
           clearBtn.onclick = function () {
-            paintBase();
+            // 印刷は残し、手書きだけ消す
+            paintInkClear_();
             se("cancel");
           };
         }

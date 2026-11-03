@@ -7665,14 +7665,38 @@ body:has(#section-dungeon.active) #global-header {
   border-radius: 4px;
   cursor: pointer;
 }
+.sansu-memo-stage {
+  position: relative;
+  width: 100%;
+  height: 220px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #f7f4ea;
+}
 .sansu-memo-canvas {
   display: block;
   width: 100%;
-  height: 200px;
+  height: 220px;
   border-radius: 6px;
-  background: #f7f4ea;
   touch-action: none;
+}
+.sansu-memo-stage .sansu-memo-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.sansu-memo-print {
+  z-index: 0;
+  pointer-events: none;
+  background: #f7f4ea;
+}
+.sansu-memo-ink {
+  z-index: 1;
   cursor: crosshair;
+  background: transparent;
+  /* ブラウザ側の補間で線を少しなめらかに */
+  image-rendering: auto;
 }
 .sansu-tenkey {
   display: grid;
