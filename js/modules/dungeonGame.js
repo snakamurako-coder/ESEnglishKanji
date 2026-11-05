@@ -2423,10 +2423,12 @@ function ensureAutosaveHeartbeat_() {
   if (autosaveHeartbeatTimer_) return;
   autosaveHeartbeatTimer_ = setInterval(function () {
     try {
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
       if (!isDungeonActive()) return;
       if (!S || S.practice) return;
       if (S.screen !== "explore" && S.screen !== "battle") return;
       // BGM が勝手に止まった場合の保険（毎 render の play はしない）
+      // ※裏画面・ロック中は絶対に起こさない
       try { ensureBgmPlaying_(); } catch (_b) {}
       // 直近でセーブ済みならスキップ（階段直後など）
       if (Date.now() - lastAutosaveTs_ < 4000) return;
@@ -2447,7 +2449,8 @@ function bindDungeonEmergencySaveOnce_() {
     } catch (_) {}
   };
   const stopAudioOnLeave = function () {
-    try { stopAllBgm_(); } catch (_) {}
+    // ロック／タスクキル／タブ閉じ：再開禁止を維持して完全停止
+    try { stopAllBgm_({ hold: true }); } catch (_) {}
   };
   // タブ閉じ／タスクキル／バックグラウンド化：BGMを残さない
   window.addEventListener("pagehide", function () {
@@ -2463,12 +2466,21 @@ function bindDungeonEmergencySaveOnce_() {
       flushSave();
       stopAudioOnLeave();
     } else if (document.visibilityState === "visible") {
-      // 本編（探索／戦闘）に戻ったときだけ再開。塔選択や他画面では鳴らさない
+      // 前面に戻ったときだけ hold 解除。本編中のみ再開
+      try { releaseBgmHold_(); } catch (_) {}
       try { ensureBgmPlaying_(); } catch (_) {}
     }
   });
   // iOS / PWA 向け（バックグラウンド凍結）
   window.addEventListener("freeze", stopAudioOnLeave);
+  // 画面オフ・省電力などでページが残っても音を止める
+  window.addEventListener("blur", function () {
+    try {
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+        stopAudioOnLeave();
+      }
+    } catch (_) {}
+  });
 }
 
 /* ==========================================================================
@@ -2532,8 +2544,64 @@ let seVol=0.7, bgmVol=0.35;
 let bgmCur=0;
 /** ブラウザが play() を拒否したまま無音で固まらないよう、次の操作で必ず再試行する */
 let bgmPlayBlocked_ = false;
-/** stopAllBgm_ 中の pause イベントで自動再開しないためのガード */
+/** stopAllBgm_ 中／直後に自動再開しないためのガード */
 let bgmStopping_ = false;
+/** ロック・タブ非表示・アプリ終了中は play を一切許可しない（前面復帰まで維持） */
+let bgmHeldByLeave_ = false;
+let bgmStoppingTimer_ = null;
+
+function isBgmForegroundOk_() {
+  try {
+    if (typeof document !== "undefined" && document.visibilityState !== "visible") return false;
+  } catch (_v) {}
+  if (bgmHeldByLeave_ || bgmStopping_) return false;
+  return true;
+}
+
+/** ロック画面のメディアスライダーに乗らないよう Media Session を空にする */
+function clearBgmMediaSession_() {
+  try {
+    if (!navigator.mediaSession) return;
+    navigator.mediaSession.playbackState = "none";
+    try { navigator.mediaSession.metadata = null; } catch (_m) {}
+  } catch (_e) {}
+}
+
+function bindBgmMediaSessionOnce_() {
+  if (typeof navigator === "undefined" || !navigator.mediaSession) return;
+  if (window.__dungeonBgmMediaSessionBound) return;
+  window.__dungeonBgmMediaSessionBound = true;
+  const stopFromOs_ = function () {
+    try { stopAllBgm_({ hold: true }); } catch (_s) {}
+    clearBgmMediaSession_();
+  };
+  try {
+    // ロック画面の一時停止／停止は「止めたまま」。自動再開しない
+    navigator.mediaSession.setActionHandler("pause", stopFromOs_);
+    navigator.mediaSession.setActionHandler("stop", stopFromOs_);
+    navigator.mediaSession.setActionHandler("play", function () {
+      // 裏・ロックからの再生要求は拒否。アプリ前面かつ本編中だけ
+      if (!isBgmForegroundOk_() || !isDungeonActive()) {
+        clearBgmMediaSession_();
+        return;
+      }
+      if (!S || (S.screen !== "explore" && S.screen !== "battle")) {
+        clearBgmMediaSession_();
+        return;
+      }
+      try { ensureBgmPlaying_(); } catch (_p) {}
+    });
+  } catch (_h) {}
+}
+
+function releaseBgmHold_() {
+  bgmHeldByLeave_ = false;
+  bgmStopping_ = false;
+  if (bgmStoppingTimer_) {
+    try { clearTimeout(bgmStoppingTimer_); } catch (_t) {}
+    bgmStoppingTimer_ = null;
+  }
+}
 
 try{
   const v=JSON.parse(localStorage.getItem("tango-meikyu-se")||"null");
@@ -2557,10 +2625,19 @@ function bgmWant(){
   return 0;
 }
 
-/** すべてのBGMを即停止（ラン終了・塔選択・ホーム復帰・タブ閉じ時） */
-function stopAllBgm_(){
+/**
+ * すべてのBGMを即停止（ラン終了・塔選択・ホーム復帰・タブ閉じ時）
+ * opts.hold: ロック／非表示中。前面復帰まで play を禁止し続ける
+ */
+function stopAllBgm_(opts){
+  const hold = !!(opts && opts.hold);
   bgmStopping_ = true;
+  if (hold) bgmHeldByLeave_ = true;
   bgmCur = 0;
+  if (bgmStoppingTimer_) {
+    try { clearTimeout(bgmStoppingTimer_); } catch (_t) {}
+    bgmStoppingTimer_ = null;
+  }
   try{
     Object.keys(BGM).forEach(function(k){
       const a = BGM[k];
@@ -2572,23 +2649,41 @@ function stopAllBgm_(){
     });
   }catch(e){}
   bgmPlayBlocked_ = false;
-  // pause リスナーの setTimeout(120) より後まで再開禁止を維持
-  setTimeout(function () { bgmStopping_ = false; }, 400);
+  clearBgmMediaSession_();
+  // hold 中は解除しない（visibility visible で releaseBgmHold_）
+  if (!hold) {
+    bgmStoppingTimer_ = setTimeout(function () {
+      bgmStoppingTimer_ = null;
+      if (!bgmHeldByLeave_) bgmStopping_ = false;
+    }, 400);
+  }
 }
 
 /** play() の成否を追跡。拒否されたら次のユーザー操作で必ずやり直す */
 function playBgmEl_(aud) {
-  if (!aud || bgmStopping_) return;
+  if (!aud) return;
+  if (!isBgmForegroundOk_()) return;
   try {
+    bindBgmMediaSessionOnce_();
     aud.muted = false;
     aud.volume = bgmVol;
     const pr = aud.play();
     if (pr && typeof pr.then === "function") {
       pr.then(function () {
+        if (!isBgmForegroundOk_()) {
+          // play 完了時すでに裏なら即止める（レース対策）
+          try { aud.pause(); aud.currentTime = 0; } catch (_p) {}
+          clearBgmMediaSession_();
+          return;
+        }
         bgmPlayBlocked_ = false;
+        try {
+          if (navigator.mediaSession) navigator.mediaSession.playbackState = "playing";
+        } catch (_ms) {}
       }).catch(function () {
         bgmPlayBlocked_ = true;
         if (bgmCur && BGM[bgmCur] === aud) bgmCur = 0;
+        clearBgmMediaSession_();
       });
     }
   } catch (_e) {
@@ -2602,7 +2697,7 @@ function playBgmEl_(aud) {
  * （操作のたびに巻き戻さない）
  */
 function ensureBgmPlaying_(){
-  if (bgmStopping_) return;
+  if (!isBgmForegroundOk_()) return;
   if (!bgmOn) return;
   // 塔選択・ホームなど本編外では絶対に鳴らさない
   if (!isDungeonActive()) return;
@@ -2632,7 +2727,7 @@ function ensureBgmPlaying_(){
  * 次の操作・ロード完了で ensureBgmPlaying_ / bgmUpdate が再試行できるようにする。
  */
 function forceBgmRestart_(){
-  if (bgmStopping_) return;
+  if (!isBgmForegroundOk_()) return;
   if (!bgmOn) return;
   if (!isDungeonActive()) return;
   if (!S || (S.screen !== "explore" && S.screen !== "battle")) return;
@@ -2668,45 +2763,31 @@ function setupBgmElement(aud, id){
   aud.loop = true;
   aud.volume = bgmVol;
   aud.preload = "auto";
-  
+  try { bindBgmMediaSessionOnce_(); } catch (_b) {}
+
   // ended イベントでも確実にループ再開（ブラウザのloop属性停止対策）
+  // ※ pause での自動再開はしない（ロック画面の一時停止を即再生し直す原因だった）
   if(!aud._hasBgmLoopHook){
     aud._hasBgmLoopHook = true;
-    aud.addEventListener("ended", ()=>{
-      if(bgmOn && bgmCur === id){
-        try { aud.currentTime = 0; } catch (_ct) {}
-        playBgmEl_(aud);
-      }
-    });
-    // ブラウザが裏で pause した場合の復帰フック（探索中の無音化対策）
-    aud.addEventListener("pause", function () {
-      if (bgmStopping_) return;
+    aud.addEventListener("ended", function () {
+      if (!isBgmForegroundOk_()) return;
       if (!bgmOn || bgmCur !== id) return;
       if (!isDungeonActive()) return;
       if (!S || (S.screen !== "explore" && S.screen !== "battle")) return;
-      const want = bgmWant();
-      if (want !== id) return;
-      // 意図的な切替直後の pause を避けるため短遅延
-      setTimeout(function () {
-        if (bgmStopping_) return;
-        if (!bgmOn || bgmCur !== id) return;
-        if (!isDungeonActive()) return;
-        if (!S || (S.screen !== "explore" && S.screen !== "battle")) return;
-        if (bgmWant() !== id) return;
-        if (!aud.paused) return;
-        playBgmEl_(aud);
-      }, 120);
+      try { aud.currentTime = 0; } catch (_ct) {}
+      playBgmEl_(aud);
     });
   }
 }
 
 function bgmUpdate(){
-  if (bgmStopping_) return;
+  if (!isBgmForegroundOk_()) return;
   if(!bgmOn){
     if(bgmCur && BGM[bgmCur]){
       try { BGM[bgmCur].pause(); } catch(e){}
     }
     bgmCur = 0;
+    clearBgmMediaSession_();
     return;
   }
   if (!isDungeonActive() || !S || (S.screen !== "explore" && S.screen !== "battle")) {
