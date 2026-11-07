@@ -2625,6 +2625,39 @@ function bgmWant(){
   return 0;
 }
 
+/** 常駐させる BGM（探索曲）。それ以外は停止時にバッファを解放する */
+const BGM_KEEP_LOADED_ID_ = 1;
+
+function bgmRememberSrc_(aud) {
+  if (!aud || aud._bgmSrc) return;
+  const src = aud.getAttribute("src") || aud.currentSrc || aud.src || "";
+  if (src) aud._bgmSrc = src;
+}
+
+/** 解放済みの要素へ src を戻す（play 直前に呼ぶ） */
+function bgmRestoreSrc_(aud) {
+  if (!aud || !aud._bgmReleased) return;
+  aud._bgmReleased = false;
+  if (aud._bgmSrc) {
+    try { aud.src = aud._bgmSrc; } catch (_s) {}
+  }
+}
+
+/**
+ * 停止した BGM のデコード済みデータを捨てる。
+ * preload を none に戻すだけでは読み込み済みバッファは残るため、src を外して load() する。
+ */
+function bgmReleaseBuffer_(aud) {
+  if (!aud || aud._bgmReleased) return;
+  if (aud._bgmId === BGM_KEEP_LOADED_ID_) return;
+  bgmRememberSrc_(aud);
+  if (!aud._bgmSrc) return;
+  aud._bgmReleased = true;
+  try { aud.pause(); } catch (_p) {}
+  try { aud.preload = "none"; } catch (_pr) {}
+  try { aud.removeAttribute("src"); aud.load(); } catch (_l) {}
+}
+
 /**
  * すべてのBGMを即停止（ラン終了・塔選択・ホーム復帰・タブ閉じ時）
  * opts.hold: ロック／非表示中。前面復帰まで play を禁止し続ける
@@ -2644,8 +2677,9 @@ function stopAllBgm_(opts){
       if(!a) return;
       try{
         a.pause();
-        a.currentTime = 0;
+        if (!a._bgmReleased) a.currentTime = 0;
       }catch(e){}
+      bgmReleaseBuffer_(a);
     });
   }catch(e){}
   bgmPlayBlocked_ = false;
@@ -2665,6 +2699,8 @@ function playBgmEl_(aud) {
   if (!isBgmForegroundOk_()) return;
   try {
     bindBgmMediaSessionOnce_();
+    bgmRestoreSrc_(aud);
+    // 再生する1曲だけ auto。止めたら bgmReleaseBuffer_ で none に戻して解放する
     if (aud.preload !== "auto") aud.preload = "auto";
     aud.muted = false;
     aud.volume = bgmVol;
@@ -2747,8 +2783,10 @@ function forceBgmRestart_(){
   try {
     if (bgmCur && BGM[bgmCur] && BGM[bgmCur] !== a) {
       try { BGM[bgmCur].pause(); BGM[bgmCur].currentTime = 0; } catch (_p) {}
+      bgmReleaseBuffer_(BGM[bgmCur]);
     }
     setupBgmElement(a, want);
+    bgmRestoreSrc_(a);
     try { a.currentTime = 0; } catch (_ct) {}
     a.volume = bgmVol;
     bgmCur = want;
@@ -2761,6 +2799,8 @@ function forceBgmRestart_(){
 
 function setupBgmElement(aud, id){
   if(!aud) return;
+  aud._bgmId = id;
+  bgmRememberSrc_(aud);
   aud.loop = true;
   aud.volume = bgmVol;
   try { bindBgmMediaSessionOnce_(); } catch (_b) {}
@@ -2785,6 +2825,7 @@ function bgmUpdate(){
   if(!bgmOn){
     if(bgmCur && BGM[bgmCur]){
       try { BGM[bgmCur].pause(); } catch(e){}
+      bgmReleaseBuffer_(BGM[bgmCur]);
     }
     bgmCur = 0;
     clearBgmMediaSession_();
@@ -2815,6 +2856,7 @@ function bgmUpdate(){
       BGM[bgmCur].pause();
       BGM[bgmCur].currentTime = 0;
     } catch(e){}
+    bgmReleaseBuffer_(BGM[bgmCur]);
   }
 
   // 2. 新しいBGMを先頭からループ再生開始
@@ -5512,9 +5554,12 @@ function buildSoundTestGrid(){
           if(bgmCur && BGM[bgmCur] && bgmCur !== num) {
             BGM[bgmCur].pause();
             BGM[bgmCur].currentTime = 0;
+            bgmReleaseBuffer_(BGM[bgmCur]);
           }
           bgmCur = num;
           setupBgmElement(BGM[num], num);
+          bgmRestoreSrc_(BGM[num]);
+          BGM[num].preload = "auto";
           BGM[num].currentTime = 0;
           BGM[num].volume = bgmVol;
           BGM[num].play().catch(()=>{});
