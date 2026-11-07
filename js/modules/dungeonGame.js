@@ -2665,6 +2665,7 @@ function playBgmEl_(aud) {
   if (!isBgmForegroundOk_()) return;
   try {
     bindBgmMediaSessionOnce_();
+    if (aud.preload !== "auto") aud.preload = "auto";
     aud.muted = false;
     aud.volume = bgmVol;
     const pr = aud.play();
@@ -2762,7 +2763,6 @@ function setupBgmElement(aud, id){
   if(!aud) return;
   aud.loop = true;
   aud.volume = bgmVol;
-  aud.preload = "auto";
   try { bindBgmMediaSessionOnce_(); } catch (_b) {}
 
   // ended イベントでも確実にループ再開（ブラウザのloop属性停止対策）
@@ -2833,7 +2833,7 @@ function bgmUpdate(){
 
 /** SE プール（重ね再生用）。毎回 new Audio するとメディア資源が枯渇してフリーズする */
 const SE_POOL_ = Object.create(null);
-const SE_POOL_MAX_ = 3;
+const SE_POOL_MAX_ = 2;
 const SE_LAST_TS_ = Object.create(null);
 /** 連打されやすい SE の最短間隔（ms） */
 const SE_MIN_GAP_MS_ = {
@@ -2947,8 +2947,7 @@ function registerDungeonAudio_(item, aud) {
       try {
         aud.volume = bgmVol;
         if (keepTime > 0 && isFinite(keepTime)) aud.currentTime = keepTime;
-        const pr = aud.play();
-        if (pr && typeof pr.catch === "function") pr.catch(function () {});
+        playBgmEl_(aud);
       } catch (_) {}
     } else if (bgmOn && bgmWant() === item.id && (bgmCur === 0 || bgmCur === item.id)) {
       // 入室時点でファイルが無く force が空振りしたあとでも、ロード完了で鳴らす
@@ -2973,7 +2972,8 @@ function attachHostingAudioNow_() {
     if (item.type !== "bgm" && SE[item.id] && SE[item.id].readyState >= 2) return;
     const path = "SE/" + item.file;
     const aud = new Audio(path);
-    aud.preload = item.type === "bgm" ? "auto" : "metadata";
+    // BGM は探索曲だけ先読み。他は再生時に読み込む（4曲同時にデコード領域を確保しない）
+    aud.preload = item.type === "bgm" ? (item.id === 1 ? "auto" : "none") : "metadata";
     registerDungeonAudio_(item, aud);
     const kick = function () {
       try { registerDungeonAudio_(item, aud); } catch (_k) {}
@@ -2997,44 +2997,14 @@ function attachHostingAudioNow_() {
 
 function loadDungeonAudioFromCache_() {
   if (audioLoadPromise_) return audioLoadPromise_;
-  const store = (typeof window !== "undefined") ? window.audioCacheStore : null;
-  const files = AUDIO_MANIFEST.map(function (m) { return m.file; });
   const statEl = $("#mSoundStatus");
 
-  // まず Hosting 直リンクで鳴らす。BGM は各約4MBあり、IndexedDB 全件待ちだといつまでも無音になる
+  // 再生は Hosting 直リンク（HTTP キャッシュ）のみ。
+  // 以前は IndexedDB 全件を Object URL 化していたが、再生に使われず全音声（BGM 約16MB 含む）を
+  // メモリに常駐させ、モバイルでタブがメモリ不足で落ちる（再読み込みでホームに戻る）原因になっていた。
   attachHostingAudioNow_();
   if (statEl) statEl.textContent = "読み込み状態: 音声を再生準備中…";
-
-  if (!store || typeof store.preloadAll !== "function") {
-    audioLoadPromise_ = Promise.resolve({ ok: 0, fail: 0, mode: "hosting" });
-    return audioLoadPromise_;
-  }
-
-  // キャッシュは裏で進める（完了を再生の前提にしない）
-  audioLoadPromise_ = store.preloadAll(files, {
-    concurrency: 2,
-    preferStorage: false,
-    onProgress: function (done, total) {
-      const el = $("#mSoundStatus");
-      if (el) el.textContent = "読み込み状態: 効果音 " + Object.keys(SE).length + "/" + SE_TOTAL +
-        " ・ BGM " + Object.keys(BGM).length + "/" + BGM_TOTAL +
-        "（キャッシュ " + done + "/" + total + "）";
-    }
-  }).then(function (result) {
-    updateSoundUI();
-    try {
-      if (bgmOn && bgmWant() && (!BGM[bgmWant()] || BGM[bgmWant()].paused)) {
-        bgmCur = 0;
-        bgmUpdate();
-      }
-    } catch (_bu) {}
-    return result || { ok: 0, fail: 0 };
-  }).catch(function (err) {
-    console.warn("[dungeon audio] キャッシュ失敗（Hosting 再生は継続）", err);
-    updateSoundUI();
-    return { ok: 0, fail: files.length, mode: "hosting", error: String(err && err.message || err) };
-  });
-
+  audioLoadPromise_ = Promise.resolve({ ok: 0, fail: 0, mode: "hosting" });
   return audioLoadPromise_;
 }
 
