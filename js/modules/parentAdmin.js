@@ -23,14 +23,15 @@
     });
   }
 
-  /** ポイント表示：小数点以下1桁で切り捨て */
-  function formatAdminPoints_(v) {
-    if (typeof global.formatPointDisplayNum === "function") {
-      return global.formatPointDisplayNum(v);
-    }
+  /** ポイント表示：小数点以下1桁で切り捨て（管理者調整はマイナス可） */
+  function truncateAdminPoints1_(v) {
     var n = Number(v);
-    if (isNaN(n) || !isFinite(n)) return "0";
-    var t = Math.floor((Math.max(0, n) + 1e-12) * 10) / 10;
+    if (isNaN(n) || !isFinite(n)) return 0;
+    if (n >= 0) return Math.floor((n + 1e-12) * 10) / 10;
+    return -Math.floor((-n + 1e-12) * 10) / 10;
+  }
+  function formatAdminPoints_(v) {
+    var t = truncateAdminPoints1_(v);
     if (Math.abs(t - Math.round(t)) < 1e-9) return String(Math.round(t));
     return t.toFixed(1);
   }
@@ -243,7 +244,7 @@
               <span style="font-size:16px;color:gold;font-weight:bold;">現在: <span id="current-pts-disp-${uid}">${curPts}</span> Pt</span>
             </div>
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-              <input type="number" id="input-pts-${uid}" value="${curPts}" step="0.1" min="0" style="flex:1;min-width:120px;padding:10px;font-size:18px;border-radius:8px;border:2px solid #555;background:#1a1a1a;color:#fff;box-sizing:border-box;">
+              <input type="number" id="input-pts-${uid}" value="${curPts}" step="0.1" inputmode="decimal" style="flex:1;min-width:120px;padding:10px;font-size:18px;border-radius:8px;border:2px solid #555;background:#1a1a1a;color:#fff;box-sizing:border-box;">
               <button type="button" class="submit-btn btn-orange" style="margin:0;padding:10px 16px;font-size:16px;white-space:nowrap;" onclick="submitUpdateUserPoint('${uid}', this)">変更を保存</button>
             </div>
             <div style="display:flex;gap:6px;flex-wrap:wrap;">
@@ -293,8 +294,9 @@
   function adjustUserPointInput(userId, delta) {
     const inp = document.getElementById('input-pts-' + userId);
     if (!inp) return;
-    let v = Number(inp.value) || 0;
-    v = Math.floor((Math.max(0, v + delta) + 1e-12) * 10) / 10;
+    let v = Number(inp.value);
+    if (isNaN(v) || !isFinite(v)) v = 0;
+    v = truncateAdminPoints1_(v + (Number(delta) || 0));
     inp.value = formatAdminPoints_(v);
   }
 
@@ -303,9 +305,11 @@
     const msg = document.getElementById('user-pt-msg-' + userId);
     const disp = document.getElementById('current-pts-disp-' + userId);
     if (!inp) return;
-    const newPts = Number(inp.value);
-    if (isNaN(newPts) || newPts < 0) {
-      if (msg) { msg.innerText = "0以上の数値を入力してください。"; msg.style.color = "#ff8a80"; }
+    const raw = String(inp.value || "").trim();
+    // 先頭の "-" だけ入力中などは NaN。確定値はマイナス可
+    const newPts = Number(raw);
+    if (raw === "" || raw === "-" || raw === "+" || isNaN(newPts) || !isFinite(newPts)) {
+      if (msg) { msg.innerText = "有効な数値を入力してください（マイナス可）。"; msg.style.color = "#ff8a80"; }
       return;
     }
     const orig = callToggleBtnLoading(btn, true, "変更を保存");

@@ -584,8 +584,9 @@
   function truncatePoints1Admin_(v) {
     var n = Number(v);
     if (isNaN(n) || !isFinite(n)) return 0;
-    var x = Math.max(0, n);
-    return Math.floor((x + 1e-12) * 10) / 10;
+    // 管理者ポイント調整はマイナス可（0で打ち切らない）
+    if (n >= 0) return Math.floor((n + 1e-12) * 10) / 10;
+    return -Math.floor((-n + 1e-12) * 10) / 10;
   }
 
   function updateUserPoints(pin, userId, newPoints) {

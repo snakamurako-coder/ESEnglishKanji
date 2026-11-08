@@ -2610,8 +2610,11 @@ function handleUpdateUserPointsAdmin(req) {
   if (!v.ok) return sendResponse({ status: "error", message: v.message });
   const userId = String(req.userId || "").trim();
   if (!userId) return sendResponse({ status: "error", message: "ユーザーIDが指定されていません" });
-  const newPoints = Math.round((Number(req.newPoints) || 0) * 100) / 100;
-  if (isNaN(newPoints) || newPoints < 0) return sendResponse({ status: "error", message: "0以上の有効な数値を指定してください" });
+  const rawPts = Number(req.newPoints);
+  if (req.newPoints === "" || req.newPoints == null || isNaN(rawPts) || !isFinite(rawPts)) {
+    return sendResponse({ status: "error", message: "有効な数値を指定してください（マイナス可）" });
+  }
+  const newPoints = Math.round(rawPts * 100) / 100;
   const usersSheet = adminSs.getSheetByName("users");
   if (!usersSheet) return sendResponse({ status: "error", message: "usersシートが見つかりません" });
   const data = usersSheet.getDataRange().getValues();
